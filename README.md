@@ -195,6 +195,12 @@ PostersPlus uses a SQLite database (WAL mode) for all caching. The cache volume 
 
 ---
 
+## Donate
+
+If you'd like to support development, I'd appreciate it: https://ko-fi.com/umbraprojects
+
+---
+
 ## License
 
 This project and any associated forks should remain open source under the [GNU Affero General Public License v3.0](LICENSE)
