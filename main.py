@@ -333,8 +333,8 @@ class RequestConfig:
     textless: bool = False
     score_color_mode: int = 2
     sash_badge: bool = False   # True → badge style instead of diagonal sash
-    sash_badge_x: float = 0.58   # badge left-edge as fraction of poster width
-    sash_badge_y: float = 0.05   # badge top-edge  as fraction of poster height
+    sash_badge_x: float = 0.62   # badge left-edge as fraction of poster width (flush right with the corner)
+    sash_badge_y: float = 0.04   # badge top-edge  as fraction of poster height
 
 
 def _parse_bool(val: str | None, default: bool) -> bool:

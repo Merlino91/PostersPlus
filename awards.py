@@ -1300,7 +1300,7 @@ def draw_award_badge(
     image: Image.Image,
     label: str,
     sash_type: str = "win",
-    x_ratio: float = 0.58,   # left edge of badge as fraction of poster width
+    x_ratio: float = 0.62,   # left edge of badge as fraction of poster width (flush right)
     y_ratio: float = 0.04,   # top  edge of badge as fraction of poster height
 ) -> Image.Image:
     """
