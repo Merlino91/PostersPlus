@@ -13,8 +13,7 @@ from dataclasses import dataclass, field
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, Response, HTMLResponse
 from fastapi.staticfiles import StaticFiles
-from PIL import Image, ImageDraw, ImageFont
-
+from PIL import Image, ImageDraw, ImageFont, ImageFilter
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -493,6 +492,21 @@ def _text_center(
     return x, y
 
 
+def _get_dominant_color(image: Image.Image) -> tuple[int, int, int]:
+    small_img = image.copy()
+    small_img.thumbnail((50, 50))
+    small_img = small_img.convert("RGB")
+    colors = small_img.getcolors(2500)
+    if not colors:
+        return (100, 100, 100)
+    
+    colors.sort(key=lambda t: t[0], reverse=True)
+    for count, color in colors:
+        luminanza = 0.299 * color[0] + 0.587 * color[1] + 0.114 * color[2]
+        if 40 < luminanza < 215:
+            return color
+            
+    return colors[0][1]
 # ---------------------------------------------------------------------------
 # Poster composition
 # ---------------------------------------------------------------------------
@@ -592,13 +606,27 @@ def build_poster(
     top_tinted.putalpha(top_overlay)
     image.paste(top_tinted, (0, 0), mask=top_tinted)
 
-    # --- BOTTOM GRADIENT (vectorised) ---
-    # Minimalist mode sits closer to the bottom edge with a smaller label, so a
-    # lighter fade is enough to keep contrast without over-darkening the poster.
+# --- BOTTOM GRADIENT (vectorised) ---
     bottom_height = int(height * 0.5)
     bottom_start = height - bottom_height
-    bottom_max_alpha = 225 if cfg.rating_display_mode == 3 else 255
-    bottom_curve = 1.2
+    
+    if cfg.rating_display_mode == 4:
+        # Stile Minimal ITA: Frosted Glass
+        bottom_crop = image.crop((0, bottom_start, width, height))
+        blurred_bottom = bottom_crop.filter(ImageFilter.GaussianBlur(radius=12))
+        
+        t_blur = np.linspace(0, 1, bottom_height, dtype=np.float32)
+        eased_blur = ((t_blur ** 1.5) * 255).astype(np.uint8) 
+        blur_array = np.broadcast_to(eased_blur[:, np.newaxis], (bottom_height, width)).copy()
+        blur_mask = Image.fromarray(blur_array, mode="L")
+        
+        image.paste(blurred_bottom, (0, bottom_start), mask=blur_mask)
+        bottom_max_alpha = 230
+        bottom_curve = 1.2
+    else:
+        bottom_max_alpha = 225 if cfg.rating_display_mode == 3 else 255
+        bottom_curve = 1.2
+
     t_bot = np.linspace(0, 1, bottom_height, dtype=np.float32)
     eased_bot = ((1 - (1 - t_bot) ** bottom_curve) * bottom_max_alpha).astype(np.uint8)
     bottom_array = np.broadcast_to(eased_bot[:, np.newaxis], (bottom_height, width)).copy()
@@ -607,9 +635,12 @@ def build_poster(
     bottom_tinted.putalpha(bottom_overlay)
     image.paste(bottom_tinted, (0, bottom_start), mask=bottom_tinted)
 
-    # --- Badge / quality overlay ---
+# --- Badge / quality overlay ---
     mode   = cfg.badge_display_mode
     tokens = quality_tokens or []
+    
+    if cfg.rating_display_mode == 4:
+        mode = 0  # Ignora i badge per Minimal ITA
 
     if mode == 1:
         draw_quality_age_badge(
@@ -809,7 +840,33 @@ def build_poster(
         sash_result = pick_sash(discovery_meta, cfg.sash_priority)
         if sash_result is not None:
             label, sash_type = sash_result
-            if cfg.sash_badge:
+   if cfg.rating_display_mode == 4:
+                dom_color = _get_dominant_color(image)
+                luminanza = 0.299 * dom_color[0] + 0.587 * dom_color[1] + 0.114 * dom_color[2]
+                text_color = (0, 0, 0, 255) if luminanza > 128 else (255, 255, 255, 255)
+                
+                tag_font_size = int(width * 0.05)
+                try:
+                    font_tag = ImageFont.truetype(os.path.join(_FONTS_DIR, "Inter-Bold.ttf"), tag_font_size)
+                except IOError:
+                    font_tag = ImageFont.load_default()
+                    
+                tag_bbox = draw.textbbox((0, 0), label, font=font_tag)
+                tag_w = tag_bbox[2] - tag_bbox[0]
+                tag_h = tag_bbox[3] - tag_bbox[1]
+                
+                padding_x = int(width * 0.035)
+                padding_y = int(height * 0.012)
+                
+                rect_x1 = (width - tag_w) // 2 - padding_x
+                rect_y1 = int(height * 0.02)
+                rect_x2 = rect_x1 + tag_w + (padding_x * 2)
+                rect_y2 = rect_y1 + tag_h + (padding_y * 2)
+                
+                draw.rounded_rectangle([rect_x1, rect_y1, rect_x2, rect_y2], radius=15, fill=dom_color)
+                tx, ty = _text_center(draw, label, font_tag, width / 2, rect_y1 + (rect_y2 - rect_y1) / 2)
+                draw.text((tx, ty), label, font=font_tag, fill=text_color)
+            elif cfg.sash_badge:
                 image = draw_award_badge(image, label, sash_type=sash_type,
                                          x_ratio=cfg.sash_badge_x, y_ratio=cfg.sash_badge_y)
             else:
