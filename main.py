@@ -414,7 +414,7 @@ def build_request_config(params: dict) -> RequestConfig:
     cfg.sash_badge_y            = _f("sash_badge_y",           cfg.sash_badge_y,           0.0, 1.0)
     cfg.score_color_mode        = _i("score_color_mode",       cfg.score_color_mode,       0,   2)
     cfg.badge_display_mode      = _i("badge_display_mode",     cfg.badge_display_mode,     0,   4)
-    cfg.rating_display_mode     = _i("rating_display_mode",    cfg.rating_display_mode,    0,   3)
+    cfg.rating_display_mode     = _i("rating_display_mode",    cfg.rating_display_mode,    0,   4)
 
     if "show_quality_badges" in params and "badge_display_mode" not in params:
         if _parse_bool(params.get("show_quality_badges"), True):
