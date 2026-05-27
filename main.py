@@ -835,12 +835,12 @@ def build_poster(
                     color_mode=cfg.score_color_mode,
                 )
 
-    # --- Discovery sash / badge ---
+# --- Discovery sash / badge ---
     if cfg.show_award_sash and discovery_meta is not None:
         sash_result = pick_sash(discovery_meta, cfg.sash_priority)
         if sash_result is not None:
             label, sash_type = sash_result
-   if cfg.rating_display_mode == 4:
+            if cfg.rating_display_mode == 4:
                 dom_color = _get_dominant_color(image)
                 luminanza = 0.299 * dom_color[0] + 0.587 * dom_color[1] + 0.114 * dom_color[2]
                 text_color = (0, 0, 0, 255) if luminanza > 128 else (255, 255, 255, 255)
