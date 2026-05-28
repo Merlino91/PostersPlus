@@ -1650,6 +1650,38 @@
           </div>
         </div>
 
+                <!-- TYPOGRAPHY -->
+        <div class="section">
+          <div class="section-header" onclick="toggleSection(this)">
+            <div class="section-accent"></div>
+            <span class="section-tag">Text &amp; Typography</span>
+            <button class="section-info-btn" onclick="openInfoModal('typography');event.stopPropagation()" title="About Typography">ⓘ</button>
+            <span class="section-chevron">▼</span>
+          </div>
+          <div class="section-body" style="display:none">
+            <div class="field">
+              <label class="field-label">Font Family</label>
+              <div class="select-wrapper">
+                <select id="sel-font-family" onchange="build(); queuePreviewReload()">
+                  <option value="system">System Default</option>
+                  <option value="inter" selected>Inter</option>
+                  <option value="ubuntu">Ubuntu</option>
+                </select>
+                <div class="select-arrow">▼</div>
+              </div>
+            </div>
+
+            <div class="field" style="margin-top: 14px;">
+              <label class="toggle-row">
+                <span class="toggle-label">Text Drop-Shadow</span>
+                <input type="checkbox" id="tog-text-shadow" checked onchange="build(); queuePreviewReload()">
+                <div class="toggle-track"><div class="toggle-thumb"></div></div>
+              </label>
+              <div class="field-hint">Adds a subtle black shadow behind text for readability.</div>
+            </div>
+          </div>
+        </div>
+
         <!-- 3. LOGO -->
         <div class="section">
           <div class="section-header" onclick="toggleSection(this)">
@@ -1682,11 +1714,85 @@
                 <span class="range-val" id="rng-lh">0.17</span>
               </div>
             </div>
+            <div class="field" style="margin-top: 14px;">
+              <label class="toggle-row">
+                <span class="toggle-label">Keep Original Logo Colors</span>
+                <input type="checkbox" id="tog-logo-original" onchange="build(); queuePreviewReload()">
+                <div class="toggle-track"><div class="toggle-thumb"></div></div>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- OVERLAYS & MASKS -->
+        <div class="section">
+          <div class="section-header" onclick="toggleSection(this)">
+            <div class="section-accent"></div>
+            <span class="section-tag">Overlays &amp; Masks</span>
+            <button class="section-info-btn" onclick="openInfoModal('overlays');event.stopPropagation()" title="About Overlays &amp; Masks">ⓘ</button>
+            <span class="section-chevron">▼</span>
+          </div>
+          <div class="section-body" style="display:none">
+            <!-- Frosted Glass -->
             <div class="field">
-              <label class="field-label">Vertical Distance from Bottom</label>
-              <div class="range-row">
-                <input type="range" id="cfg-logo-bottom" min="0.05" max="0.60" step="0.01" value="0.28" oninput="updateRange(this,'rng-lb'); build(); queuePreviewReload()">
-                <span class="range-val" id="rng-lb">0.28</span>
+              <label class="field-label">Frosted Glass (Bottom)</label>
+              <label class="toggle-row">
+                <span class="toggle-label">Enable</span>
+                <input type="checkbox" id="tog-frosted-glass" onchange="build(); queuePreviewReload()">
+                <div class="toggle-track"><div class="toggle-thumb"></div></div>
+              </label>
+              <div class="range-row" style="margin-top: 10px;">
+                <span class="range-label">Blur Radius</span>
+                <input type="range" id="cfg-frosted-blur" min="0" max="50" step="1" value="12" oninput="updateRange(this,'rng-frosted-blur'); build(); queuePreviewReload()">
+                <span class="range-val" id="rng-frosted-blur">12</span>
+              </div>
+            </div>
+
+            <hr class="section-divider">
+
+            <!-- Bottom Gradient -->
+            <div class="field">
+              <label class="field-label">Bottom Gradient</label>
+              <label class="toggle-row">
+                <span class="toggle-label">Enable</span>
+                <input type="checkbox" id="tog-bottom-gradient" checked onchange="build(); queuePreviewReload()">
+                <div class="toggle-track"><div class="toggle-thumb"></div></div>
+              </label>
+              <div class="select-wrapper" style="margin-top: 10px;">
+                <select id="sel-bottom-gradient-theme" onchange="build(); queuePreviewReload()">
+                  <option value="black">Classic Black</option>
+                  <option value="dominant">Dominant Color</option>
+                </select>
+                <div class="select-arrow">▼</div>
+              </div>
+              <div class="range-row" style="margin-top: 10px;">
+                <span class="range-label">Max Opacity</span>
+                <input type="range" id="cfg-bottom-gradient-opacity" min="0" max="255" step="1" value="225" oninput="updateRange(this,'rng-bottom-opacity'); build(); queuePreviewReload()">
+                <span class="range-val" id="rng-bottom-opacity">225</span>
+              </div>
+            </div>
+
+            <hr class="section-divider">
+
+            <!-- Top Gradient -->
+            <div class="field">
+              <label class="field-label">Top Gradient</label>
+              <label class="toggle-row">
+                <span class="toggle-label">Enable</span>
+                <input type="checkbox" id="tog-top-gradient" checked onchange="build(); queuePreviewReload()">
+                <div class="toggle-track"><div class="toggle-thumb"></div></div>
+              </label>
+              <div class="select-wrapper" style="margin-top: 10px;">
+                <select id="sel-top-gradient-theme" onchange="build(); queuePreviewReload()">
+                  <option value="black">Classic Black</option>
+                  <option value="dominant">Dominant Color</option>
+                </select>
+                <div class="select-arrow">▼</div>
+              </div>
+              <div class="range-row" style="margin-top: 10px;">
+                <span class="range-label">Max Opacity</span>
+                <input type="range" id="cfg-top-gradient-opacity" min="0" max="255" step="1" value="220" oninput="updateRange(this,'rng-top-opacity'); build(); queuePreviewReload()">
+                <span class="range-val" id="rng-top-opacity">220</span>
               </div>
             </div>
           </div>
@@ -2641,20 +2747,79 @@ function buildBaseParams({ usePlaceholders = false } = {}) {
     params.set('tv_weights',    Object.entries(tw).map(([k,v]) => `${k}:${v.toFixed(2)}`).join(','));
   }
 
+
+  // ── Overlays & Masks ───────────────────────────────────────────────────────
+  if (c('tog-frosted-glass')) {
+    params.set('frosted_glass', 'true');
+    params.set('frosted_glass_blur', ni('cfg-frosted-blur'));
+  }
+
+  if (c('tog-bottom-gradient')) {
+    params.set('bottom_gradient', 'true');
+    params.set('bottom_gradient_theme', document.getElementById('sel-bottom-gradient-theme').value);
+    params.set('bottom_gradient_opacity', ni('cfg-bottom-gradient-opacity'));
+  } else {
+    params.set('bottom_gradient', 'false');
+  }
+
+  if (c('tog-top-gradient')) {
+    params.set('top_gradient', 'true');
+    params.set('top_gradient_theme', document.getElementById('sel-top-gradient-theme').value);
+    params.set('top_gradient_opacity', ni('cfg-top-gradient-opacity'));
+  } else {
+    params.set('top_gradient', 'false');
+  }
+
+  // ── Text & Typography ──────────────────────────────────────────────────────
+  params.set('font_family', document.getElementById('sel-font-family').value);
+  params.set('text_shadow', c('tog-text-shadow') ? 'true' : 'false');
+
+
+  // ── Overlays & Masks ───────────────────────────────────────────────────────
+  if (c('tog-frosted-glass')) {
+    params.set('frosted_glass', 'true');
+    params.set('frosted_glass_blur', ni('cfg-frosted-blur'));
+  } else {
+    params.set('frosted_glass', 'false');
+  }
+
+  if (c('tog-bottom-gradient')) {
+    params.set('bottom_gradient', 'true');
+    params.set('bottom_gradient_theme', document.getElementById('sel-bottom-gradient-theme').value);
+    params.set('bottom_gradient_opacity', ni('cfg-bottom-gradient-opacity'));
+  } else {
+    params.set('bottom_gradient', 'false');
+  }
+
+  if (c('tog-top-gradient')) {
+    params.set('top_gradient', 'true');
+    params.set('top_gradient_theme', document.getElementById('sel-top-gradient-theme').value);
+    params.set('top_gradient_opacity', ni('cfg-top-gradient-opacity'));
+  } else {
+    params.set('top_gradient', 'false');
+  }
+
+  // ── Text & Typography ──────────────────────────────────────────────────────
+  params.set('font_family', document.getElementById('sel-font-family').value);
+  params.set('text_shadow', c('tog-text-shadow') ? 'true' : 'false');
+
   // ── Logo ───────────────────────────────────────────────────────────────────
   params.set('textless',          c('tog-textless') ? 'true' : 'false');
   params.set('logo_language',     logoLanguage);
   params.set('logo_max_w_ratio',  n('cfg-logo-w').toFixed(2));
   params.set('logo_max_h_ratio',  n('cfg-logo-h').toFixed(2));
-  params.set('logo_bottom_ratio', n('cfg-logo-bottom').toFixed(2));
+  params.set('logo_original_colors', c('tog-logo-original') ? 'true' : 'false');
 
   // ── Info Sash ──────────────────────────────────────────────────────────────
   params.set('show_award_sash', showSash ? 'true' : 'false');
   if (showSash) {
-    const isBadge = c('tog-sash-badge');
-    params.set('sash_badge', isBadge ? 'true' : 'false');
-    if (isBadge) {
-      // Muted is not compatible with badge style — omit it from URL
+    const style = document.getElementById('sel-sash-style').value;
+    params.set('sash_style', style);
+    params.set('sash_color_logic', document.getElementById('sel-sash-color-logic').value);
+    params.set('sash_shadow', c('tog-sash-shadow') ? 'true' : 'false');
+    params.set('sash_scale', n('cfg-sash-scale').toFixed(2));
+
+    if (style === 'badge' || style === 'pill') {
       params.set('sash_badge_x', n('cfg-sash-badge-x').toFixed(2));
       params.set('sash_badge_y', n('cfg-sash-badge-y').toFixed(2));
     } else {
@@ -2781,11 +2946,12 @@ async function loadPreview() {
   }
 }
 
-function updateSashBadgeFields() {
-  const isBadge = c('tog-sash-badge');
-  document.getElementById('sash-muted-row').style.display     = isBadge ? 'none' : '';
-  document.getElementById('sash-badge-offsets').style.display = isBadge ? '' : 'none';
-  if (isBadge) initCustomMobileSliders();
+function updateSashStyleFields() {
+  const style = document.getElementById('sel-sash-style').value;
+  const isBadgeOrPill = style === 'badge' || style === 'pill';
+  document.getElementById('sash-muted-row').style.display     = isBadgeOrPill ? 'none' : '';
+  document.getElementById('sash-badge-offsets').style.display = isBadgeOrPill ? '' : 'none';
+  if (isBadgeOrPill) initCustomMobileSliders();
 }
 
 function updateRatingFields() {
@@ -2924,10 +3090,17 @@ function importUrl(urlStr) {
   // ── Sash ────────────────────────────────────────────────────────────────
   if (p.has('show_award_sash')) _setEl('tog-award-sash',    p.get('show_award_sash'));
   if (p.has('muted'))           _setEl('tog-muted',         p.get('muted'));
-  if (p.has('sash_badge'))      _setEl('tog-sash-badge',    p.get('sash_badge'));
+  if (p.has('sash_style'))      { _setEl('sel-sash-style', p.get('sash_style')); }
+  if (p.has('sash_color_logic')) _setEl('sel-sash-color-logic', p.get('sash_color_logic'));
+  if (p.has('sash_shadow'))     _setEl('tog-sash-shadow', p.get('sash_shadow'));
+  if (p.has('sash_scale'))      _setEl('cfg-sash-scale', p.get('sash_scale'));
   if (p.has('sash_badge_x'))    _setEl('cfg-sash-badge-x',  p.get('sash_badge_x'));
   if (p.has('sash_badge_y'))    _setEl('cfg-sash-badge-y',  p.get('sash_badge_y'));
-  updateSashBadgeFields();
+
+  if (p.has('sash_badge') && p.get('sash_badge') === 'true') {
+    _setEl('sel-sash-style', 'badge');
+  }
+  updateSashStyleFields();
 
   if (p.has('sash_priority')) {
     const tokens = p.get('sash_priority').split(',').map(s => s.trim()).filter(Boolean);
@@ -2962,7 +3135,21 @@ function importUrl(urlStr) {
   // ── Logo ────────────────────────────────────────────────────────────────
   if (p.has('logo_max_w_ratio'))   _setEl('cfg-logo-w',      p.get('logo_max_w_ratio'));
   if (p.has('logo_max_h_ratio'))   _setEl('cfg-logo-h',      p.get('logo_max_h_ratio'));
-  if (p.has('logo_bottom_ratio'))  _setEl('cfg-logo-bottom', p.get('logo_bottom_ratio'));
+  if (p.has('logo_original_colors')) _setEl('tog-logo-original', p.get('logo_original_colors'));
+
+  if (p.has('frosted_glass')) _setEl('tog-frosted-glass', p.get('frosted_glass'));
+  if (p.has('frosted_glass_blur')) _setEl('cfg-frosted-blur', p.get('frosted_glass_blur'));
+
+  if (p.has('bottom_gradient')) _setEl('tog-bottom-gradient', p.get('bottom_gradient'));
+  if (p.has('bottom_gradient_theme')) _setEl('sel-bottom-gradient-theme', p.get('bottom_gradient_theme'));
+  if (p.has('bottom_gradient_opacity')) _setEl('cfg-bottom-gradient-opacity', p.get('bottom_gradient_opacity'));
+
+  if (p.has('top_gradient')) _setEl('tog-top-gradient', p.get('top_gradient'));
+  if (p.has('top_gradient_theme')) _setEl('sel-top-gradient-theme', p.get('top_gradient_theme'));
+  if (p.has('top_gradient_opacity')) _setEl('cfg-top-gradient-opacity', p.get('top_gradient_opacity'));
+
+  if (p.has('font_family')) _setEl('sel-font-family', p.get('font_family'));
+  if (p.has('text_shadow')) _setEl('tog-text-shadow', p.get('text_shadow'));
   if (p.has('textless'))           _setEl('tog-textless',    p.get('textless'));
 
   // ── Quality badges ──────────────────────────────────────────────────────

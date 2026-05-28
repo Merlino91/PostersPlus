@@ -209,9 +209,9 @@ NOTABLE_CAST: dict[str, str] = {
 _STRUCTURAL_CHECKS = ["short_film", "mini_series", "binge_ready"]
 
 _STRUCTURAL_LABELS: dict[str, str] = {
-    "short_film":  "Short Film",
-    "mini_series": "Mini Series",
-    "binge_ready": "Binge Ready",
+    "short_film":  "Cortometraggio",
+    "mini_series": "Mini Serie",
+    "binge_ready": "Da Recuperare",
 }
 
 # MDblist keyword name → sash display label.
@@ -536,24 +536,24 @@ def _evaluate_slot(slot: str, meta: DiscoveryMeta) -> str | None:
         return meta.matched_cast[0] if meta.matched_cast else None
 
     if slot == "trending":
-        return f"#{meta.trending_rank} Today" if meta.trending_rank else None
+        return f"#{meta.trending_rank} Oggi" if meta.trending_rank else None
 
     if slot in ("new_release", "digital_release"):
         # Merged: fires on release-date recency OR r/movieleaks confirmation.
         # "digital_release" is kept as a legacy alias so old sash_priority params
         # still work — both slots check the same combined condition.
         if meta.is_new_release or meta.is_digital_release:
-            return "Newly Streaming"
+            return "Nuova Uscita"
         return None
 
     if slot == "metacritic":
-        return "Must-See" if meta.is_metacritic_must_see else None
+        return "Da Vedere" if meta.is_metacritic_must_see else None
 
     if slot == "cult":
-        return "Cult Classic" if meta.is_cult else None
+        return "Classico Cult" if meta.is_cult else None
 
     if slot == "true_story":
-        return "True Story" if meta.is_true_story else None
+        return "Storia Vera" if meta.is_true_story else None
 
     if slot == "structural":
         for key in _STRUCTURAL_CHECKS:

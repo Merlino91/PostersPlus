@@ -332,9 +332,31 @@ class RequestConfig:
     muted: bool = False
     textless: bool = False
     score_color_mode: int = 2
-    sash_badge: bool = False   # True → badge style instead of diagonal sash
+
+    # Discovery Sash params
+    sash_style: str = "ribbon" # "ribbon", "badge", "pill"
+    sash_color_logic: str = "default" # "default", "dominant"
+    sash_shadow: bool = False
+    sash_scale: float = 1.0
     sash_badge_x: float = 0.62   # badge left-edge as fraction of poster width (flush right with the corner)
     sash_badge_y: float = 0.04   # badge top-edge  as fraction of poster height
+
+    # Typography
+    font_family: str = "inter" # "system", "inter", "ubuntu"
+    text_shadow: bool = True
+
+    # Logo
+    logo_original_colors: bool = False
+
+    # Overlays
+    frosted_glass: bool = False
+    frosted_glass_blur: int = 12
+    bottom_gradient: bool = True
+    bottom_gradient_theme: str = "black"
+    bottom_gradient_opacity: int = 225
+    top_gradient: bool = True
+    top_gradient_theme: str = "black"
+    top_gradient_opacity: int = 220
 
 
 def _parse_bool(val: str | None, default: bool) -> bool:
@@ -493,6 +515,22 @@ def _text_center(
     return x, y
 
 
+def _get_dominant_color(image: Image.Image) -> tuple[int, int, int]:
+    small_img = image.copy()
+    small_img.thumbnail((50, 50))
+    small_img = small_img.convert("RGB")
+    colors = small_img.getcolors(2500)
+    if not colors:
+        return (100, 100, 100)
+
+    colors.sort(key=lambda t: t[0], reverse=True)
+    for count, color in colors:
+        luminanza = 0.299 * color[0] + 0.587 * color[1] + 0.114 * color[2]
+        if 40 < luminanza < 215:
+            return color
+
+    return colors[0][1]
+
 # ---------------------------------------------------------------------------
 # Poster composition
 # ---------------------------------------------------------------------------
@@ -581,31 +619,61 @@ def build_poster(
     width, height = image.size
     draw = ImageDraw.Draw(image)
 
-    # --- TOP GRADIENT (vectorised) ---
-    top_height = int(height * 0.4)
-    top_max_alpha = 220
-    t_top = np.linspace(0, 1, top_height, dtype=np.float32)
-    eased_top = ((1 - t_top) * top_max_alpha).astype(np.uint8)
-    top_array = np.broadcast_to(eased_top[:, np.newaxis], (top_height, width)).copy()
-    top_overlay = Image.fromarray(top_array, mode="L")
-    top_tinted = Image.new("RGBA", (width, top_height), (0, 0, 0, 0))
-    top_tinted.putalpha(top_overlay)
-    image.paste(top_tinted, (0, 0), mask=top_tinted)
+    dom_color = _get_dominant_color(image) if (cfg.bottom_gradient_theme == 'dominant' or cfg.top_gradient_theme == 'dominant' or (cfg.show_award_sash and cfg.sash_color_logic == 'dominant')) else None
+
+    # --- FROSTED GLASS (vectorised) ---
+    if cfg.frosted_glass:
+        bottom_height = int(height * 0.5)
+        bottom_start = height - bottom_height
+
+        bottom_crop = image.crop((0, bottom_start, width, height))
+        blurred_bottom = bottom_crop.filter(ImageFilter.GaussianBlur(radius=cfg.frosted_glass_blur))
+
+        t_blur = np.linspace(0, 1, bottom_height, dtype=np.float32)
+        eased_blur = ((t_blur ** 1.5) * 255).astype(np.uint8)
+        blur_array = np.broadcast_to(eased_blur[:, np.newaxis], (bottom_height, width)).copy()
+        blur_mask = Image.fromarray(blur_array, mode="L")
+
+        image.paste(blurred_bottom, (0, bottom_start), mask=blur_mask)
 
     # --- BOTTOM GRADIENT (vectorised) ---
-    # Minimalist mode sits closer to the bottom edge with a smaller label, so a
-    # lighter fade is enough to keep contrast without over-darkening the poster.
-    bottom_height = int(height * 0.5)
-    bottom_start = height - bottom_height
-    bottom_max_alpha = 225 if cfg.rating_display_mode == 3 else 255
-    bottom_curve = 1.2
-    t_bot = np.linspace(0, 1, bottom_height, dtype=np.float32)
-    eased_bot = ((1 - (1 - t_bot) ** bottom_curve) * bottom_max_alpha).astype(np.uint8)
-    bottom_array = np.broadcast_to(eased_bot[:, np.newaxis], (bottom_height, width)).copy()
-    bottom_overlay = Image.fromarray(bottom_array, mode="L")
-    bottom_tinted = Image.new("RGBA", (width, bottom_height), (0, 0, 0, 0))
-    bottom_tinted.putalpha(bottom_overlay)
-    image.paste(bottom_tinted, (0, bottom_start), mask=bottom_tinted)
+    if cfg.bottom_gradient:
+        bottom_height = int(height * 0.5)
+        bottom_start = height - bottom_height
+
+        bottom_curve = 1.2
+        t_bot = np.linspace(0, 1, bottom_height, dtype=np.float32)
+        eased_bot = ((1 - (1 - t_bot) ** bottom_curve) * cfg.bottom_gradient_opacity).astype(np.uint8)
+        bottom_array = np.broadcast_to(eased_bot[:, np.newaxis], (bottom_height, width)).copy()
+        bottom_overlay = Image.fromarray(bottom_array, mode="L")
+
+        if cfg.bottom_gradient_theme == 'dominant' and dom_color:
+            bottom_color_img = Image.new("RGBA", (width, bottom_height), (*dom_color, 255))
+            bottom_tinted = Image.new("RGBA", (width, bottom_height), (0, 0, 0, 0))
+            bottom_tinted.paste(bottom_color_img, (0, 0), mask=bottom_overlay)
+        else:
+            bottom_tinted = Image.new("RGBA", (width, bottom_height), (0, 0, 0, 0))
+            bottom_tinted.putalpha(bottom_overlay)
+
+        image.paste(bottom_tinted, (0, bottom_start), mask=bottom_tinted)
+
+    # --- TOP GRADIENT (vectorised) ---
+    if cfg.top_gradient:
+        top_height = int(height * 0.4)
+        t_top = np.linspace(0, 1, top_height, dtype=np.float32)
+        eased_top = ((1 - t_top) * cfg.top_gradient_opacity).astype(np.uint8)
+        top_array = np.broadcast_to(eased_top[:, np.newaxis], (top_height, width)).copy()
+        top_overlay = Image.fromarray(top_array, mode="L")
+
+        if cfg.top_gradient_theme == 'dominant' and dom_color:
+            top_color_img = Image.new("RGBA", (width, top_height), (*dom_color, 255))
+            top_tinted = Image.new("RGBA", (width, top_height), (0, 0, 0, 0))
+            top_tinted.paste(top_color_img, (0, 0), mask=top_overlay)
+        else:
+            top_tinted = Image.new("RGBA", (width, top_height), (0, 0, 0, 0))
+            top_tinted.putalpha(top_overlay)
+
+        image.paste(top_tinted, (0, 0), mask=top_tinted)
 
     # --- Badge / quality overlay ---
     mode   = cfg.badge_display_mode
@@ -688,13 +756,17 @@ def build_poster(
                 break
             font_size -= 2  # type: ignore
             try:
-                font = ImageFont.truetype(os.path.join(_FONTS_DIR, "Inter-Bold.ttf"), font_size)
+                if cfg.font_family == "system":
+                    font = ImageFont.load_default()
+                else:
+                    font = ImageFont.truetype(os.path.join(_FONTS_DIR, font_path), font_size)
             except IOError:
                 break
 
         tx, ty = _text_center(draw, fallback_title, font, width / 2, title_cy)  # type: ignore
         shadow_offset = max(2, int(font_size * 0.04))  # type: ignore
-        draw.text((tx + shadow_offset, ty + shadow_offset), fallback_title, font=font, fill=(0, 0, 0, 180))
+        if cfg.text_shadow:
+            draw.text((tx + shadow_offset, ty + shadow_offset), fallback_title, font=font, fill=(0, 0, 0, 180))
         draw.text((tx, ty), fallback_title, font=font, fill=(255, 255, 255, 255))
 
         if no_poster:
@@ -718,12 +790,26 @@ def build_poster(
             label = f"{genre} · {release_year}" if release_year else genre
             rating_cy = height * cfg.accent_bar_y_offset
 
+            font_path = "Inter-Bold.ttf"
+            if cfg.font_family == "ubuntu":
+                font_path = "Ubuntu-Bold.ttf"
+
             try:
-                font_meta = ImageFont.truetype(os.path.join(_FONTS_DIR, "Inter-Bold.ttf"), font_size)
+                if cfg.font_family == "system":
+                    font_meta = ImageFont.load_default()
+                else:
+                    font_meta = ImageFont.truetype(os.path.join(_FONTS_DIR, font_path), font_size)
             except IOError:
                 font_meta = ImageFont.load_default()
 
             tx, ty = _text_center(draw, label, font_meta, width / 2, rating_cy)  # type: ignore
+            if cfg.text_shadow:
+                draw.text(
+                    (tx + 2, ty - int(font_size * 0.10) + 2),
+                    label,
+                    font=font_meta,
+                    fill=(0, 0, 0, 180),
+                )
             draw.text(
                 (tx, ty - int(font_size * 0.10)),
                 label,
@@ -743,12 +829,26 @@ def build_poster(
             label = f"{genre} ★ {score}"
             rating_cy = height * cfg.numeric_score_y_offset
 
+            font_path = "Inter-Bold.ttf"
+            if cfg.font_family == "ubuntu":
+                font_path = "Ubuntu-Bold.ttf"
+
             try:
-                font_meta = ImageFont.truetype(os.path.join(_FONTS_DIR, "Inter-Bold.ttf"), font_size)
+                if cfg.font_family == "system":
+                    font_meta = ImageFont.load_default()
+                else:
+                    font_meta = ImageFont.truetype(os.path.join(_FONTS_DIR, font_path), font_size)
             except IOError:
                 font_meta = ImageFont.load_default()
 
             tx, ty = _text_center(draw, label, font_meta, width / 2, rating_cy)  # type: ignore
+            if cfg.text_shadow:
+                draw.text(
+                    (tx + 2, ty - int(font_size * 0.10) + 2),
+                    label,
+                    font=font_meta,
+                    fill=(0, 0, 0, 180),
+                )
             draw.text(
                 (tx, ty - int(font_size * 0.10)),
                 label,
@@ -759,8 +859,15 @@ def build_poster(
         elif cfg.rating_display_mode == 3:
             font_size = int(width * cfg.minimalist_mode_font_size_ratio)
 
+            font_path = "Inter-Bold.ttf"
+            if cfg.font_family == "ubuntu":
+                font_path = "Ubuntu-Bold.ttf"
+
             try:
-                font_meta = ImageFont.truetype(os.path.join(_FONTS_DIR, "Ubuntu-Bold.ttf"), font_size)
+                if cfg.font_family == "system":
+                    font_meta = ImageFont.load_default()
+                else:
+                    font_meta = ImageFont.truetype(os.path.join(_FONTS_DIR, font_path), font_size)
             except IOError:
                 font_meta = ImageFont.load_default()
 
@@ -787,10 +894,14 @@ def build_poster(
             pip_cy = round(y + font_size * 0.60)
 
             genre_x = pip_x - pip_gap - genre_w
+            if cfg.text_shadow:
+                draw.text((genre_x + 2, y + 2), genre_text, font=font_meta, fill=(0, 0, 0, 180))
             draw.text((genre_x, y), genre_text, font=font_meta, fill=(235, 235, 235, 255))
 
             if year_text:
                 year_x = pip_x + pip_w + pip_gap
+                if cfg.text_shadow:
+                    draw.text((year_x + 2, y + 2), year_text, font=font_meta, fill=(0, 0, 0, 180))
                 draw.text((year_x, y), year_text, font=font_meta, fill=(235, 235, 235, 255))
 
             if score not in ("N/A", None):
