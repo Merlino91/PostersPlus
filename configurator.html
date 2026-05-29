@@ -2616,6 +2616,17 @@ function buildBaseParams({ usePlaceholders = false } = {}) {
 
   // ── Rating / Genre Label ───────────────────────────────────────────────────
   params.set('rating_display_mode', ratingMode);
+
+  params.set('gradient_top_enable', c('tog-grad-top') ? 'true' : 'false');
+  params.set('gradient_bottom_enable', c('tog-grad-bot') ? 'true' : 'false');
+  params.set('dominant_color_logic', c('tog-dom-color') ? 'true' : 'false');
+  params.set('use_original_logo_color', c('tog-logo-color') ? 'true' : 'false');
+  params.set('text_drop_shadow', c('tog-text-shadow') ? 'true' : 'false');
+  params.set('frosted_glass_intensity', v('cfg-glass-int'));
+  params.set('text_font_family', v('cfg-font-family'));
+  params.set('sash_style', v('cfg-sash-style'));
+  params.set('minimal_pill_scale', n('cfg-pill-scale').toFixed(2));
+
   if (ratingMode !== 0) {
     // Colour palette: only exposed in the UI for modes 1 and 3
     if (ratingMode === 1 || ratingMode === 3) {
@@ -2652,7 +2663,7 @@ function buildBaseParams({ usePlaceholders = false } = {}) {
   // ── Info Sash ──────────────────────────────────────────────────────────────
   params.set('show_award_sash', showSash ? 'true' : 'false');
   if (showSash) {
-    const isBadge = c('tog-sash-badge');
+    const isBadge = (document.getElementById('cfg-sash-style').value !== 'ribbon');
     params.set('sash_badge', isBadge ? 'true' : 'false');
     if (isBadge) {
       // Muted is not compatible with badge style — omit it from URL
@@ -2782,8 +2793,24 @@ async function loadPreview() {
   }
 }
 
+
+function updateSashStyleFields() {
+  const style = document.getElementById('cfg-sash-style').value;
+  const showBadgePos = (style === 'corner_badge' || style === 'minimal_pill');
+  const posFields = document.getElementById('wrap-sash-badge-fields');
+  if(posFields) posFields.style.display = showBadgePos ? 'block' : 'none';
+
+  const showScale = (style === 'minimal_pill');
+  const scaleField = document.getElementById('wrap-pill-scale');
+  if(scaleField) scaleField.style.display = showScale ? 'block' : 'none';
+}
+
+
 function updateSashBadgeFields() {
-  const isBadge = c('tog-sash-badge');
+  const isBadge = (document.getElementById('cfg-sash-style').value !== 'ribbon');
+  _setEl('wrap-sash-badge-fields', isBadge ? 'block' : 'none', 'display');
+
+  const isBadge = (document.getElementById('cfg-sash-style').value !== 'ribbon');
   document.getElementById('sash-muted-row').style.display     = isBadge ? 'none' : '';
   document.getElementById('sash-badge-offsets').style.display = isBadge ? '' : 'none';
   if (isBadge) initCustomMobileSliders();
@@ -2947,6 +2974,18 @@ function importUrl(urlStr) {
 
   // ── Rating display ──────────────────────────────────────────────────────
   if (p.has('rating_display_mode'))            _setEl('cfg-rating-mode',  p.get('rating_display_mode'));
+
+  if (p.has('gradient_top_enable')) _setEl('tog-grad-top', p.get('gradient_top_enable'));
+  if (p.has('gradient_bottom_enable')) _setEl('tog-grad-bot', p.get('gradient_bottom_enable'));
+  if (p.has('dominant_color_logic')) _setEl('tog-dom-color', p.get('dominant_color_logic'));
+  if (p.has('use_original_logo_color')) _setEl('tog-logo-color', p.get('use_original_logo_color'));
+  if (p.has('text_drop_shadow')) _setEl('tog-text-shadow', p.get('text_drop_shadow'));
+  if (p.has('frosted_glass_intensity')) _setEl('cfg-glass-int', p.get('frosted_glass_intensity'));
+  if (p.has('text_font_family')) _setEl('cfg-font-family', p.get('text_font_family'));
+  if (p.has('sash_style')) _setEl('cfg-sash-style', p.get('sash_style'));
+  if (p.has('minimal_pill_scale')) _setEl('cfg-pill-scale', p.get('minimal_pill_scale'));
+  updateSashStyleFields();
+
   if (p.has('accent_bar_font_size_ratio'))     _setEl('cfg-font-mode1',   p.get('accent_bar_font_size_ratio'));
   if (p.has('numeric_score_font_size_ratio'))  _setEl('cfg-font-mode2',   p.get('numeric_score_font_size_ratio'));
   if (p.has('accent_bar_y_offset'))            _setEl('cfg-y-mode1',      p.get('accent_bar_y_offset'));
