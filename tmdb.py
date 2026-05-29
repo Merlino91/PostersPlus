@@ -360,8 +360,6 @@ async def fetch_logo(
     if bbox:
         logo = logo.crop(bbox)
 
-    logo = ensure_light_logo(logo)
-
     buf = io.BytesIO()
     logo.save(buf, format="PNG")
     set_cached_tmdb_logo(logo_cache_key, buf.getvalue())
@@ -434,13 +432,27 @@ def composite_logo(
     max_w = int(width  * max_w_ratio)
     max_h = int(height * max_h_ratio)
 
-    logo.thumbnail((max_w, max_h), Image.LANCZOS)
+    # Visual weight scaling instead of strict width/height limits
+    # Target area is max_w * max_h
+    target_area = max_w * max_h
+    logo_area = logo.width * logo.height
+    scale_factor = (target_area / logo_area) ** 0.5
+
+    new_w = int(logo.width * scale_factor)
+    new_h = int(logo.height * scale_factor)
+
+    # Cap dimensions just in case they get absurdly large
+    new_w = min(new_w, int(width * 0.9))
+    new_h = min(new_h, int(height * 0.3))
+
+    logo.thumbnail((new_w, new_h), Image.LANCZOS)
 
     alpha_bbox = logo.getchannel("A").getbbox()
     if alpha_bbox:
         logo = logo.crop(alpha_bbox)
 
     logo_x = round((width - logo.width) / 2)
-    logo_y = height - int(height * bottom_ratio) - logo.height
+    # Fixed central horizontal line
+    logo_y = int(height * 0.83) - logo.height // 2
 
     image.paste(logo, (logo_x, logo_y), logo)
