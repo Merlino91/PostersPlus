@@ -215,7 +215,7 @@ from quality import (
     render_badges_left,
 )
 from ratings import calculate_weighted_score, draw_score_bar, fetch_rating, draw_score_bar_vertical
-from tmdb import composite_logo, fetch_logo, fetch_poster_metadata, fetch_poster_image, fetch_backdrop_image, fetch_trending_rank
+from tmdb import composite_logo, fetch_logo, fetch_poster_metadata, fetch_poster_image, fetch_backdrop_image, fetch_trending_rank, ensure_light_logo
 
 # ---------------------------------------------------------------------------
 # Persistent HTTP client
@@ -317,18 +317,36 @@ class RequestConfig:
     logo_max_w_ratio:  float = field(default_factory=lambda: _cfg.LOGO_MAX_W_RATIO)
     logo_max_h_ratio:  float = field(default_factory=lambda: _cfg.LOGO_MAX_H_RATIO)
     logo_bottom_ratio: float = field(default_factory=lambda: _cfg.LOGO_BOTTOM_RATIO)
+    badge_height:      int   = field(default_factory=lambda: _cfg.BADGE_HEIGHT)
+    badge_gap:         int   = field(default_factory=lambda: _cfg.BADGE_GAP)
+    badge_anchor_x:    float = field(default_factory=lambda: _cfg.BADGE_ANCHOR_X_RATIO)
+    badge_anchor_y:    float = field(default_factory=lambda: _cfg.BADGE_ANCHOR_Y_RATIO)
+    logo_language:     str   = field(default_factory=lambda: _cfg.DEFAULT_LOGO_LANGUAGE)
+    textless:          bool  = False
+    sash_priority:     list[str] | None = None
+    sash_badge:        bool  = False
+    sash_style:        str   = "ribbon"  # ribbon, badge, pill
+    sash_badge_x:      float = 0.62
+    sash_badge_y:      float = 0.04
+    sash_pill_scale:   float = field(default_factory=lambda: _cfg.SASH_PILL_SCALE)
+    sash_pill_dominant_color: bool = field(default_factory=lambda: _cfg.SASH_PILL_DOMINANT_COLOR)
+    sash_shadow:       bool  = field(default_factory=lambda: _cfg.SASH_SHADOW)
+    muted:             bool  = False
 
-    badge_height:    int   = field(default_factory=lambda: _cfg.BADGE_HEIGHT)
-    badge_gap:       int   = field(default_factory=lambda: _cfg.BADGE_GAP)
-    badge_anchor_x:  float = field(default_factory=lambda: _cfg.BADGE_ANCHOR_X_RATIO)
-    badge_anchor_y:  float = field(default_factory=lambda: _cfg.BADGE_ANCHOR_Y_RATIO)
+    # Overlays
+    bottom_frosted_glass_intensity: int = field(default_factory=lambda: _cfg.BOTTOM_FROSTED_GLASS_INTENSITY)
+    top_gradient_enabled: bool = field(default_factory=lambda: _cfg.TOP_GRADIENT_ENABLED)
+    bottom_gradient_enabled: bool = field(default_factory=lambda: _cfg.BOTTOM_GRADIENT_ENABLED)
+    gradient_color_mode: str = field(default_factory=lambda: _cfg.GRADIENT_COLOR_MODE)
+    top_gradient_intensity: int = field(default_factory=lambda: _cfg.TOP_GRADIENT_INTENSITY)
+    bottom_gradient_intensity: int = field(default_factory=lambda: _cfg.BOTTOM_GRADIENT_INTENSITY)
 
-    movie_weights: dict | None = None
-    tv_weights:    dict | None = None
+    # Typography
+    text_drop_shadow: bool = field(default_factory=lambda: _cfg.TEXT_DROP_SHADOW)
+    font_family: str = field(default_factory=lambda: _cfg.FONT_FAMILY)
 
-    logo_language: str = field(default_factory=lambda: _cfg.DEFAULT_LOGO_LANGUAGE)
-    sash_priority: list[str] = field(default_factory=lambda: list(_cfg.SASH_PRIORITY))
-    muted: bool = False
+    # Logo
+    logo_original_colors: bool = field(default_factory=lambda: _cfg.LOGO_ORIGINAL_COLORS)
     textless: bool = False
     score_color_mode: int = 2
     sash_badge: bool = False   # True → badge style instead of diagonal sash
@@ -456,6 +474,19 @@ def build_request_config(params: dict) -> RequestConfig:
 
     cfg.logo_language = (params.get("logo_language", cfg.logo_language).strip().lower())
     cfg.sash_priority = _parse_sash_priority(params.get("sash_priority"))
+    cfg.sash_style = params.get("sash_style", cfg.sash_style)
+    cfg.sash_pill_scale = _f("sash_pill_scale", cfg.sash_pill_scale, 0.1, 5.0)
+    cfg.sash_pill_dominant_color = _b("sash_pill_dominant_color", cfg.sash_pill_dominant_color)
+    cfg.sash_shadow = _b("sash_shadow", cfg.sash_shadow)
+    cfg.gradient_color_mode = params.get("gradient_color_mode", cfg.gradient_color_mode)
+    cfg.top_gradient_enabled = _b("top_gradient_enabled", cfg.top_gradient_enabled)
+    cfg.top_gradient_intensity = _i("top_gradient_intensity", cfg.top_gradient_intensity, 0, 255)
+    cfg.bottom_gradient_enabled = _b("bottom_gradient_enabled", cfg.bottom_gradient_enabled)
+    cfg.bottom_gradient_intensity = _i("bottom_gradient_intensity", cfg.bottom_gradient_intensity, 0, 255)
+    cfg.bottom_frosted_glass_intensity = _i("bottom_frosted_glass_intensity", cfg.bottom_frosted_glass_intensity, 0, 100)
+    cfg.font_family = params.get("font_family", cfg.font_family)
+    cfg.text_drop_shadow = _b("text_drop_shadow", cfg.text_drop_shadow)
+    cfg.logo_original_colors = _b("logo_original_colors", cfg.logo_original_colors)
 
     return cfg
 
@@ -499,14 +530,22 @@ def _get_dominant_color(image: Image.Image) -> tuple[int, int, int]:
     colors = small_img.getcolors(2500)
     if not colors:
         return (100, 100, 100)
-    
+
     colors.sort(key=lambda t: t[0], reverse=True)
     for count, color in colors:
         luminanza = 0.299 * color[0] + 0.587 * color[1] + 0.114 * color[2]
         if 40 < luminanza < 215:
             return color
-            
+
     return colors[0][1]
+
+def _get_text_color(bg_color: tuple[int, int, int]) -> tuple[int, int, int]:
+    r, g, b = bg_color
+    luminance = (0.299 * r + 0.587 * g + 0.114 * b)
+    if luminance > 128:
+        return (0, 0, 0)
+    else:
+        return (255, 255, 255)
 # ---------------------------------------------------------------------------
 # Poster composition
 # ---------------------------------------------------------------------------
@@ -595,50 +634,72 @@ def build_poster(
     width, height = image.size
     draw = ImageDraw.Draw(image)
 
-    # --- TOP GRADIENT (vectorised) ---
-    top_height = int(height * 0.4)
-    top_max_alpha = 220
-    t_top = np.linspace(0, 1, top_height, dtype=np.float32)
-    eased_top = ((1 - t_top) * top_max_alpha).astype(np.uint8)
-    top_array = np.broadcast_to(eased_top[:, np.newaxis], (top_height, width)).copy()
-    top_overlay = Image.fromarray(top_array, mode="L")
-    top_tinted = Image.new("RGBA", (width, top_height), (0, 0, 0, 0))
-    top_tinted.putalpha(top_overlay)
-    image.paste(top_tinted, (0, 0), mask=top_tinted)
 
-# --- BOTTOM GRADIENT (vectorised) ---
+    dom_color = _get_dominant_color(image)
+    if cfg.sash_pill_dominant_color or cfg.gradient_color_mode == "dominant":
+        text_color = _get_text_color(dom_color)
+    else:
+        text_color = (255, 255, 255)
+
+    # --- TOP GRADIENT (vectorised) ---
+    if cfg.top_gradient_enabled:
+        top_height = int(height * 0.4)
+        top_max_alpha = cfg.top_gradient_intensity
+        t_top = np.linspace(0, 1, top_height, dtype=np.float32)
+        eased_top = ((1 - t_top) * top_max_alpha).astype(np.uint8)
+        top_array = np.broadcast_to(eased_top[:, np.newaxis], (top_height, width)).copy()
+        top_overlay = Image.fromarray(top_array, mode="L")
+
+        if cfg.gradient_color_mode == "dominant":
+            top_tinted = Image.new("RGBA", (width, top_height), dom_color + (0,))
+        else:
+            top_tinted = Image.new("RGBA", (width, top_height), (0, 0, 0, 0))
+
+        top_tinted.putalpha(top_overlay)
+        image.paste(top_tinted, (0, 0), mask=top_tinted)
+
+    # --- BOTTOM GRADIENT / FROSTED GLASS (vectorised) ---
     bottom_height = int(height * 0.5)
     bottom_start = height - bottom_height
-    
+
     if cfg.rating_display_mode == 4:
         # Stile Minimal ITA: Frosted Glass
         bottom_crop = image.crop((0, bottom_start, width, height))
-        blurred_bottom = bottom_crop.filter(ImageFilter.GaussianBlur(radius=12))
-        
+        blurred_bottom = bottom_crop.filter(ImageFilter.GaussianBlur(radius=cfg.bottom_frosted_glass_intensity))
+
         t_blur = np.linspace(0, 1, bottom_height, dtype=np.float32)
-        eased_blur = ((t_blur ** 1.5) * 255).astype(np.uint8) 
+        eased_blur = ((t_blur ** 1.5) * 255).astype(np.uint8)
         blur_array = np.broadcast_to(eased_blur[:, np.newaxis], (bottom_height, width)).copy()
         blur_mask = Image.fromarray(blur_array, mode="L")
-        
+
         image.paste(blurred_bottom, (0, bottom_start), mask=blur_mask)
-        bottom_max_alpha = 230
+        bottom_max_alpha = cfg.bottom_gradient_intensity if cfg.bottom_gradient_enabled else 0
         bottom_curve = 1.2
     else:
-        bottom_max_alpha = 225 if cfg.rating_display_mode == 3 else 255
+        if cfg.bottom_gradient_enabled:
+            bottom_max_alpha = cfg.bottom_gradient_intensity
+        else:
+            bottom_max_alpha = 0
         bottom_curve = 1.2
 
-    t_bot = np.linspace(0, 1, bottom_height, dtype=np.float32)
-    eased_bot = ((1 - (1 - t_bot) ** bottom_curve) * bottom_max_alpha).astype(np.uint8)
-    bottom_array = np.broadcast_to(eased_bot[:, np.newaxis], (bottom_height, width)).copy()
-    bottom_overlay = Image.fromarray(bottom_array, mode="L")
-    bottom_tinted = Image.new("RGBA", (width, bottom_height), (0, 0, 0, 0))
-    bottom_tinted.putalpha(bottom_overlay)
-    image.paste(bottom_tinted, (0, bottom_start), mask=bottom_tinted)
+    if bottom_max_alpha > 0:
+        t_bot = np.linspace(0, 1, bottom_height, dtype=np.float32)
+        eased_bot = ((1 - (1 - t_bot) ** bottom_curve) * bottom_max_alpha).astype(np.uint8)
+        bottom_array = np.broadcast_to(eased_bot[:, np.newaxis], (bottom_height, width)).copy()
+        bottom_overlay = Image.fromarray(bottom_array, mode="L")
+
+        if cfg.gradient_color_mode == "dominant":
+            bottom_tinted = Image.new("RGBA", (width, bottom_height), dom_color + (0,))
+        else:
+            bottom_tinted = Image.new("RGBA", (width, bottom_height), (0, 0, 0, 0))
+
+        bottom_tinted.putalpha(bottom_overlay)
+        image.paste(bottom_tinted, (0, bottom_start), mask=bottom_tinted)
 
 # --- Badge / quality overlay ---
     mode   = cfg.badge_display_mode
     tokens = quality_tokens or []
-    
+
     if cfg.rating_display_mode == 4:
         mode = 0  # Ignora i badge per Minimal ITA
 
@@ -705,7 +766,8 @@ def build_poster(
     elif fallback_title:
         try:
             font_size = int(width * 0.1)
-            font = ImageFont.truetype(os.path.join(_FONTS_DIR, "Inter-Bold.ttf"), font_size)
+            font_file = "Ubuntu-Bold.ttf" if cfg.font_family == "Ubuntu" else "Inter-Bold.ttf"
+            font = ImageFont.truetype(os.path.join(_FONTS_DIR, font_file), font_size)
         except IOError:
             font = ImageFont.load_default()
 
@@ -719,13 +781,15 @@ def build_poster(
                 break
             font_size -= 2  # type: ignore
             try:
-                font = ImageFont.truetype(os.path.join(_FONTS_DIR, "Inter-Bold.ttf"), font_size)
+                font_file = "Ubuntu-Bold.ttf" if cfg.font_family == "Ubuntu" else "Inter-Bold.ttf"
+                font = ImageFont.truetype(os.path.join(_FONTS_DIR, font_file), font_size)
             except IOError:
                 break
 
         tx, ty = _text_center(draw, fallback_title, font, width / 2, title_cy)  # type: ignore
         shadow_offset = max(2, int(font_size * 0.04))  # type: ignore
-        draw.text((tx + shadow_offset, ty + shadow_offset), fallback_title, font=font, fill=(0, 0, 0, 180))
+        if cfg.text_drop_shadow:
+            draw.text((tx + shadow_offset, ty + shadow_offset), fallback_title, font=font, fill=(0, 0, 0, 180))
         draw.text((tx, ty), fallback_title, font=font, fill=(255, 255, 255, 255))
 
         if no_poster:
@@ -750,7 +814,8 @@ def build_poster(
             rating_cy = height * cfg.accent_bar_y_offset
 
             try:
-                font_meta = ImageFont.truetype(os.path.join(_FONTS_DIR, "Inter-Bold.ttf"), font_size)
+                font_file = "Ubuntu-Bold.ttf" if cfg.font_family == "Ubuntu" else "Inter-Bold.ttf"
+                font_meta = ImageFont.truetype(os.path.join(_FONTS_DIR, font_file), font_size)
             except IOError:
                 font_meta = ImageFont.load_default()
 
@@ -775,7 +840,8 @@ def build_poster(
             rating_cy = height * cfg.numeric_score_y_offset
 
             try:
-                font_meta = ImageFont.truetype(os.path.join(_FONTS_DIR, "Inter-Bold.ttf"), font_size)
+                font_file = "Ubuntu-Bold.ttf" if cfg.font_family == "Ubuntu" else "Inter-Bold.ttf"
+                font_meta = ImageFont.truetype(os.path.join(_FONTS_DIR, font_file), font_size)
             except IOError:
                 font_meta = ImageFont.load_default()
 
@@ -791,7 +857,8 @@ def build_poster(
             font_size = int(width * cfg.minimalist_mode_font_size_ratio)
 
             try:
-                font_meta = ImageFont.truetype(os.path.join(_FONTS_DIR, "Ubuntu-Bold.ttf"), font_size)
+                font_file = "Ubuntu-Bold.ttf" if cfg.font_family == "Ubuntu" else "Inter-Bold.ttf"
+                font_meta = ImageFont.truetype(os.path.join(_FONTS_DIR, font_file), font_size)
             except IOError:
                 font_meta = ImageFont.load_default()
 
@@ -840,33 +907,48 @@ def build_poster(
         sash_result = pick_sash(discovery_meta, cfg.sash_priority)
         if sash_result is not None:
             label, sash_type = sash_result
-            if cfg.rating_display_mode == 4:
-                dom_color = _get_dominant_color(image)
-                luminanza = 0.299 * dom_color[0] + 0.587 * dom_color[1] + 0.114 * dom_color[2]
-                text_color = (0, 0, 0, 255) if luminanza > 128 else (255, 255, 255, 255)
-                
-                tag_font_size = int(width * 0.05)
-                try:
-                    font_tag = ImageFont.truetype(os.path.join(_FONTS_DIR, "Inter-Bold.ttf"), tag_font_size)
-                except IOError:
-                    font_tag = ImageFont.load_default()
-                    
+
+            if cfg.sash_style == "pill":
+                font_size = int(height * 0.02 * cfg.sash_pill_scale)
+                font_file = "Ubuntu-Bold.ttf" if cfg.font_family == "Ubuntu" else "Inter-Bold.ttf"
+                font_tag = ImageFont.truetype(os.path.join(_FONTS_DIR, font_file), font_size)
+
                 tag_bbox = draw.textbbox((0, 0), label, font=font_tag)
                 tag_w = tag_bbox[2] - tag_bbox[0]
                 tag_h = tag_bbox[3] - tag_bbox[1]
-                
-                padding_x = int(width * 0.035)
-                padding_y = int(height * 0.012)
-                
-                rect_x1 = (width - tag_w) // 2 - padding_x
-                rect_y1 = int(height * 0.02)
+
+                padding_x = int(width * 0.035 * cfg.sash_pill_scale)
+                padding_y = int(height * 0.012 * cfg.sash_pill_scale)
+
+                x_ratio = cfg.sash_badge_x
+                y_ratio = cfg.sash_badge_y
+                max_w_ratio = 1.0 - ((tag_w + padding_x * 2) / width)
+
+                rect_x1 = int(width * x_ratio)
+                rect_y1 = int(height * y_ratio)
+                rect_x1 = min(rect_x1, int(width * max_w_ratio))
+
                 rect_x2 = rect_x1 + tag_w + (padding_x * 2)
                 rect_y2 = rect_y1 + tag_h + (padding_y * 2)
-                
-                draw.rounded_rectangle([rect_x1, rect_y1, rect_x2, rect_y2], radius=15, fill=dom_color)
-                tx, ty = _text_center(draw, label, font_tag, width / 2, rect_y1 + (rect_y2 - rect_y1) / 2)
-                draw.text((tx, ty), label, font=font_tag, fill=text_color)
-            elif cfg.sash_badge:
+
+                dom_color = _get_dominant_color(image)
+                pill_bg = dom_color if cfg.sash_pill_dominant_color else (212, 175, 55)
+
+                r, g, b = pill_bg
+                luminance = (0.299 * r + 0.587 * g + 0.114 * b)
+                pill_text = (0, 0, 0) if luminance > 128 else (255, 255, 255)
+
+                if not cfg.sash_pill_dominant_color:
+                    pill_text = (0, 0, 0)
+
+                if cfg.sash_shadow:
+                    shadow_offset = 3
+                    draw.rounded_rectangle([rect_x1 + shadow_offset, rect_y1 + shadow_offset, rect_x2 + shadow_offset, rect_y2 + shadow_offset], radius=15, fill=(0,0,0,150))
+
+                draw.rounded_rectangle([rect_x1, rect_y1, rect_x2, rect_y2], radius=15, fill=pill_bg)
+                tx, ty = _text_center(draw, label, font_tag, rect_x1 + (rect_x2 - rect_x1) / 2, rect_y1 + (rect_y2 - rect_y1) / 2)
+                draw.text((tx, ty), label, font=font_tag, fill=pill_text)
+            elif cfg.sash_style == "badge":
                 image = draw_award_badge(image, label, sash_type=sash_type,
                                          x_ratio=cfg.sash_badge_x, y_ratio=cfg.sash_badge_y)
             else:
@@ -878,6 +960,8 @@ def build_poster(
 # ---------------------------------------------------------------------------
 # Lifecycle
 # ---------------------------------------------------------------------------
+
+
 
 async def _cache_prune_loop() -> None:
     """Periodically prune expired rows from all cache tables."""

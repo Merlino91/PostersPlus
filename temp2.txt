@@ -1,0 +1,101 @@
+507-    x = cx - bbox_width / 2 - bbox[0]
+508-    optical_adjust = int(ascent * 0.22)
+509-    y = cy - (ascent + descent) / 2 - descent + optical_adjust
+510-    return x, y
+511-
+512-
+513-def _get_dominant_color(image: Image.Image) -> tuple[int, int, int]:
+514-    small_img = image.copy()
+515-    small_img.thumbnail((50, 50))
+516-    small_img = small_img.convert("RGB")
+517-    colors = small_img.getcolors(2500)
+518-    if not colors:
+519-        return (100, 100, 100)
+520-
+521-    colors.sort(key=lambda t: t[0], reverse=True)
+522-    for count, color in colors:
+523-        luminanza = 0.299 * color[0] + 0.587 * color[1] + 0.114 * color[2]
+524-        if 40 < luminanza < 215:
+525-            return color
+526-
+527-    return colors[0][1]
+528-
+529-def _get_text_color(bg_color: tuple[int, int, int]) -> tuple[int, int, int]:
+530-    r, g, b = bg_color
+531-    luminance = (0.299 * r + 0.587 * g + 0.114 * b)
+532-    if luminance > 128:
+533-        return (0, 0, 0)
+534-    else:
+535-        return (255, 255, 255)
+536-# ---------------------------------------------------------------------------
+537-# Poster composition
+538-# ---------------------------------------------------------------------------
+539-
+540-# Genre-specific tint multipliers (R, G, B) for the fallback canvas.
+541-# Applied to a dark base luminance of 10–18, so the dominant channel peaks
+542-# around 30–55 at canvas midpoint — atmospheric rather than vivid.
+543-# Names must match GENRE_MAP values exactly.
+544-_GENRE_TINT: dict[str, tuple[float, float, float]] = {
+545-    "Horror":      (3.2, 0.3, 0.3),   # deep blood red
+546-    "Thriller":    (0.4, 2.2, 0.5),   # dark hunter green
+547-    "Mystery":     (1.0, 0.3, 3.0),   # deep indigo
+548-    "Sci-Fi":      (0.3, 1.2, 3.2),   # cold cyan-blue
+549-    "Fantasy":     (1.6, 0.3, 3.0),   # purple-violet
+550-    "Action":      (3.0, 0.8, 0.3),   # orange-red
+551-    "Adventure":   (2.6, 1.5, 0.3),   # warm amber
+552-    "Animation":   (0.4, 0.8, 3.2),   # electric blue
+553-    "Comedy":      (2.6, 2.4, 0.3),   # golden yellow
+554-    "Crime":       (2.4, 0.2, 0.2),   # dark crimson
+555-    "Documentary": (0.3, 2.2, 2.4),   # teal
+556-    "Drama":       (0.3, 0.3, 2.6),   # deep blue
+557-    "Family":      (2.6, 1.2, 0.3),   # warm orange
+558-    "History":     (2.2, 1.1, 0.3),   # sepia
+559-    "Music":       (2.8, 0.3, 2.2),   # magenta
+560-    "Romance":     (3.0, 0.3, 0.9),   # rose
+561-    "War":         (0.9, 1.6, 0.3),   # olive green
+562-    "Western":     (2.8, 1.1, 0.2),   # burnt sienna
+563-    "Kids":        (0.3, 1.1, 3.0),   # bright blue
+564-    "Reality":     (2.4, 0.8, 0.3),   # orange
+565-    "Soap":        (2.6, 0.3, 0.9),   # rose-pink
+566-    "Talk":        (0.3, 1.6, 2.4),   # teal-blue
+567-    "News":        (0.3, 0.5, 2.6),   # steel blue
+568-}
+569-_FALLBACK_DEFAULT_TINT = (1.0, 1.0, 1.4)   # neutral cool blue
+570-
+571-
+572-def _make_fallback_canvas(genre_ids: list[int] | None = None) -> Image.Image:
+573-    """
+574-    Dark gradient canvas served when a title has no poster art on TMDB.
+575-
+576-    Applies a genre-derived colour tint so the canvas feels atmospheric rather
+577-    than generically dark.  The base luminance is 10–18 (very dark) so even the
+578-    dominant channel stays below ~55 — readable against white text overlays.
+579-    """
+580-    # Resolve genre → tint by walking GENRE_PRIORITY so higher-priority genres
+581-    # win when a title belongs to multiple genres (same order as the score label).
+582-    tint = _FALLBACK_DEFAULT_TINT
+583-    if genre_ids:
+584-        gid_set = set(genre_ids)
+585-        for gid in _cfg.GENRE_PRIORITY:
+586-            if gid in gid_set:
+587-                name = _cfg.GENRE_MAP.get(gid)
+588-                if name and name in _GENRE_TINT:
+589-                    tint = _GENRE_TINT[name]
+590-                    break
+591-
+592-    r_mult, g_mult, b_mult = tint
+593-    W, H = _cfg.POSTER_WIDTH, _cfg.POSTER_HEIGHT
+594-    t    = np.linspace(0, np.pi, H, dtype=np.float32)
+595-    # sin curve: peaks at midheight (~18), dark at top/bottom (~10)
+596-    v    = (10 + 8 * np.sin(t)).astype(np.float32)
+597-    arr  = np.zeros((H, W, 4), dtype=np.uint8)
+598-    # Clamp BEFORE casting to uint8 — casting first would wrap mod-256 on
+599-    # any value above 255, silently inverting colour for high-multiplier tints.
+600-    arr[:, :, 0] = np.minimum(255, v * r_mult).astype(np.uint8)[:, np.newaxis]
+601-    arr[:, :, 1] = np.minimum(255, v * g_mult).astype(np.uint8)[:, np.newaxis]
+602-    arr[:, :, 2] = np.minimum(255, v * b_mult).astype(np.uint8)[:, np.newaxis]
+603-    arr[:, :, 3] = 255
+604-    return Image.fromarray(arr, "RGBA")
+605-
+606-
+607:def build_poster(

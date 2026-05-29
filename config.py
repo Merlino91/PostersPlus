@@ -57,6 +57,21 @@ SCORE_GLOW_THRESHOLD = 85  # score threshold to activate glow
 SCORE_GLOW_BLUR      = 1    # blur applied in glow mode
 SCORE_GLOW_ALPHA     = 40   # alpha of the glow applied
 
+# Minimal ITA Styling Defaults
+BOTTOM_FROSTED_GLASS_INTENSITY = 12
+TOP_GRADIENT_ENABLED = True
+BOTTOM_GRADIENT_ENABLED = True
+GRADIENT_COLOR_MODE = "black"  # "black" or "dominant"
+TOP_GRADIENT_INTENSITY = 220
+BOTTOM_GRADIENT_INTENSITY = 255
+SASH_PILL_SCALE = 1.0
+SASH_PILL_DOMINANT_COLOR = True
+SASH_SHADOW = False
+TEXT_DROP_SHADOW = False
+FONT_FAMILY = "Ubuntu"
+LOGO_ORIGINAL_COLORS = False
+
+
 # Logo Defaults
 
 LOGO_MAX_W_RATIO  = 0.84   # max width of logo
