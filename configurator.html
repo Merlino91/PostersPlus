@@ -1826,15 +1826,16 @@
                 <div class="toggle-track"><div class="toggle-thumb"></div></div>
               </label>
             </div>
-            <div class="toggle-row" style="margin-bottom:14px;">
-              <div>
-                <div class="toggle-label">Badge Style</div>
-                <div class="field-hint">Render as a badge instead of a diagonal sash.</div>
+            <div class="field" style="margin-bottom:14px;">
+              <label class="field-label">Sash Style</label>
+              <div class="select-wrapper" style="margin-top:4px;">
+                <select id="sel-sash-style" onchange="updateSashStyleFields(); build(); queuePreviewReload()">
+                  <option value="diagonal">Diagonal</option>
+                  <option value="badge">Badge</option>
+                  <option value="pill">Pill</option>
+                </select>
+                <div class="select-arrow">▼</div>
               </div>
-              <label class="toggle-switch">
-                <input type="checkbox" id="tog-sash-badge" onchange="updateSashBadgeFields(); build(); queuePreviewReload()">
-                <div class="toggle-track"><div class="toggle-thumb"></div></div>
-              </label>
             </div>
             <!-- Badge position — only shown when Badge Style is ON -->
             <div id="sash-badge-offsets" style="display:none; margin-bottom:14px;">
@@ -2748,27 +2749,6 @@ function buildBaseParams({ usePlaceholders = false } = {}) {
   }
 
 
-  // ── Overlays & Masks ───────────────────────────────────────────────────────
-  if (c('tog-frosted-glass')) {
-    params.set('frosted_glass', 'true');
-    params.set('frosted_glass_blur', ni('cfg-frosted-blur'));
-  }
-
-  if (c('tog-bottom-gradient')) {
-    params.set('bottom_gradient', 'true');
-    params.set('bottom_gradient_theme', document.getElementById('sel-bottom-gradient-theme').value);
-    params.set('bottom_gradient_opacity', ni('cfg-bottom-gradient-opacity'));
-  } else {
-    params.set('bottom_gradient', 'false');
-  }
-
-  if (c('tog-top-gradient')) {
-    params.set('top_gradient', 'true');
-    params.set('top_gradient_theme', document.getElementById('sel-top-gradient-theme').value);
-    params.set('top_gradient_opacity', ni('cfg-top-gradient-opacity'));
-  } else {
-    params.set('top_gradient', 'false');
-  }
 
   // ── Text & Typography ──────────────────────────────────────────────────────
   params.set('font_family', document.getElementById('sel-font-family').value);
@@ -2815,7 +2795,8 @@ function buildBaseParams({ usePlaceholders = false } = {}) {
   if (showSash) {
     const style = document.getElementById('sel-sash-style').value;
     params.set('sash_style', style);
-    params.set('sash_color_logic', document.getElementById('sel-sash-color-logic').value);
+    const logicEl = document.getElementById('sel-sash-color-logic');
+    if (logicEl) params.set('sash_color_logic', logicEl.value);
     params.set('sash_shadow', c('tog-sash-shadow') ? 'true' : 'false');
     params.set('sash_scale', n('cfg-sash-scale').toFixed(2));
 
@@ -2878,7 +2859,7 @@ function resetDefaults() {
   sashDisabled = new Set();
   localStorage.removeItem('postersplus_sash_order');
   buildSashList();
-  updateSashBadgeFields();
+  updateSashStyleFields();
   build();
   collapsePreview();
   setLog('preview-log', 'Reset to defaults. API keys preserved.', 'info');
@@ -3091,7 +3072,7 @@ function importUrl(urlStr) {
   if (p.has('show_award_sash')) _setEl('tog-award-sash',    p.get('show_award_sash'));
   if (p.has('muted'))           _setEl('tog-muted',         p.get('muted'));
   if (p.has('sash_style'))      { _setEl('sel-sash-style', p.get('sash_style')); }
-  if (p.has('sash_color_logic')) _setEl('sel-sash-color-logic', p.get('sash_color_logic'));
+  if (p.has('sash_color_logic') && document.getElementById('sel-sash-color-logic')) _setEl('sel-sash-color-logic', p.get('sash_color_logic'));
   if (p.has('sash_shadow'))     _setEl('tog-sash-shadow', p.get('sash_shadow'));
   if (p.has('sash_scale'))      _setEl('cfg-sash-scale', p.get('sash_scale'));
   if (p.has('sash_badge_x'))    _setEl('cfg-sash-badge-x',  p.get('sash_badge_x'));
@@ -3203,7 +3184,7 @@ hydrateFromLocalStorage();
 if (!localStorage.getItem('postersplus_selection')) applyDefaultSelection();
 updateRatingFields();
 updateBadgeModeHint();
-updateSashBadgeFields();
+updateSashStyleFields();
 checkWhatsNew();
 build();
 
