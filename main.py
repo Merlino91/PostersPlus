@@ -754,7 +754,7 @@ def build_poster(
         try:
             font_size = int(width * 0.1)
             font_file = "Ubuntu-Bold.ttf" if cfg.font_family == "Ubuntu" else "Inter-Bold.ttf"
-            font = ImageFont.truetype(os.path.join(_fonts_dir, font_file), font_size)
+            font = ImageFont.truetype(os.path.join(_FONTS_DIR, font_file), font_size)
         except IOError:
             font = ImageFont.load_default()
 
@@ -769,7 +769,7 @@ def build_poster(
             font_size -= 2  # type: ignore
             try:
                 font_file = "Ubuntu-Bold.ttf" if cfg.font_family == "Ubuntu" else "Inter-Bold.ttf"
-                font = ImageFont.truetype(os.path.join(_fonts_dir, font_file), font_size)
+                font = ImageFont.truetype(os.path.join(_FONTS_DIR, font_file), font_size)
             except IOError:
                 break
 
@@ -802,7 +802,7 @@ def build_poster(
 
             try:
                 font_file = "Ubuntu-Bold.ttf" if cfg.font_family == "Ubuntu" else "Inter-Bold.ttf"
-                font_meta = ImageFont.truetype(os.path.join(_fonts_dir, font_file), font_size)
+                font_meta = ImageFont.truetype(os.path.join(_FONTS_DIR, font_file), font_size)
             except IOError:
                 font_meta = ImageFont.load_default()
 
@@ -828,7 +828,7 @@ def build_poster(
 
             try:
                 font_file = "Ubuntu-Bold.ttf" if cfg.font_family == "Ubuntu" else "Inter-Bold.ttf"
-                font_meta = ImageFont.truetype(os.path.join(_fonts_dir, font_file), font_size)
+                font_meta = ImageFont.truetype(os.path.join(_FONTS_DIR, font_file), font_size)
             except IOError:
                 font_meta = ImageFont.load_default()
 
@@ -845,7 +845,7 @@ def build_poster(
 
             try:
                 font_file = "Ubuntu-Bold.ttf" if cfg.font_family == "Ubuntu" else "Inter-Bold.ttf"
-                font_meta = ImageFont.truetype(os.path.join(_fonts_dir, font_file), font_size)
+                font_meta = ImageFont.truetype(os.path.join(_FONTS_DIR, font_file), font_size)
             except IOError:
                 font_meta = ImageFont.load_default()
 
@@ -898,7 +898,7 @@ def build_poster(
             if cfg.sash_style == "pill":
                 font_size = int(height * 0.02 * cfg.sash_pill_scale)
                 font_file = "Ubuntu-Bold.ttf" if cfg.font_family == "Ubuntu" else "Inter-Bold.ttf"
-                font_tag = ImageFont.truetype(os.path.join(_fonts_dir, font_file), font_size)
+                font_tag = ImageFont.truetype(os.path.join(_FONTS_DIR, font_file), font_size)
 
                 tag_bbox = draw.textbbox((0, 0), label, font=font_tag)
                 tag_w = tag_bbox[2] - tag_bbox[0]
