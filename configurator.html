@@ -1694,6 +1694,71 @@
         </div>
 
         <!-- 4. INFO SASH -->
+
+        <!-- NEW V2 FEATURES -->
+        <div class="section">
+          <div class="section-header" onclick="toggleSection(this)">
+            <div class="section-accent"></div>
+            <span class="section-tag" style="color:#c9a84c;">V2 Features</span>
+          </div>
+          <div class="section-body">
+            <div class="field">
+              <label class="field-label">Gradient Top</label>
+              <label class="toggle-row">
+                <input type="checkbox" id="tog-grad-top" onchange="build(); queuePreviewReload()" checked>
+                <div class="toggle-switch"></div>
+                <div class="toggle-label">Enable Top Gradient</div>
+              </label>
+            </div>
+            <div class="field">
+              <label class="field-label">Gradient Bottom</label>
+              <label class="toggle-row">
+                <input type="checkbox" id="tog-grad-bot" onchange="build(); queuePreviewReload()" checked>
+                <div class="toggle-switch"></div>
+                <div class="toggle-label">Enable Bottom Gradient</div>
+              </label>
+            </div>
+            <div class="field">
+              <label class="field-label">Frosted Glass Intensity</label>
+              <div class="range-row">
+                <input type="range" id="cfg-glass-int" min="0" max="50" step="1" value="12" oninput="updateRange(this,'rng-glass'); build(); queuePreviewReload()">
+                <span class="range-val" id="rng-glass">12</span>
+              </div>
+            </div>
+            <div class="field">
+              <label class="field-label">Dominant Color Logic</label>
+              <label class="toggle-row">
+                <input type="checkbox" id="tog-dom-color" onchange="build(); queuePreviewReload()">
+                <div class="toggle-switch"></div>
+                <div class="toggle-label">Use Dominant Color</div>
+              </label>
+            </div>
+            <div class="field">
+              <label class="field-label">Original Logo Color</label>
+              <label class="toggle-row">
+                <input type="checkbox" id="tog-logo-color" onchange="build(); queuePreviewReload()">
+                <div class="toggle-switch"></div>
+                <div class="toggle-label">Keep Original Logo Colors</div>
+              </label>
+            </div>
+            <div class="field">
+              <label class="field-label">Text Font Family</label>
+              <select id="cfg-font-family" onchange="build(); queuePreviewReload()">
+                <option value="Inter">Inter</option>
+                <option value="Ubuntu">Ubuntu</option>
+              </select>
+            </div>
+            <div class="field">
+              <label class="field-label">Text Drop Shadow</label>
+              <label class="toggle-row">
+                <input type="checkbox" id="tog-text-shadow" onchange="build(); queuePreviewReload()">
+                <div class="toggle-switch"></div>
+                <div class="toggle-label">Enable Text Shadow</div>
+              </label>
+            </div>
+          </div>
+        </div>
+
         <div class="section">
           <div class="section-header" onclick="toggleSection(this)">
             <div class="section-accent"></div>
@@ -1728,6 +1793,41 @@
               </div>
               <label class="toggle-switch">
                 <input type="checkbox" id="tog-sash-badge" onchange="updateSashBadgeFields(); build(); queuePreviewReload()">
+              </label>
+            </div>
+
+            <div class="field" id="wrap-sash-style">
+              <label class="field-label">Sash Style</label>
+              <select id="cfg-sash-style" onchange="updateSashBadgeFields(); build(); queuePreviewReload()">
+                <option value="ribbon">Ribbon</option>
+                <option value="corner_badge">Corner Badge</option>
+                <option value="minimal_pill">Minimal Pill ITA</option>
+              </select>
+            </div>
+            <div id="wrap-pill-scale" style="display:none;" class="field">
+              <label class="field-label">Pill Scale</label>
+              <div class="range-row">
+                <input type="range" id="cfg-pill-scale" min="0.5" max="2.0" step="0.1" value="1.0" oninput="updateRange(this,'rng-pill-scale'); build(); queuePreviewReload()">
+                <span class="range-val" id="rng-pill-scale">1.0</span>
+              </div>
+            </div>
+<div style="display:none;"></div>
+            <div class="field" id="wrap-sash-style">
+              <label class="field-label">Sash Style</label>
+              <select id="cfg-sash-style" onchange="updateSashBadgeFields(); build(); queuePreviewReload()">
+                <option value="ribbon">Ribbon</option>
+                <option value="corner_badge">Corner Badge</option>
+                <option value="minimal_pill">Minimal Pill ITA</option>
+              </select>
+            </div>
+            <div id="wrap-pill-scale" style="display:none;" class="field">
+              <label class="field-label">Pill Scale</label>
+              <div class="range-row">
+                <input type="range" id="cfg-pill-scale" min="0.5" max="2.0" step="0.1" value="1.0" oninput="updateRange(this,'rng-pill-scale'); build(); queuePreviewReload()">
+                <span class="range-val" id="rng-pill-scale">1.0</span>
+              </div>
+            </div>
+<div style="display:none;">
                 <div class="toggle-track"><div class="toggle-thumb"></div></div>
               </label>
             </div>
@@ -2702,8 +2802,25 @@ async function copyUrl() {
     fb.classList.add('show');
     setTimeout(() => fb.classList.remove('show'), 1500);
     setLog('preview-log', 'Template URL successfully copied. Paste into AIOMetadata → Art Providers → Custom Art URLs → Poster URL Pattern.', 'ok');
-  } catch {
-    setLog('preview-log', 'Clipboard copy failed — check browser permissions.', 'err');
+  } catch (err) {
+    console.error('Clipboard error:', err);
+    // Fallback approach if clipboard API fails
+    const textArea = document.createElement("textarea");
+    textArea.value = url;
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+    try {
+      document.execCommand('copy');
+      const fb = document.getElementById('copy-fb');
+      fb.classList.add('show');
+      setTimeout(() => fb.classList.remove('show'), 1500);
+      setLog('preview-log', 'Template URL successfully copied using fallback.', 'ok');
+    } catch (err2) {
+      console.error('Fallback clipboard error:', err2);
+      setLog('preview-log', 'Clipboard copy failed — check browser permissions.', 'err');
+    }
+    document.body.removeChild(textArea);
   }
 }
 
