@@ -2849,15 +2849,15 @@ function buildBaseParams({ usePlaceholders = false } = {}) {
 
 
   // Overlays
-  params.set('gradient_color_mode', v('cfg-gradient-color'));
+  params.set('gradient_color_mode', vEl('cfg-gradient-color'));
   params.set('top_gradient_enabled', c('tog-top-gradient') ? 'true' : 'false');
-  params.set('top_gradient_intensity', v('cfg-top-gradient-intensity'));
+  params.set('top_gradient_intensity', vEl('cfg-top-gradient-intensity'));
   params.set('bottom_gradient_enabled', c('tog-bottom-gradient') ? 'true' : 'false');
-  params.set('bottom_gradient_intensity', v('cfg-bottom-gradient-intensity'));
-  params.set('bottom_frosted_glass_intensity', v('cfg-frosted-glass-intensity'));
+  params.set('bottom_gradient_intensity', vEl('cfg-bottom-gradient-intensity'));
+  params.set('bottom_frosted_glass_intensity', vEl('cfg-frosted-glass-intensity'));
 
   // Typography
-  params.set('font_family', v('cfg-font-family'));
+  params.set('font_family', vEl('cfg-font-family'));
   params.set('text_drop_shadow', c('tog-text-shadow') ? 'true' : 'false');
 
   // Logo
@@ -2866,10 +2866,7 @@ function buildBaseParams({ usePlaceholders = false } = {}) {
   // ── Info Sash ──────────────────────────────────────────────────────────────
   params.set('show_award_sash', showSash ? 'true' : 'false');
   if (showSash) {
-    const isBadge = c('tog-sash-badge');
-    params.set('sash_badge', isBadge ? 'true' : 'false');
-
-    const sashStyle = v('cfg-sash-style');
+const sashStyle = vEl('cfg-sash-style');
     params.set('sash_style', sashStyle);
     if (sashStyle === 'badge' || sashStyle === 'pill') {
       params.set('sash_badge_x', n('cfg-sash-badge-x').toFixed(2));
