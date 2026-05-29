@@ -2622,9 +2622,9 @@ function buildBaseParams({ usePlaceholders = false } = {}) {
   params.set('dominant_color_logic', c('tog-dom-color') ? 'true' : 'false');
   params.set('use_original_logo_color', c('tog-logo-color') ? 'true' : 'false');
   params.set('text_drop_shadow', c('tog-text-shadow') ? 'true' : 'false');
-  params.set('frosted_glass_intensity', v('cfg-glass-int'));
-  params.set('text_font_family', v('cfg-font-family'));
-  params.set('sash_style', v('cfg-sash-style'));
+  params.set('frosted_glass_intensity', vEl('cfg-glass-int'));
+  params.set('text_font_family', vEl('cfg-font-family'));
+  params.set('sash_style', vEl('cfg-sash-style'));
   params.set('minimal_pill_scale', n('cfg-pill-scale').toFixed(2));
 
   if (ratingMode !== 0) {
@@ -2810,9 +2810,11 @@ function updateSashBadgeFields() {
   const isBadge = (document.getElementById('cfg-sash-style').value !== 'ribbon');
   _setEl('wrap-sash-badge-fields', isBadge ? 'block' : 'none', 'display');
 
-  const isBadge = (document.getElementById('cfg-sash-style').value !== 'ribbon');
-  document.getElementById('sash-muted-row').style.display     = isBadge ? 'none' : '';
-  document.getElementById('sash-badge-offsets').style.display = isBadge ? '' : 'none';
+  const mutedRow = document.getElementById('sash-muted-row');
+  if (mutedRow) mutedRow.style.display = isBadge ? 'none' : '';
+
+  const badgeOffsets = document.getElementById('sash-badge-offsets');
+  if (badgeOffsets) badgeOffsets.style.display = isBadge ? '' : 'none';
   if (isBadge) initCustomMobileSliders();
 }
 
