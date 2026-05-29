@@ -525,6 +525,14 @@ def _get_dominant_color(image: Image.Image) -> tuple[int, int, int]:
             return color
 
     return colors[0][1]
+
+def _get_text_color(bg_color: tuple[int, int, int]) -> tuple[int, int, int]:
+    r, g, b = bg_color
+    luminance = (0.299 * r + 0.587 * g + 0.114 * b)
+    if luminance > 128:
+        return (0, 0, 0)
+    else:
+        return (255, 255, 255)
 # ---------------------------------------------------------------------------
 # Poster composition
 # ---------------------------------------------------------------------------
