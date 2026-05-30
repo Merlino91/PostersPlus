@@ -335,6 +335,18 @@ class RequestConfig:
     sash_badge_x: float = 0.62   # badge left-edge as fraction of poster width (flush right with the corner)
     sash_badge_y: float = 0.04   # badge top-edge  as fraction of poster height
 
+    # Nuovi attributi V2
+    frosted_glass_intensity: int = field(default_factory=lambda: _cfg.FROSTED_GLASS_INTENSITY)
+    gradient_top_enable: bool = field(default_factory=lambda: _cfg.GRADIENT_TOP_ENABLE)
+    gradient_bottom_enable: bool = field(default_factory=lambda: _cfg.GRADIENT_BOTTOM_ENABLE)
+    dominant_color_logic: bool = field(default_factory=lambda: _cfg.DOMINANT_COLOR_LOGIC)
+    sash_style: str = field(default_factory=lambda: _cfg.SASH_STYLE)
+    text_font_family: str = field(default_factory=lambda: _cfg.TEXT_FONT_FAMILY)
+    text_drop_shadow: bool = field(default_factory=lambda: _cfg.TEXT_DROP_SHADOW)
+    use_original_logo_color: bool = field(default_factory=lambda: _cfg.USE_ORIGINAL_LOGO_COLOR)
+    minimal_pill_scale: float = field(default_factory=lambda: _cfg.MINIMAL_PILL_SCALE)
+
+
 
 def _parse_bool(val: str | None, default: bool) -> bool:
     if val is None:
@@ -409,6 +421,20 @@ def build_request_config(params: dict) -> RequestConfig:
     cfg.muted                   = _b("muted",                  cfg.muted)
     cfg.textless                = _b("textless",               cfg.textless)
     cfg.sash_badge              = _b("sash_badge",             cfg.sash_badge)
+
+    def _s(key, default):
+        return params.get(key, default).strip() if key in params else default
+
+    cfg.frosted_glass_intensity = _i("frosted_glass_intensity", cfg.frosted_glass_intensity, 0, 100)
+    cfg.gradient_top_enable = _b("gradient_top_enable", cfg.gradient_top_enable)
+    cfg.gradient_bottom_enable = _b("gradient_bottom_enable", cfg.gradient_bottom_enable)
+    cfg.dominant_color_logic = _b("dominant_color_logic", cfg.dominant_color_logic)
+    cfg.sash_style = _s("sash_style", cfg.sash_style)
+    cfg.text_font_family = _s("text_font_family", cfg.text_font_family)
+    cfg.text_drop_shadow = _b("text_drop_shadow", cfg.text_drop_shadow)
+    cfg.use_original_logo_color = _b("use_original_logo_color", cfg.use_original_logo_color)
+    cfg.minimal_pill_scale = _f("minimal_pill_scale", cfg.minimal_pill_scale, 0.1, 5.0)
+
     # Position ratios — full poster span so users can put the badge anywhere
     cfg.sash_badge_x            = _f("sash_badge_x",           cfg.sash_badge_x,           0.0, 1.0)
     cfg.sash_badge_y            = _f("sash_badge_y",           cfg.sash_badge_y,           0.0, 1.0)
@@ -499,13 +525,13 @@ def _get_dominant_color(image: Image.Image) -> tuple[int, int, int]:
     colors = small_img.getcolors(2500)
     if not colors:
         return (100, 100, 100)
-    
+
     colors.sort(key=lambda t: t[0], reverse=True)
     for count, color in colors:
         luminanza = 0.299 * color[0] + 0.587 * color[1] + 0.114 * color[2]
         if 40 < luminanza < 215:
             return color
-            
+
     return colors[0][1]
 # ---------------------------------------------------------------------------
 # Poster composition
@@ -596,49 +622,52 @@ def build_poster(
     draw = ImageDraw.Draw(image)
 
     # --- TOP GRADIENT (vectorised) ---
-    top_height = int(height * 0.4)
-    top_max_alpha = 220
-    t_top = np.linspace(0, 1, top_height, dtype=np.float32)
-    eased_top = ((1 - t_top) * top_max_alpha).astype(np.uint8)
-    top_array = np.broadcast_to(eased_top[:, np.newaxis], (top_height, width)).copy()
-    top_overlay = Image.fromarray(top_array, mode="L")
-    top_tinted = Image.new("RGBA", (width, top_height), (0, 0, 0, 0))
-    top_tinted.putalpha(top_overlay)
-    image.paste(top_tinted, (0, 0), mask=top_tinted)
+    if cfg.gradient_top_enable:
+        top_height = int(height * 0.4)
+        top_max_alpha = 220
+        t_top = np.linspace(0, 1, top_height, dtype=np.float32)
+        eased_top = ((1 - t_top) * top_max_alpha).astype(np.uint8)
+        top_array = np.broadcast_to(eased_top[:, np.newaxis], (top_height, width)).copy()
+        top_overlay = Image.fromarray(top_array, mode="L")
+
+        dom = _get_dominant_color(image) if getattr(cfg, 'dominant_color_logic', False) else (0, 0, 0)
+        top_tinted = Image.new("RGBA", (width, top_height), (dom[0], dom[1], dom[2], 0))
+        top_tinted.putalpha(top_overlay)
+        image.paste(top_tinted, (0, 0), mask=top_tinted)
 
 # --- BOTTOM GRADIENT (vectorised) ---
     bottom_height = int(height * 0.5)
     bottom_start = height - bottom_height
-    
-    if cfg.rating_display_mode == 4:
-        # Stile Minimal ITA: Frosted Glass
+
+    if getattr(cfg, 'frosted_glass_intensity', 0) > 0:
         bottom_crop = image.crop((0, bottom_start, width, height))
-        blurred_bottom = bottom_crop.filter(ImageFilter.GaussianBlur(radius=12))
-        
+        blurred_bottom = bottom_crop.filter(ImageFilter.GaussianBlur(radius=cfg.frosted_glass_intensity))
+
         t_blur = np.linspace(0, 1, bottom_height, dtype=np.float32)
-        eased_blur = ((t_blur ** 1.5) * 255).astype(np.uint8) 
+        eased_blur = ((t_blur ** 1.5) * 255).astype(np.uint8)
         blur_array = np.broadcast_to(eased_blur[:, np.newaxis], (bottom_height, width)).copy()
         blur_mask = Image.fromarray(blur_array, mode="L")
-        
+
         image.paste(blurred_bottom, (0, bottom_start), mask=blur_mask)
-        bottom_max_alpha = 230
-        bottom_curve = 1.2
-    else:
-        bottom_max_alpha = 225 if cfg.rating_display_mode == 3 else 255
+
+    if getattr(cfg, 'gradient_bottom_enable', True):
+        bottom_max_alpha = 230 if getattr(cfg, 'frosted_glass_intensity', 0) > 0 else (225 if cfg.rating_display_mode == 3 else 255)
         bottom_curve = 1.2
 
-    t_bot = np.linspace(0, 1, bottom_height, dtype=np.float32)
-    eased_bot = ((1 - (1 - t_bot) ** bottom_curve) * bottom_max_alpha).astype(np.uint8)
-    bottom_array = np.broadcast_to(eased_bot[:, np.newaxis], (bottom_height, width)).copy()
-    bottom_overlay = Image.fromarray(bottom_array, mode="L")
-    bottom_tinted = Image.new("RGBA", (width, bottom_height), (0, 0, 0, 0))
-    bottom_tinted.putalpha(bottom_overlay)
-    image.paste(bottom_tinted, (0, bottom_start), mask=bottom_tinted)
+        t_bot = np.linspace(0, 1, bottom_height, dtype=np.float32)
+        eased_bot = ((1 - (1 - t_bot) ** bottom_curve) * bottom_max_alpha).astype(np.uint8)
+        bottom_array = np.broadcast_to(eased_bot[:, np.newaxis], (bottom_height, width)).copy()
+        bottom_overlay = Image.fromarray(bottom_array, mode="L")
+
+        dom = _get_dominant_color(image) if getattr(cfg, 'dominant_color_logic', False) else (0, 0, 0)
+        bottom_tinted = Image.new("RGBA", (width, bottom_height), (dom[0], dom[1], dom[2], 0))
+        bottom_tinted.putalpha(bottom_overlay)
+        image.paste(bottom_tinted, (0, bottom_start), mask=bottom_tinted)
 
 # --- Badge / quality overlay ---
     mode   = cfg.badge_display_mode
     tokens = quality_tokens or []
-    
+
     if cfg.rating_display_mode == 4:
         mode = 0  # Ignora i badge per Minimal ITA
 
@@ -705,7 +734,7 @@ def build_poster(
     elif fallback_title:
         try:
             font_size = int(width * 0.1)
-            font = ImageFont.truetype(os.path.join(_FONTS_DIR, "Inter-Bold.ttf"), font_size)
+            font = ImageFont.truetype(os.path.join(_FONTS_DIR, f"{getattr(cfg, 'text_font_family', 'Inter')}-Bold.ttf"), font_size)
         except IOError:
             font = ImageFont.load_default()
 
@@ -719,7 +748,7 @@ def build_poster(
                 break
             font_size -= 2  # type: ignore
             try:
-                font = ImageFont.truetype(os.path.join(_FONTS_DIR, "Inter-Bold.ttf"), font_size)
+                font = ImageFont.truetype(os.path.join(_FONTS_DIR, f"{getattr(cfg, 'text_font_family', 'Inter')}-Bold.ttf"), font_size)
             except IOError:
                 break
 
@@ -732,7 +761,7 @@ def build_poster(
             # Small watermark below the title so viewers know this is a
             # PostersPlus-generated fallback, not a client or CDN failure.
             try:
-                wm_font = ImageFont.truetype(os.path.join(_FONTS_DIR, "Inter-Bold.ttf"), 18)
+                wm_font = ImageFont.truetype(os.path.join(_FONTS_DIR, f"{getattr(cfg, 'text_font_family', 'Inter')}-Bold.ttf"), 18)
             except IOError:
                 wm_font = ImageFont.load_default()
             wm_text = "Posters+ fallback"
@@ -750,11 +779,18 @@ def build_poster(
             rating_cy = height * cfg.accent_bar_y_offset
 
             try:
-                font_meta = ImageFont.truetype(os.path.join(_FONTS_DIR, "Inter-Bold.ttf"), font_size)
+                font_meta = ImageFont.truetype(os.path.join(_FONTS_DIR, f"{getattr(cfg, 'text_font_family', 'Inter')}-Bold.ttf"), font_size)
             except IOError:
                 font_meta = ImageFont.load_default()
 
             tx, ty = _text_center(draw, label, font_meta, width / 2, rating_cy)  # type: ignore
+            if getattr(cfg, 'text_drop_shadow', False):
+                draw.text(
+                    (tx + 2, ty - int(font_size * 0.10) + 2),
+                    label,
+                    font=font_meta,
+                    fill=(0, 0, 0, 150),
+                )
             draw.text(
                 (tx, ty - int(font_size * 0.10)),
                 label,
@@ -775,11 +811,18 @@ def build_poster(
             rating_cy = height * cfg.numeric_score_y_offset
 
             try:
-                font_meta = ImageFont.truetype(os.path.join(_FONTS_DIR, "Inter-Bold.ttf"), font_size)
+                font_meta = ImageFont.truetype(os.path.join(_FONTS_DIR, f"{getattr(cfg, 'text_font_family', 'Inter')}-Bold.ttf"), font_size)
             except IOError:
                 font_meta = ImageFont.load_default()
 
             tx, ty = _text_center(draw, label, font_meta, width / 2, rating_cy)  # type: ignore
+            if getattr(cfg, 'text_drop_shadow', False):
+                draw.text(
+                    (tx + 2, ty - int(font_size * 0.10) + 2),
+                    label,
+                    font=font_meta,
+                    fill=(0, 0, 0, 150),
+                )
             draw.text(
                 (tx, ty - int(font_size * 0.10)),
                 label,
@@ -791,7 +834,7 @@ def build_poster(
             font_size = int(width * cfg.minimalist_mode_font_size_ratio)
 
             try:
-                font_meta = ImageFont.truetype(os.path.join(_FONTS_DIR, "Ubuntu-Bold.ttf"), font_size)
+                font_meta = ImageFont.truetype(os.path.join(_FONTS_DIR, f"{getattr(cfg, 'text_font_family', 'Inter')}-Bold.ttf"), font_size)
             except IOError:
                 font_meta = ImageFont.load_default()
 
@@ -818,10 +861,14 @@ def build_poster(
             pip_cy = round(y + font_size * 0.60)
 
             genre_x = pip_x - pip_gap - genre_w
+            if getattr(cfg, 'text_drop_shadow', False):
+                draw.text((genre_x + 2, y + 2), genre_text, font=font_meta, fill=(0, 0, 0, 150))
             draw.text((genre_x, y), genre_text, font=font_meta, fill=(235, 235, 235, 255))
 
             if year_text:
                 year_x = pip_x + pip_w + pip_gap
+                if getattr(cfg, 'text_drop_shadow', False):
+                    draw.text((year_x + 2, y + 2), year_text, font=font_meta, fill=(0, 0, 0, 150))
                 draw.text((year_x, y), year_text, font=font_meta, fill=(235, 235, 235, 255))
 
             if score not in ("N/A", None):
@@ -840,33 +887,13 @@ def build_poster(
         sash_result = pick_sash(discovery_meta, cfg.sash_priority)
         if sash_result is not None:
             label, sash_type = sash_result
-            if cfg.rating_display_mode == 4:
-                dom_color = _get_dominant_color(image)
-                luminanza = 0.299 * dom_color[0] + 0.587 * dom_color[1] + 0.114 * dom_color[2]
-                text_color = (0, 0, 0, 255) if luminanza > 128 else (255, 255, 255, 255)
-                
-                tag_font_size = int(width * 0.05)
-                try:
-                    font_tag = ImageFont.truetype(os.path.join(_FONTS_DIR, "Inter-Bold.ttf"), tag_font_size)
-                except IOError:
-                    font_tag = ImageFont.load_default()
-                    
-                tag_bbox = draw.textbbox((0, 0), label, font=font_tag)
-                tag_w = tag_bbox[2] - tag_bbox[0]
-                tag_h = tag_bbox[3] - tag_bbox[1]
-                
-                padding_x = int(width * 0.035)
-                padding_y = int(height * 0.012)
-                
-                rect_x1 = (width - tag_w) // 2 - padding_x
-                rect_y1 = int(height * 0.02)
-                rect_x2 = rect_x1 + tag_w + (padding_x * 2)
-                rect_y2 = rect_y1 + tag_h + (padding_y * 2)
-                
-                draw.rounded_rectangle([rect_x1, rect_y1, rect_x2, rect_y2], radius=15, fill=dom_color)
-                tx, ty = _text_center(draw, label, font_tag, width / 2, rect_y1 + (rect_y2 - rect_y1) / 2)
-                draw.text((tx, ty), label, font=font_tag, fill=text_color)
-            elif cfg.sash_badge:
+            if cfg.sash_style == "minimal_pill":
+                dom_color = _get_dominant_color(image) if cfg.dominant_color_logic else None
+                from awards import draw_minimal_pill
+                image = draw_minimal_pill(image, label, sash_type=sash_type,
+                                         x_ratio=cfg.sash_badge_x, y_ratio=cfg.sash_badge_y,
+                                         scale=cfg.minimal_pill_scale, bg_color=dom_color)
+            elif cfg.sash_style == "corner_badge" or cfg.sash_badge:
                 image = draw_award_badge(image, label, sash_type=sash_type,
                                          x_ratio=cfg.sash_badge_x, y_ratio=cfg.sash_badge_y)
             else:
@@ -1418,7 +1445,7 @@ async def get_poster(
             trending_rank,
         ) = await asyncio.gather(
             _image_coro,
-            fetch_logo(client, logos, rcfg.logo_language) if (is_textless and not is_no_poster) else _resolved(None),
+            fetch_logo(client, logos, rcfg.logo_language, getattr(rcfg, 'use_original_logo_color', False)) if (is_textless and not is_no_poster) else _resolved(None),
             rating_coro,
             fetch_trending_rank(client, tmdb_id, effective_tmdb_key, type),
         )

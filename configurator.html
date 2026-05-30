@@ -1694,6 +1694,71 @@
         </div>
 
         <!-- 4. INFO SASH -->
+
+        <!-- NEW V2 FEATURES -->
+        <div class="section">
+          <div class="section-header" onclick="toggleSection(this)">
+            <div class="section-accent"></div>
+            <span class="section-tag" style="color:#c9a84c;">V2 Features</span>
+          </div>
+          <div class="section-body">
+            <div class="field">
+              <label class="field-label">Gradient Top</label>
+              <label class="toggle-row">
+                <input type="checkbox" id="tog-grad-top" onchange="build(); queuePreviewReload()" checked>
+                <div class="toggle-switch"></div>
+                <div class="toggle-label">Enable Top Gradient</div>
+              </label>
+            </div>
+            <div class="field">
+              <label class="field-label">Gradient Bottom</label>
+              <label class="toggle-row">
+                <input type="checkbox" id="tog-grad-bot" onchange="build(); queuePreviewReload()" checked>
+                <div class="toggle-switch"></div>
+                <div class="toggle-label">Enable Bottom Gradient</div>
+              </label>
+            </div>
+            <div class="field">
+              <label class="field-label">Frosted Glass Intensity</label>
+              <div class="range-row">
+                <input type="range" id="cfg-glass-int" min="0" max="50" step="1" value="12" oninput="updateRange(this,'rng-glass'); build(); queuePreviewReload()">
+                <span class="range-val" id="rng-glass">12</span>
+              </div>
+            </div>
+            <div class="field">
+              <label class="field-label">Dominant Color Logic</label>
+              <label class="toggle-row">
+                <input type="checkbox" id="tog-dom-color" onchange="build(); queuePreviewReload()">
+                <div class="toggle-switch"></div>
+                <div class="toggle-label">Use Dominant Color</div>
+              </label>
+            </div>
+            <div class="field">
+              <label class="field-label">Original Logo Color</label>
+              <label class="toggle-row">
+                <input type="checkbox" id="tog-logo-color" onchange="build(); queuePreviewReload()">
+                <div class="toggle-switch"></div>
+                <div class="toggle-label">Keep Original Logo Colors</div>
+              </label>
+            </div>
+            <div class="field">
+              <label class="field-label">Text Font Family</label>
+              <select id="cfg-font-family" onchange="build(); queuePreviewReload()">
+                <option value="Inter">Inter</option>
+                <option value="Ubuntu">Ubuntu</option>
+              </select>
+            </div>
+            <div class="field">
+              <label class="field-label">Text Drop Shadow</label>
+              <label class="toggle-row">
+                <input type="checkbox" id="tog-text-shadow" onchange="build(); queuePreviewReload()">
+                <div class="toggle-switch"></div>
+                <div class="toggle-label">Enable Text Shadow</div>
+              </label>
+            </div>
+          </div>
+        </div>
+
         <div class="section">
           <div class="section-header" onclick="toggleSection(this)">
             <div class="section-accent"></div>
@@ -1728,6 +1793,41 @@
               </div>
               <label class="toggle-switch">
                 <input type="checkbox" id="tog-sash-badge" onchange="updateSashBadgeFields(); build(); queuePreviewReload()">
+              </label>
+            </div>
+
+            <div class="field" id="wrap-sash-style">
+              <label class="field-label">Sash Style</label>
+              <select id="cfg-sash-style" onchange="updateSashBadgeFields(); build(); queuePreviewReload()">
+                <option value="ribbon">Ribbon</option>
+                <option value="corner_badge">Corner Badge</option>
+                <option value="minimal_pill">Minimal Pill ITA</option>
+              </select>
+            </div>
+            <div id="wrap-pill-scale" style="display:none;" class="field">
+              <label class="field-label">Pill Scale</label>
+              <div class="range-row">
+                <input type="range" id="cfg-pill-scale" min="0.5" max="2.0" step="0.1" value="1.0" oninput="updateRange(this,'rng-pill-scale'); build(); queuePreviewReload()">
+                <span class="range-val" id="rng-pill-scale">1.0</span>
+              </div>
+            </div>
+<div style="display:none;"></div>
+            <div class="field" id="wrap-sash-style">
+              <label class="field-label">Sash Style</label>
+              <select id="cfg-sash-style" onchange="updateSashBadgeFields(); build(); queuePreviewReload()">
+                <option value="ribbon">Ribbon</option>
+                <option value="corner_badge">Corner Badge</option>
+                <option value="minimal_pill">Minimal Pill ITA</option>
+              </select>
+            </div>
+            <div id="wrap-pill-scale" style="display:none;" class="field">
+              <label class="field-label">Pill Scale</label>
+              <div class="range-row">
+                <input type="range" id="cfg-pill-scale" min="0.5" max="2.0" step="0.1" value="1.0" oninput="updateRange(this,'rng-pill-scale'); build(); queuePreviewReload()">
+                <span class="range-val" id="rng-pill-scale">1.0</span>
+              </div>
+            </div>
+<div style="display:none;">
                 <div class="toggle-track"><div class="toggle-thumb"></div></div>
               </label>
             </div>
@@ -2616,6 +2716,17 @@ function buildBaseParams({ usePlaceholders = false } = {}) {
 
   // ── Rating / Genre Label ───────────────────────────────────────────────────
   params.set('rating_display_mode', ratingMode);
+
+  params.set('gradient_top_enable', c('tog-grad-top') ? 'true' : 'false');
+  params.set('gradient_bottom_enable', c('tog-grad-bot') ? 'true' : 'false');
+  params.set('dominant_color_logic', c('tog-dom-color') ? 'true' : 'false');
+  params.set('use_original_logo_color', c('tog-logo-color') ? 'true' : 'false');
+  params.set('text_drop_shadow', c('tog-text-shadow') ? 'true' : 'false');
+  params.set('frosted_glass_intensity', vEl('cfg-glass-int'));
+  params.set('text_font_family', vEl('cfg-font-family'));
+  params.set('sash_style', vEl('cfg-sash-style'));
+  params.set('minimal_pill_scale', n('cfg-pill-scale').toFixed(2));
+
   if (ratingMode !== 0) {
     // Colour palette: only exposed in the UI for modes 1 and 3
     if (ratingMode === 1 || ratingMode === 3) {
@@ -2652,7 +2763,7 @@ function buildBaseParams({ usePlaceholders = false } = {}) {
   // ── Info Sash ──────────────────────────────────────────────────────────────
   params.set('show_award_sash', showSash ? 'true' : 'false');
   if (showSash) {
-    const isBadge = c('tog-sash-badge');
+    const isBadge = (document.getElementById('cfg-sash-style').value !== 'ribbon');
     params.set('sash_badge', isBadge ? 'true' : 'false');
     if (isBadge) {
       // Muted is not compatible with badge style — omit it from URL
@@ -2691,8 +2802,25 @@ async function copyUrl() {
     fb.classList.add('show');
     setTimeout(() => fb.classList.remove('show'), 1500);
     setLog('preview-log', 'Template URL successfully copied. Paste into AIOMetadata → Art Providers → Custom Art URLs → Poster URL Pattern.', 'ok');
-  } catch {
-    setLog('preview-log', 'Clipboard copy failed — check browser permissions.', 'err');
+  } catch (err) {
+    console.error('Clipboard error:', err);
+    // Fallback approach if clipboard API fails
+    const textArea = document.createElement("textarea");
+    textArea.value = url;
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+    try {
+      document.execCommand('copy');
+      const fb = document.getElementById('copy-fb');
+      fb.classList.add('show');
+      setTimeout(() => fb.classList.remove('show'), 1500);
+      setLog('preview-log', 'Template URL successfully copied using fallback.', 'ok');
+    } catch (err2) {
+      console.error('Fallback clipboard error:', err2);
+      setLog('preview-log', 'Clipboard copy failed — check browser permissions.', 'err');
+    }
+    document.body.removeChild(textArea);
   }
 }
 
@@ -2782,10 +2910,28 @@ async function loadPreview() {
   }
 }
 
+
+function updateSashStyleFields() {
+  const style = document.getElementById('cfg-sash-style').value;
+  const showBadgePos = (style === 'corner_badge' || style === 'minimal_pill');
+  const posFields = document.getElementById('wrap-sash-badge-fields');
+  if(posFields) posFields.style.display = showBadgePos ? 'block' : 'none';
+
+  const showScale = (style === 'minimal_pill');
+  const scaleField = document.getElementById('wrap-pill-scale');
+  if(scaleField) scaleField.style.display = showScale ? 'block' : 'none';
+}
+
+
 function updateSashBadgeFields() {
-  const isBadge = c('tog-sash-badge');
-  document.getElementById('sash-muted-row').style.display     = isBadge ? 'none' : '';
-  document.getElementById('sash-badge-offsets').style.display = isBadge ? '' : 'none';
+  const isBadge = (document.getElementById('cfg-sash-style').value !== 'ribbon');
+  _setEl('wrap-sash-badge-fields', isBadge ? 'block' : 'none', 'display');
+
+  const mutedRow = document.getElementById('sash-muted-row');
+  if (mutedRow) mutedRow.style.display = isBadge ? 'none' : '';
+
+  const badgeOffsets = document.getElementById('sash-badge-offsets');
+  if (badgeOffsets) badgeOffsets.style.display = isBadge ? '' : 'none';
   if (isBadge) initCustomMobileSliders();
 }
 
@@ -2947,6 +3093,18 @@ function importUrl(urlStr) {
 
   // ── Rating display ──────────────────────────────────────────────────────
   if (p.has('rating_display_mode'))            _setEl('cfg-rating-mode',  p.get('rating_display_mode'));
+
+  if (p.has('gradient_top_enable')) _setEl('tog-grad-top', p.get('gradient_top_enable'));
+  if (p.has('gradient_bottom_enable')) _setEl('tog-grad-bot', p.get('gradient_bottom_enable'));
+  if (p.has('dominant_color_logic')) _setEl('tog-dom-color', p.get('dominant_color_logic'));
+  if (p.has('use_original_logo_color')) _setEl('tog-logo-color', p.get('use_original_logo_color'));
+  if (p.has('text_drop_shadow')) _setEl('tog-text-shadow', p.get('text_drop_shadow'));
+  if (p.has('frosted_glass_intensity')) _setEl('cfg-glass-int', p.get('frosted_glass_intensity'));
+  if (p.has('text_font_family')) _setEl('cfg-font-family', p.get('text_font_family'));
+  if (p.has('sash_style')) _setEl('cfg-sash-style', p.get('sash_style'));
+  if (p.has('minimal_pill_scale')) _setEl('cfg-pill-scale', p.get('minimal_pill_scale'));
+  updateSashStyleFields();
+
   if (p.has('accent_bar_font_size_ratio'))     _setEl('cfg-font-mode1',   p.get('accent_bar_font_size_ratio'));
   if (p.has('numeric_score_font_size_ratio'))  _setEl('cfg-font-mode2',   p.get('numeric_score_font_size_ratio'));
   if (p.has('accent_bar_y_offset'))            _setEl('cfg-y-mode1',      p.get('accent_bar_y_offset'));

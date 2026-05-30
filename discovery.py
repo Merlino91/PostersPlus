@@ -209,9 +209,9 @@ NOTABLE_CAST: dict[str, str] = {
 _STRUCTURAL_CHECKS = ["short_film", "mini_series", "binge_ready"]
 
 _STRUCTURAL_LABELS: dict[str, str] = {
-    "short_film":  "Short Film",
-    "mini_series": "Mini Series",
-    "binge_ready": "Binge Ready",
+    "short_film":  "Cortometraggio",
+    "mini_series": "Mini Serie",
+    "binge_ready": "Da Fare Maratona",
 }
 
 # MDblist keyword name → sash display label.
@@ -521,7 +521,7 @@ def _evaluate_slot(slot: str, meta: DiscoveryMeta) -> str | None:
         lang = meta.original_language
         if not lang or lang == "en":
             return None
-        return LANGUAGE_LABELS.get(lang, "Foreign") # return LANGUAGE_LABELS.get(lang, "Foreign Language Film")
+        return LANGUAGE_LABELS.get(lang, "Lingua Originale") # return LANGUAGE_LABELS.get(lang, "Foreign Language Film")
 
     if slot == "studio":
         # matched_studios already holds display labels (dict values)
@@ -543,17 +543,17 @@ def _evaluate_slot(slot: str, meta: DiscoveryMeta) -> str | None:
         # "digital_release" is kept as a legacy alias so old sash_priority params
         # still work — both slots check the same combined condition.
         if meta.is_new_release or meta.is_digital_release:
-            return "Newly Streaming"
+            return "Nuovi Episodi"
         return None
 
     if slot == "metacritic":
-        return "Must-See" if meta.is_metacritic_must_see else None
+        return "Da Non Perdere" if meta.is_metacritic_must_see else None
 
     if slot == "cult":
         return "Cult Classic" if meta.is_cult else None
 
     if slot == "true_story":
-        return "True Story" if meta.is_true_story else None
+        return "Tratto da una storia vera" if meta.is_true_story else None
 
     if slot == "structural":
         for key in _STRUCTURAL_CHECKS:

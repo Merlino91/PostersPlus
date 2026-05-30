@@ -309,6 +309,7 @@ async def fetch_logo(
     client: httpx.AsyncClient,
     logos: list[dict],
     logo_language: str = "en",
+    use_original_colors: bool = False,
 ) -> Image.Image | None:
 
     preferred = [
@@ -360,7 +361,8 @@ async def fetch_logo(
     if bbox:
         logo = logo.crop(bbox)
 
-    logo = ensure_light_logo(logo)
+    if not use_original_colors:
+        logo = ensure_light_logo(logo)
 
     buf = io.BytesIO()
     logo.save(buf, format="PNG")

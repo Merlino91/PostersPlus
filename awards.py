@@ -1560,3 +1560,65 @@ def draw_award_sash(
     result.paste(sash,   (width - offset_x,     -offset_y),     sash)
 
     return result
+def draw_minimal_pill(
+    image: Image.Image,
+    label: str,
+    sash_type: str = "win",
+    x_ratio: float = 0.62,
+    y_ratio: float = 0.04,
+    scale: float = 1.0,
+    bg_color: tuple[int, int, int] | None = None,
+) -> Image.Image:
+    width, height = image.size
+    SS = 3
+
+    if bg_color is None:
+        if sash_type == "win":
+            bg_color = (212, 175, 55)
+        elif sash_type == "prestige":
+            bg_color = (190, 140, 255)
+        elif sash_type == "cast":
+            bg_color = (102, 187, 106)
+        elif sash_type == "info":
+            bg_color = (100, 220, 210)
+        elif sash_type == "trending":
+            bg_color = (160, 220, 255)
+        else:
+            bg_color = (192, 192, 200)
+
+    luminance = 0.299 * bg_color[0] + 0.587 * bg_color[1] + 0.114 * bg_color[2]
+    text_color = (0, 0, 0, 255) if luminance > 128 else (255, 255, 255, 255)
+
+    badge_h = int(height * 0.075 * scale)
+    badge_w = int(width * 0.34 * scale)
+    radius = int(badge_h / 2)
+
+    bh, bw = badge_h * SS, badge_w * SS
+    r_ss = radius * SS
+
+    badge = Image.new("RGBA", (bw, bh), (0, 0, 0, 0))
+    d = ImageDraw.Draw(badge)
+    d.rounded_rectangle([0, 0, bw, bh], radius=r_ss, fill=(bg_color[0], bg_color[1], bg_color[2], 255))
+
+    badge = badge.resize((badge_w, badge_h), resample=Image.LANCZOS)
+
+    font_size = int(badge_h * 0.45)
+    try:
+        from config import TEXT_FONT_FAMILY
+        font_path = f"/app/fonts/{TEXT_FONT_FAMILY}-Bold.ttf"
+        font = ImageFont.truetype(font_path, font_size)
+    except Exception:
+        try:
+            font = ImageFont.truetype("/app/fonts/Inter-Bold.ttf", font_size)
+        except IOError:
+            font = ImageFont.load_default()
+
+    tx, ty = _text_center(ImageDraw.Draw(badge), label, font, badge_w / 2, badge_h / 2)
+    ImageDraw.Draw(badge).text((tx, ty), label, font=font, fill=text_color)
+
+    pos_x = int(width * x_ratio)
+    pos_y = int(height * y_ratio)
+
+    out = image.convert("RGBA")
+    out.paste(badge, (pos_x, pos_y), badge)
+    return out
