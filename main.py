@@ -20,7 +20,6 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
     force=True,
 )
-# Pull uvicorn's loggers into our root handler so all output shares the same format.
 for _uv_name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
     _uv_logger = logging.getLogger(_uv_name)
     _uv_logger.handlers = []
@@ -87,7 +86,6 @@ _rating_backoff:                dict[str, float]          = {}
 _rating_fail_count:             dict[str, int]            = {}
 _mdblist_semaphore:             "asyncio.Semaphore | None" = None
 
-# MDBList rate limit modificato per singola chiave e non globale
 _mdblist_key_cooldown: dict[str, float] = {}
 
 
@@ -237,8 +235,8 @@ class RequestConfig:
     sash_badge_y: float = 0.04 
 
     frosted_glass_intensity: int = field(default_factory=lambda: _cfg.FROSTED_GLASS_INTENSITY)
-    gradient_top_enable: bool = field(default_factory=lambda: _cfg.GRADIENT_TOP_ENABLE)
-    gradient_bottom_enable: bool = field(default_factory=lambda: _cfg.GRADIENT_BOTTOM_ENABLE)
+    gradient_top_intensity: int = field(default_factory=lambda: _cfg.GRADIENT_TOP_INTENSITY)
+    gradient_bottom_intensity: int = field(default_factory=lambda: _cfg.GRADIENT_BOTTOM_INTENSITY)
     dominant_color_logic: bool = field(default_factory=lambda: _cfg.DOMINANT_COLOR_LOGIC)
     sash_style: str = field(default_factory=lambda: _cfg.SASH_STYLE)
     text_font_family: str = field(default_factory=lambda: _cfg.TEXT_FONT_FAMILY)
@@ -311,15 +309,14 @@ def build_request_config(params: dict) -> RequestConfig:
     def _s(key, default):
         return params.get(key, default).strip() if key in params else default
 
-    cfg.frosted_glass_intensity = _i("frosted_glass_intensity", cfg.frosted_glass_intensity, 0, 100)
-    cfg.gradient_top_enable = _b("gradient_top_enable", cfg.gradient_top_enable)
-    cfg.gradient_bottom_enable = _b("gradient_bottom_enable", cfg.gradient_bottom_enable)
+    cfg.frosted_glass_intensity = _i("frosted_glass_intensity", cfg.frosted_glass_intensity, 0, 250)
+    cfg.gradient_top_intensity = _i("gradient_top_intensity", cfg.gradient_top_intensity, 0, 100)
+    cfg.gradient_bottom_intensity = _i("gradient_bottom_intensity", cfg.gradient_bottom_intensity, 0, 100)
     cfg.dominant_color_logic = _b("dominant_color_logic", cfg.dominant_color_logic)
     cfg.sash_style = _s("sash_style", cfg.sash_style)
     
-    # Prevenzione per vulnerabilità Path Traversal su text_font_family
     font_family = _s("text_font_family", cfg.text_font_family)
-    if font_family not in ("Inter", "Ubuntu"):
+    if font_family not in ("Inter", "Ubuntu", "Roboto", "Montserrat", "BebasNeue", "Poppins"):
         font_family = "Inter"
     cfg.text_font_family = font_family
 
@@ -392,7 +389,6 @@ def _text_center(
     bbox = draw.textbbox((0, 0), text, font=font)
     bbox_width = bbox[2] - bbox[0]
     x = cx - bbox_width / 2 - bbox[0]
-    # Modifica per supportare font.load_default() evitando il crash
     if hasattr(font, 'getmetrics'):
         ascent, descent = font.getmetrics()
         optical_adjust = int(ascent * 0.22)
@@ -418,6 +414,57 @@ def _get_dominant_color(image: Image.Image) -> tuple[int, int, int]:
             return color
 
     return colors[0][1]
+
+
+def draw_custom_top_tag(image: Image.Image, text: str, scale: float = 1.0, bg_color: tuple = (20, 20, 20), font_family: str = "Inter") -> Image.Image:
+    width, height = image.size
+    base_font_size = int(24 * scale)
+    try:
+        font = ImageFont.truetype(os.path.join(_FONTS_DIR, f"{font_family}-Bold.ttf"), base_font_size)
+    except IOError:
+        font = ImageFont.load_default()
+
+    draw = ImageDraw.Draw(image)
+    bbox = draw.textbbox((0, 0), text, font=font)
+    text_w = bbox[2] - bbox[0]
+    text_h = bbox[3] - bbox[1]
+    
+    pad_x = int(20 * scale)
+    pad_y = int(12 * scale)
+    pill_w = text_w + pad_x * 2
+    pill_h = text_h + pad_y * 2
+    
+    pill_x = (width - pill_w) // 2
+    pill_y = 0 
+    
+    r = int(10 * scale) 
+    
+    overlay = Image.new("RGBA", (width, height), (0,0,0,0))
+    overlay_draw = ImageDraw.Draw(overlay)
+    
+    overlay_draw.rounded_rectangle(
+        [pill_x, pill_y, pill_x + pill_w, pill_y + pill_h],
+        radius=r,
+        fill=(*bg_color, 240)
+    )
+    overlay_draw.rectangle(
+        [pill_x, pill_y, pill_x + pill_w, pill_y + r],
+        fill=(*bg_color, 240)
+    )
+    
+    lum = 0.299 * bg_color[0] + 0.587 * bg_color[1] + 0.114 * bg_color[2]
+    text_color = (255, 255, 255) if lum < 150 else (0, 0, 0)
+    
+    text_x = pill_x + pad_x
+    if hasattr(font, 'getmetrics'):
+        ascent, descent = font.getmetrics()
+        text_y = pill_y + (pill_h - (ascent + descent)) // 2
+    else:
+        text_y = pill_y + pad_y
+        
+    overlay_draw.text((text_x, text_y), text, font=font, fill=text_color)
+    
+    return Image.alpha_composite(image.convert("RGBA"), overlay)
 
 
 _GENRE_TINT: dict[str, tuple[float, float, float]] = {
@@ -488,13 +535,12 @@ def build_poster(
     width, height = image.size
     draw = ImageDraw.Draw(image)
 
-    # Estrazione colore dominante (fatta una volta sola) prima di blur e gradiente scuro
     dom_color = _get_dominant_color(image) if getattr(cfg, 'dominant_color_logic', False) else (0, 0, 0)
 
     # --- TOP GRADIENT ---
-    if cfg.gradient_top_enable:
-        top_height = int(height * 0.4)
-        top_max_alpha = 220
+    if cfg.gradient_top_intensity > 0:
+        top_height = int(height * 0.25)
+        top_max_alpha = int((cfg.gradient_top_intensity / 100) * 255)
         t_top = np.linspace(0, 1, top_height, dtype=np.float32)
         eased_top = ((1 - t_top) * top_max_alpha).astype(np.uint8)
         top_array = np.broadcast_to(eased_top[:, np.newaxis], (top_height, width)).copy()
@@ -505,7 +551,7 @@ def build_poster(
         image.paste(top_tinted, (0, 0), mask=top_tinted)
 
     # --- BOTTOM GRADIENT ---
-    bottom_height = int(height * 0.5)
+    bottom_height = int(height * 0.35)
     bottom_start = height - bottom_height
 
     if getattr(cfg, 'frosted_glass_intensity', 0) > 0:
@@ -519,8 +565,8 @@ def build_poster(
 
         image.paste(blurred_bottom, (0, bottom_start), mask=blur_mask)
 
-    if getattr(cfg, 'gradient_bottom_enable', True):
-        bottom_max_alpha = 230 if getattr(cfg, 'frosted_glass_intensity', 0) > 0 else (225 if cfg.rating_display_mode == 3 else 255)
+    if cfg.gradient_bottom_intensity > 0:
+        bottom_max_alpha = int((cfg.gradient_bottom_intensity / 100) * 255)
         bottom_curve = 1.2
 
         t_bot = np.linspace(0, 1, bottom_height, dtype=np.float32)
@@ -749,11 +795,8 @@ def build_poster(
         if sash_result is not None:
             label, sash_type = sash_result
             if cfg.sash_style == "minimal_pill":
-                dom_color_pill = dom_color if cfg.dominant_color_logic else None
-                from awards import draw_minimal_pill
-                image = draw_minimal_pill(image, label, sash_type=sash_type,
-                                         x_ratio=cfg.sash_badge_x, y_ratio=cfg.sash_badge_y,
-                                         scale=cfg.minimal_pill_scale, bg_color=dom_color_pill)
+                dom_color_pill = dom_color if cfg.dominant_color_logic else (20, 20, 20)
+                image = draw_custom_top_tag(image, label, scale=cfg.minimal_pill_scale, bg_color=dom_color_pill, font_family=cfg.text_font_family)
             elif cfg.sash_style == "corner_badge" or cfg.sash_badge:
                 image = draw_award_badge(image, label, sash_type=sash_type,
                                          x_ratio=cfg.sash_badge_x, y_ratio=cfg.sash_badge_y)
