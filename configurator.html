@@ -129,9 +129,6 @@
     text-transform: uppercase;
     opacity: 0.7;
     transition: opacity 0.15s;
-    /* "WEB CONFIGURATOR" sits at the POSTERS+ text baseline, which is ~5.5px
-       below the header's geometric centre. margin-top of 11px shifts the
-       centred item down by half that value, landing it at the subtitle level. */
     margin-top: 11px;
   }
   .header-github:hover,
@@ -139,16 +136,12 @@
   .header-github svg,
   .header-discord svg { flex-shrink: 0; display: block; }
 
-  /* Right-side cluster: what's-new chip + github link */
   .header-right {
     display: flex;
     align-items: center;
     gap: 18px;
   }
 
-  /* What's new chip — same typographic treatment as the GitHub link.
-     Always visible so users can re-open the list; the dot only appears
-     when there are changes the user hasn't acknowledged. */
   .header-whatsnew {
     display: flex;
     align-items: center;
@@ -587,7 +580,7 @@
     position: relative;
   }
 
-  .selected-item-card.visible { display: none !important; }
+  .selected-item-card.visible { display: flex !important; }
 
   .selected-card-thumb {
     width: 26px; height: 38px;
@@ -1399,7 +1392,6 @@
         <span class="whatsnew-dot"></span>
         <span class="whatsnew-label">What's new</span>
       </button>
-      <!-- Placeholder Discord URL — operators (e.g. ElfHosted) can point this at their own community link. -->
       <a class="header-discord" href="https://discord.gg/wEgTPNXUMU" target="_blank" rel="noopener">
         <svg width="18" height="14" viewBox="0 0 256 199" fill="currentColor" aria-hidden="true">
           <path d="M216.856 16.597A208.5 208.5 0 0 0 164.042 0c-2.275 4.113-4.933 9.646-6.766 14.046a193.6 193.6 0 0 0-58.533 0C96.911 9.646 94.193 4.113 91.897 0a207.6 207.6 0 0 0-52.855 16.638C5.618 67.146-3.443 116.401 1.087 164.956a209.7 209.7 0 0 0 64.775 33.193 156 156 0 0 0 13.873-22.848 138 138 0 0 1-21.847-10.633 113 113 0 0 0 5.355-4.236c42.122 19.702 87.89 19.702 129.509 0a113 113 0 0 0 5.356 4.236 138.5 138.5 0 0 1-21.887 10.654 156 156 0 0 0 13.873 22.848 209 209 0 0 0 64.815-33.214c5.316-56.288-9.08-105.09-38.053-148.359M85.474 135.095c-12.645 0-23.015-11.805-23.015-26.18s10.149-26.2 23.015-26.2c12.867 0 23.236 11.804 23.015 26.2.02 14.375-10.148 26.18-23.015 26.18m85.051 0c-12.645 0-23.015-11.805-23.015-26.18s10.148-26.2 23.015-26.2c12.866 0 23.236 11.804 23.015 26.2 0 14.375-10.149 26.18-23.015 26.18"/>
@@ -1417,7 +1409,6 @@
 
   <div class="main-layout">
 
-    <!-- LEFT: CONFIG PANEL -->
     <div class="panel left-col">
       <div class="notch"></div>
       <div class="panel-header">
@@ -1429,7 +1420,6 @@
         <input type="hidden" id="cfg-domain" value="">
         <input type="hidden" id="cfg-access-key" value="">
 
-        <!-- 1. CORE CONFIG -->
         <div class="section">
           <div class="section-header" onclick="toggleSection(this)">
             <div class="section-accent"></div>
@@ -1541,7 +1531,6 @@
           </div>
         </div>
 
-        <!-- 2. RATING / GENRE LABEL -->
         <div class="section">
           <div class="section-header" onclick="toggleSection(this)">
             <div class="section-accent"></div>
@@ -1651,7 +1640,6 @@
           </div>
         </div>
 
-        <!-- 3. LOGO -->
         <div class="section">
           <div class="section-header" onclick="toggleSection(this)">
             <div class="section-accent"></div>
@@ -1666,6 +1654,15 @@
               </div>
               <label class="toggle-switch">
                 <input type="checkbox" id="tog-textless" onchange="build(); queuePreviewReload()">
+                <div class="toggle-track"><div class="toggle-thumb"></div></div>
+              </label>
+            </div>
+            <div class="toggle-row" style="margin-bottom:14px;">
+              <div>
+                <div class="toggle-label">Keep Original Logo Colors</div>
+              </div>
+              <label class="toggle-switch">
+                <input type="checkbox" id="tog-logo-color" onchange="build(); queuePreviewReload()">
                 <div class="toggle-track"><div class="toggle-thumb"></div></div>
               </label>
             </div>
@@ -1693,9 +1690,6 @@
           </div>
         </div>
 
-        <!-- 4. INFO SASH -->
-
-        <!-- NEW V2 FEATURES -->
         <div class="section">
           <div class="section-header" onclick="toggleSection(this)">
             <div class="section-accent"></div>
@@ -1703,26 +1697,24 @@
           </div>
           <div class="section-body">
             <div class="field">
-              <label class="field-label">Gradient Top</label>
-              <label class="toggle-row">
-                <input type="checkbox" id="tog-grad-top" onchange="build(); queuePreviewReload()" checked>
-                <div class="toggle-switch"></div>
-                <div class="toggle-label">Enable Top Gradient</div>
-              </label>
+              <label class="field-label">Top Gradient Intensity</label>
+              <div class="range-row">
+                <input type="range" id="cfg-grad-top" min="0" max="100" step="1" value="50" oninput="updateRange(this,'rng-grad-top'); build(); queuePreviewReload()">
+                <span class="range-val" id="rng-grad-top">50</span>
+              </div>
             </div>
             <div class="field">
-              <label class="field-label">Gradient Bottom</label>
-              <label class="toggle-row">
-                <input type="checkbox" id="tog-grad-bot" onchange="build(); queuePreviewReload()" checked>
-                <div class="toggle-switch"></div>
-                <div class="toggle-label">Enable Bottom Gradient</div>
-              </label>
+              <label class="field-label">Bottom Gradient Intensity</label>
+              <div class="range-row">
+                <input type="range" id="cfg-grad-bot" min="0" max="100" step="1" value="80" oninput="updateRange(this,'rng-grad-bot'); build(); queuePreviewReload()">
+                <span class="range-val" id="rng-grad-bot">80</span>
+              </div>
             </div>
             <div class="field">
               <label class="field-label">Frosted Glass Intensity</label>
               <div class="range-row">
-                <input type="range" id="cfg-glass-int" min="0" max="50" step="1" value="12" oninput="updateRange(this,'rng-glass'); build(); queuePreviewReload()">
-                <span class="range-val" id="rng-glass">12</span>
+                <input type="range" id="cfg-glass-int" min="0" max="250" step="1" value="25" oninput="updateRange(this,'rng-glass'); build(); queuePreviewReload()">
+                <span class="range-val" id="rng-glass">25</span>
               </div>
             </div>
             <div class="field">
@@ -1734,18 +1726,14 @@
               </label>
             </div>
             <div class="field">
-              <label class="field-label">Original Logo Color</label>
-              <label class="toggle-row">
-                <input type="checkbox" id="tog-logo-color" onchange="build(); queuePreviewReload()">
-                <div class="toggle-switch"></div>
-                <div class="toggle-label">Keep Original Logo Colors</div>
-              </label>
-            </div>
-            <div class="field">
               <label class="field-label">Text Font Family</label>
               <select id="cfg-font-family" onchange="build(); queuePreviewReload()">
                 <option value="Inter">Inter</option>
                 <option value="Ubuntu">Ubuntu</option>
+                <option value="Roboto">Roboto</option>
+                <option value="Montserrat">Montserrat</option>
+                <option value="BebasNeue">BebasNeue</option>
+                <option value="Poppins">Poppins</option>
               </select>
             </div>
             <div class="field">
@@ -1793,12 +1781,13 @@
               </div>
               <label class="toggle-switch">
                 <input type="checkbox" id="tog-sash-badge" onchange="updateSashBadgeFields(); build(); queuePreviewReload()">
+                <div class="toggle-track"><div class="toggle-thumb"></div></div>
               </label>
             </div>
 
             <div class="field" id="wrap-sash-style">
               <label class="field-label">Sash Style</label>
-              <select id="cfg-sash-style" onchange="updateSashBadgeFields(); build(); queuePreviewReload()">
+              <select id="cfg-sash-style" onchange="updateSashStyleFields(); updateSashBadgeFields(); build(); queuePreviewReload()">
                 <option value="ribbon">Ribbon</option>
                 <option value="corner_badge">Corner Badge</option>
                 <option value="minimal_pill">Minimal Pill ITA</option>
@@ -1811,27 +1800,7 @@
                 <span class="range-val" id="rng-pill-scale">1.0</span>
               </div>
             </div>
-<div style="display:none;"></div>
-            <div class="field" id="wrap-sash-style">
-              <label class="field-label">Sash Style</label>
-              <select id="cfg-sash-style" onchange="updateSashBadgeFields(); build(); queuePreviewReload()">
-                <option value="ribbon">Ribbon</option>
-                <option value="corner_badge">Corner Badge</option>
-                <option value="minimal_pill">Minimal Pill ITA</option>
-              </select>
-            </div>
-            <div id="wrap-pill-scale" style="display:none;" class="field">
-              <label class="field-label">Pill Scale</label>
-              <div class="range-row">
-                <input type="range" id="cfg-pill-scale" min="0.5" max="2.0" step="0.1" value="1.0" oninput="updateRange(this,'rng-pill-scale'); build(); queuePreviewReload()">
-                <span class="range-val" id="rng-pill-scale">1.0</span>
-              </div>
-            </div>
-<div style="display:none;">
-                <div class="toggle-track"><div class="toggle-thumb"></div></div>
-              </label>
-            </div>
-            <!-- Badge position — only shown when Badge Style is ON -->
+
             <div id="sash-badge-offsets" style="display:none; margin-bottom:14px;">
               <div class="field">
                 <label class="field-label">Horizontal Position</label>
@@ -1854,7 +1823,6 @@
           </div>
         </div>
 
-        <!-- 5. QUALITY BADGES -->
         <div class="section">
           <div class="section-header" onclick="toggleSection(this)">
             <div class="section-accent"></div>
@@ -1912,7 +1880,6 @@
           </div>
         </div>
 
-        <!-- 6. RATING WEIGHTS — MOVIES -->
         <div class="section">
           <div class="section-header" onclick="toggleSection(this)">
             <div class="section-accent"></div>
@@ -1930,7 +1897,6 @@
           </div>
         </div>
 
-        <!-- 7. RATING WEIGHTS — TV -->
         <div class="section">
           <div class="section-header" onclick="toggleSection(this)">
             <div class="section-accent"></div>
@@ -1948,10 +1914,8 @@
           </div>
         </div>
 
-      </div><!-- /panel-body -->
-    </div>
+      </div></div>
 
-    <!-- RIGHT: PREVIEW -->
     <div class="right-col">
       <div class="preview-panel panel">
         <div class="notch"></div>
@@ -2052,12 +2016,6 @@ function _unlockScroll() {
   window.scrollTo(0, _scrollY);
 }
 
-// The "expanded" preview panel only renders visibly on mobile — the desktop
-// layout has the live preview always-visible in the right column.  Skipping
-// expand entirely on desktop avoids a hard-to-discover scroll lock that
-// fires invisibly when users click anywhere in the right column (a real
-// problem on instances that embed the configurator below a banner / nav
-// where the page actually needs to scroll).
 const _MOBILE_MQ = window.matchMedia('(max-width: 960px)');
 function _isMobileViewport() { return _MOBILE_MQ.matches; }
 
@@ -2077,7 +2035,6 @@ function collapsePreview() {
   }
 }
 
-// Back gesture / button: collapse the panel instead of leaving the page.
 window.addEventListener('popstate', () => {
   if (previewPanel.classList.contains('expanded')) {
     previewPanel.classList.remove('expanded');
@@ -2085,10 +2042,6 @@ window.addEventListener('popstate', () => {
   }
 });
 
-// If the viewport crosses into desktop while the panel is expanded (e.g.
-// device rotated to landscape past 960px, or browser window resized), the
-// "expanded" CSS becomes a no-op but the body scroll lock would persist.
-// Collapse + unlock on the transition so the user is never stranded.
 _MOBILE_MQ.addEventListener('change', (ev) => {
   if (!ev.matches && previewPanel.classList.contains('expanded')) {
     previewPanel.classList.remove('expanded');
@@ -2096,12 +2049,10 @@ _MOBILE_MQ.addEventListener('change', (ev) => {
   }
 });
 
-// Tapping the collapsed thumbnail expands it.
 previewPanel.addEventListener('click', () => {
   if (!previewPanel.classList.contains('expanded')) expandPreview();
 });
 
-// Tapping the poster frame when expanded collapses it (alternative to the minimize bar).
 document.getElementById('preview-frame').addEventListener('click', () => {
   if (previewPanel.classList.contains('expanded')) collapsePreview();
 });
@@ -2145,21 +2096,21 @@ function updateKeyBadges() {
   const mdbInput  = document.getElementById('cfg-mdblist-key');
 
   if (serverCaps.tmdb_key_set) {
-    tmdbBadge.style.display = ''; tmdbBadge.textContent = 'Server Key Set'; tmdbBadge.className = 'server-key-badge';
-    tmdbHint.style.display = ''; tmdbHint.textContent = 'Server-side TMDB key configured. Your key (if entered) takes priority.';
-    tmdbInput.placeholder = 'Optional — server key used if blank';
+    if(tmdbBadge) { tmdbBadge.style.display = ''; tmdbBadge.textContent = 'Server Key Set'; tmdbBadge.className = 'server-key-badge'; }
+    if(tmdbHint) { tmdbHint.style.display = ''; tmdbHint.textContent = 'Server-side TMDB key configured. Your key (if entered) takes priority.'; }
+    if(tmdbInput) tmdbInput.placeholder = 'Optional — server key used if blank';
   } else {
-    tmdbBadge.style.display = ''; tmdbBadge.textContent = 'No Server Key'; tmdbBadge.className = 'server-key-badge missing';
-    tmdbHint.style.display = 'none';
-    tmdbInput.placeholder = 'Required — no server key configured';
+    if(tmdbBadge) { tmdbBadge.style.display = ''; tmdbBadge.textContent = 'No Server Key'; tmdbBadge.className = 'server-key-badge missing'; }
+    if(tmdbHint) tmdbHint.style.display = 'none';
+    if(tmdbInput) tmdbInput.placeholder = 'Required — no server key configured';
   }
 
   if (serverCaps.mdblist_key_set) {
-    mdbHint.style.display = ''; mdbHint.textContent = 'Server-side MDblist key configured. Your key (if entered) takes priority.';
-    mdbInput.placeholder = 'Optional — server key used if blank';
+    if(mdbHint) { mdbHint.style.display = ''; mdbHint.textContent = 'Server-side MDblist key configured. Your key (if entered) takes priority.'; }
+    if(mdbInput) mdbInput.placeholder = 'Optional — server key used if blank';
   } else {
-    mdbHint.style.display = ''; mdbHint.textContent = 'Cached titles work without a key. Uncached titles require a key.';
-    mdbInput.placeholder = 'Required for uncached titles';
+    if(mdbHint) { mdbHint.style.display = ''; mdbHint.textContent = 'Cached titles work without a key. Uncached titles require a key.'; }
+    if(mdbInput) mdbInput.placeholder = 'Required for uncached titles';
   }
 
   const aiosHint = document.getElementById('aiostreams-hint');
@@ -2236,7 +2187,7 @@ function buildSashList() {
     item.addEventListener('dragend',   onDragEnd);
     item.addEventListener('dragover',  onDragOver);
     item.addEventListener('drop',      onDrop);
-    // Touch drag starts only from the handle; move/end attach to document on demand.
+    // Touch drag starts only from the handle
     item.querySelector('.sash-drag-handle').addEventListener('touchstart', onTouchStart, { passive: true });
     container.appendChild(item);
   });
@@ -2350,11 +2301,9 @@ function disableSash(slotId) {
 function enableSash(slotId) {
   sashDisabled.delete(slotId);
   if (!sashOrder.includes(slotId)) {
-    // Re-insert at the natural default position:
-    // find the rightmost active slot that precedes slotId in SASH_SLOTS default order.
     const defaultOrder = SASH_SLOTS.map(s => s.id);
     const defaultIdx   = defaultOrder.indexOf(slotId);
-    let insertAt = sashOrder.length; // fallback: append at end
+    let insertAt = sashOrder.length;
     for (let i = defaultIdx - 1; i >= 0; i--) {
       const activeIdx = sashOrder.indexOf(defaultOrder[i]);
       if (activeIdx !== -1) { insertAt = activeIdx + 1; break; }
@@ -2383,7 +2332,6 @@ function loadSashOrder() {
     if (!raw) return;
     const saved = JSON.parse(raw);
     const knownIds = new Set(SASH_SLOTS.map(s => s.id));
-    // Support old format (plain array) and new format ({ order, disabled })
     const savedOrder    = Array.isArray(saved) ? saved          : (saved.order    || []);
     const savedDisabled = Array.isArray(saved) ? []             : (saved.disabled || []);
     sashDisabled = new Set(savedDisabled.filter(id => knownIds.has(id)));
@@ -2657,7 +2605,6 @@ async function fetchImdbId(tmdbId, type) {
 
   try {
     if (userTmdbKey) {
-      // Direct browser call when user has their own key
       const endpoint = type === 'tv'
         ? `https://api.themoviedb.org/3/tv/${tmdbId}/external_ids?api_key=${userTmdbKey}`
         : `https://api.themoviedb.org/3/movie/${tmdbId}/external_ids?api_key=${userTmdbKey}`;
@@ -2665,7 +2612,6 @@ async function fetchImdbId(tmdbId, type) {
       const data = await resp.json();
       return data.imdb_id || null;
     } else {
-      // Fall back to server proxy
       const domain = vEl('cfg-domain').replace(/\/$/, '');
       const params = new URLSearchParams({ tmdb_id: tmdbId, type });
       if (accKey) params.set('access_key', accKey);
@@ -2706,7 +2652,6 @@ function buildBaseParams({ usePlaceholders = false } = {}) {
 
   const params = new URLSearchParams();
 
-  // ── Core identity ──────────────────────────────────────────────────────────
   params.set('tmdb_id', tmdbId);
   params.set('imdb_id', imdbId);
   params.set('type',    type);
@@ -2714,11 +2659,10 @@ function buildBaseParams({ usePlaceholders = false } = {}) {
   if (userTmdbKey)    params.set('tmdb_key',     usePlaceholders ? '{tmdb_key}'    : userTmdbKey);
   if (userMdblistKey) params.set('mdblist_key',  usePlaceholders ? '{mdblist_key}' : userMdblistKey);
 
-  // ── Rating / Genre Label ───────────────────────────────────────────────────
   params.set('rating_display_mode', ratingMode);
 
-  params.set('gradient_top_enable', c('tog-grad-top') ? 'true' : 'false');
-  params.set('gradient_bottom_enable', c('tog-grad-bot') ? 'true' : 'false');
+  params.set('gradient_top_intensity', vEl('cfg-grad-top'));
+  params.set('gradient_bottom_intensity', vEl('cfg-grad-bot'));
   params.set('dominant_color_logic', c('tog-dom-color') ? 'true' : 'false');
   params.set('use_original_logo_color', c('tog-logo-color') ? 'true' : 'false');
   params.set('text_drop_shadow', c('tog-text-shadow') ? 'true' : 'false');
@@ -2728,7 +2672,6 @@ function buildBaseParams({ usePlaceholders = false } = {}) {
   params.set('minimal_pill_scale', n('cfg-pill-scale').toFixed(2));
 
   if (ratingMode !== 0) {
-    // Colour palette: only exposed in the UI for modes 1 and 3
     if (ratingMode === 1 || ratingMode === 3) {
       params.set('score_color_mode', ni('cfg-score-color-mode'));
     }
@@ -2746,27 +2689,23 @@ function buildBaseParams({ usePlaceholders = false } = {}) {
       params.set('minimalist_mode_font_x_offset',   n('cfg-x-mode3').toFixed(3));
       params.set('minimalist_mode_font_y_offset',   n('cfg-y-mode3').toFixed(3));
     }
-    // Rating weights only affect the displayed score
     const mw = getWeights('movie-weights', MOVIE_SOURCES);
     const tw = getWeights('tv-weights',    TV_SOURCES);
     params.set('movie_weights', Object.entries(mw).map(([k,v]) => `${k}:${v.toFixed(2)}`).join(','));
     params.set('tv_weights',    Object.entries(tw).map(([k,v]) => `${k}:${v.toFixed(2)}`).join(','));
   }
 
-  // ── Logo ───────────────────────────────────────────────────────────────────
   params.set('textless',          c('tog-textless') ? 'true' : 'false');
   params.set('logo_language',     logoLanguage);
   params.set('logo_max_w_ratio',  n('cfg-logo-w').toFixed(2));
   params.set('logo_max_h_ratio',  n('cfg-logo-h').toFixed(2));
   params.set('logo_bottom_ratio', n('cfg-logo-bottom').toFixed(2));
 
-  // ── Info Sash ──────────────────────────────────────────────────────────────
   params.set('show_award_sash', showSash ? 'true' : 'false');
   if (showSash) {
     const isBadge = (document.getElementById('cfg-sash-style').value !== 'ribbon');
     params.set('sash_badge', isBadge ? 'true' : 'false');
     if (isBadge) {
-      // Muted is not compatible with badge style — omit it from URL
       params.set('sash_badge_x', n('cfg-sash-badge-x').toFixed(2));
       params.set('sash_badge_y', n('cfg-sash-badge-y').toFixed(2));
     } else {
@@ -2775,14 +2714,12 @@ function buildBaseParams({ usePlaceholders = false } = {}) {
     params.set('sash_priority', getSashPriorityParam());
   }
 
-  // ── Quality Badges ─────────────────────────────────────────────────────────
   params.set('badge_display_mode', badgeMode);
   if (badgeMode !== 0) {
     params.set('badge_height',   ni('cfg-badge-h'));
     params.set('badge_anchor_x', n('cfg-badge-x').toFixed(3));
     params.set('badge_anchor_y', n('cfg-badge-y').toFixed(3));
     if (badgeMode === 2) {
-      // badge_gap only applies to Quality Badge Row mode
       params.set('badge_gap', ni('cfg-badge-gap'));
     }
   }
@@ -2804,7 +2741,6 @@ async function copyUrl() {
     setLog('preview-log', 'Template URL successfully copied. Paste into AIOMetadata → Art Providers → Custom Art URLs → Poster URL Pattern.', 'ok');
   } catch (err) {
     console.error('Clipboard error:', err);
-    // Fallback approach if clipboard API fails
     const textArea = document.createElement("textarea");
     textArea.value = url;
     document.body.appendChild(textArea);
@@ -2910,11 +2846,10 @@ async function loadPreview() {
   }
 }
 
-
 function updateSashStyleFields() {
   const style = document.getElementById('cfg-sash-style').value;
   const showBadgePos = (style === 'corner_badge' || style === 'minimal_pill');
-  const posFields = document.getElementById('wrap-sash-badge-fields');
+  const posFields = document.getElementById('sash-badge-offsets');
   if(posFields) posFields.style.display = showBadgePos ? 'block' : 'none';
 
   const showScale = (style === 'minimal_pill');
@@ -2922,16 +2857,12 @@ function updateSashStyleFields() {
   if(scaleField) scaleField.style.display = showScale ? 'block' : 'none';
 }
 
-
 function updateSashBadgeFields() {
   const isBadge = (document.getElementById('cfg-sash-style').value !== 'ribbon');
-  _setEl('wrap-sash-badge-fields', isBadge ? 'block' : 'none', 'display');
-
   const mutedRow = document.getElementById('sash-muted-row');
   if (mutedRow) mutedRow.style.display = isBadge ? 'none' : '';
 
-  const badgeOffsets = document.getElementById('sash-badge-offsets');
-  if (badgeOffsets) badgeOffsets.style.display = isBadge ? '' : 'none';
+  updateSashStyleFields();
   if (isBadge) initCustomMobileSliders();
 }
 
@@ -2943,11 +2874,6 @@ function updateRatingFields() {
   document.getElementById('rating-glow-fields').style.display       = mode === 1 ? '' : 'none';
   document.getElementById('rating-alt-colors-toggle').style.display = (mode === 1 || mode === 3) ? '' : 'none';
 }
-
-// ---------------------------------------------------------------------------
-// URL Import
-// ---------------------------------------------------------------------------
-
 
 const _INFO_TITLES = {
   core:    'Core Config',
@@ -2975,7 +2901,6 @@ function closeInfoModal() {
 function toggleImportBar() {
   document.getElementById('import-modal').classList.add('open');
   const input = document.getElementById('import-input');
-  // Slight delay so the display:flex transition completes before focus
   setTimeout(() => { input.focus(); input.select(); }, 50);
 }
 
@@ -2991,10 +2916,6 @@ function applyImport() {
   if (result) closeImportModal();
 }
 
-// ─── What's new ────────────────────────────────────────────────────────────
-// Bump WHATS_NEW_VERSION whenever the modal content changes — existing users
-// will see the unread dot on the chip until they open and acknowledge it.
-// The chip itself stays visible so users can re-open the list whenever.
 const WHATS_NEW_VERSION = '1.0.0';
 
 function openWhatsNew() {
@@ -3025,7 +2946,6 @@ function _setEl(id, value) {
     el.value = String(value);
   } else {
     el.value = value;
-    // Re-fire input so range display values update
     if (el.type === 'range' || el.type === 'number') {
       el.dispatchEvent(new Event('input', { bubbles: true }));
     }
@@ -3039,7 +2959,6 @@ function importUrl(urlStr) {
     return false;
   }
 
-  // Only accept /poster paths
   if (!parsed.pathname.endsWith('/poster') && !parsed.pathname.endsWith('/poster/')) {
     setLog('preview-log', 'Import failed — URL does not look like a poster endpoint (/poster).', 'err');
     return false;
@@ -3047,17 +2966,14 @@ function importUrl(urlStr) {
 
   const p = parsed.searchParams;
 
-  // ── Domain & auth ──────────────────────────────────────────────────────
   document.getElementById('cfg-domain').value = parsed.origin;
   if (p.has('access_key'))  document.getElementById('cfg-access-key').value = p.get('access_key');
 
-  // Only import API keys if they are real values (not placeholder tokens)
   const tmdbKey  = p.get('tmdb_key')    || '';
   const mdbKey   = p.get('mdblist_key') || '';
   if (tmdbKey  && !tmdbKey.startsWith('{'))  document.getElementById('cfg-tmdb-key').value    = tmdbKey;
   if (mdbKey   && !mdbKey.startsWith('{'))   document.getElementById('cfg-mdblist-key').value = mdbKey;
 
-  // ── Media identity (skip template placeholders) ────────────────────────
   const rawTmdb = p.get('tmdb_id') || '';
   const rawImdb = p.get('imdb_id') || '';
   const rawType = p.get('type')    || '';
@@ -3065,10 +2981,8 @@ function importUrl(urlStr) {
   if (rawImdb && !rawImdb.startsWith('{')) resolvedImdbId = rawImdb;
   if (rawType && !rawType.startsWith('{')) mediaType      = rawType;
 
-  // ── Logo language ───────────────────────────────────────────────────────
   if (p.has('logo_language')) _setEl('cfg-language', p.get('logo_language'));
 
-  // ── Sash ────────────────────────────────────────────────────────────────
   if (p.has('show_award_sash')) _setEl('tog-award-sash',    p.get('show_award_sash'));
   if (p.has('muted'))           _setEl('tog-muted',         p.get('muted'));
   if (p.has('sash_badge'))      _setEl('tog-sash-badge',    p.get('sash_badge'));
@@ -3079,7 +2993,6 @@ function importUrl(urlStr) {
   if (p.has('sash_priority')) {
     const tokens = p.get('sash_priority').split(',').map(s => s.trim()).filter(Boolean);
     const known  = new Set(SASH_SLOTS.map(s => s.id));
-    // Tokens with a leading '-' are explicit exclusions
     const newDisabled = new Set(
       tokens.filter(t => t.startsWith('-') && known.has(t.slice(1))).map(t => t.slice(1))
     );
@@ -3091,11 +3004,10 @@ function importUrl(urlStr) {
     buildSashList();
   }
 
-  // ── Rating display ──────────────────────────────────────────────────────
-  if (p.has('rating_display_mode'))            _setEl('cfg-rating-mode',  p.get('rating_display_mode'));
+  if (p.has('rating_display_mode')) _setEl('cfg-rating-mode',  p.get('rating_display_mode'));
 
-  if (p.has('gradient_top_enable')) _setEl('tog-grad-top', p.get('gradient_top_enable'));
-  if (p.has('gradient_bottom_enable')) _setEl('tog-grad-bot', p.get('gradient_bottom_enable'));
+  if (p.has('gradient_top_intensity')) _setEl('cfg-grad-top', p.get('gradient_top_intensity'));
+  if (p.has('gradient_bottom_intensity')) _setEl('cfg-grad-bot', p.get('gradient_bottom_intensity'));
   if (p.has('dominant_color_logic')) _setEl('tog-dom-color', p.get('dominant_color_logic'));
   if (p.has('use_original_logo_color')) _setEl('tog-logo-color', p.get('use_original_logo_color'));
   if (p.has('text_drop_shadow')) _setEl('tog-text-shadow', p.get('text_drop_shadow'));
@@ -3118,20 +3030,17 @@ function importUrl(urlStr) {
   if (p.has('score_color_mode'))               _setEl('cfg-score-color-mode', p.get('score_color_mode'));
   updateRatingFields();
 
-  // ── Logo ────────────────────────────────────────────────────────────────
   if (p.has('logo_max_w_ratio'))   _setEl('cfg-logo-w',      p.get('logo_max_w_ratio'));
   if (p.has('logo_max_h_ratio'))   _setEl('cfg-logo-h',      p.get('logo_max_h_ratio'));
   if (p.has('logo_bottom_ratio'))  _setEl('cfg-logo-bottom', p.get('logo_bottom_ratio'));
   if (p.has('textless'))           _setEl('tog-textless',    p.get('textless'));
 
-  // ── Quality badges ──────────────────────────────────────────────────────
   if (p.has('badge_display_mode')) _setEl('cfg-badge-display-mode', p.get('badge_display_mode'));
   if (p.has('badge_height'))       _setEl('cfg-badge-h',  p.get('badge_height'));
   if (p.has('badge_gap'))          _setEl('cfg-badge-gap', p.get('badge_gap'));
   if (p.has('badge_anchor_x'))     _setEl('cfg-badge-x',  p.get('badge_anchor_x'));
   if (p.has('badge_anchor_y'))     _setEl('cfg-badge-y',  p.get('badge_anchor_y'));
 
-  // ── Rating weights ──────────────────────────────────────────────────────
   function applyWeights(paramName, containerId, sources) {
     if (!p.has(paramName)) return;
     const pairs = p.get(paramName).split(',');
@@ -3148,7 +3057,6 @@ function importUrl(urlStr) {
   applyWeights('movie_weights', 'movie-weights', MOVIE_SOURCES);
   applyWeights('tv_weights',    'tv-weights',    TV_SOURCES);
 
-  // ── Persist API keys and rebuild ────────────────────────────────────────
   saveApiKeys();
   build();
   queuePreviewReload();
@@ -3156,7 +3064,6 @@ function importUrl(urlStr) {
   return true;
 }
 
-// Init
 buildWeightSection('movie-weights', MOVIE_SOURCES, DEFAULT_MOVIE_W);
 buildWeightSection('tv-weights',    TV_SOURCES,    DEFAULT_TV_W);
 
@@ -3181,7 +3088,6 @@ build();
 
 fetchServerCaps().then(() => { queuePreviewReload(); });
 
-// Mobile slider polyfill
 function initCustomMobileSliders() {
   if (!window.matchMedia('(pointer: coarse)').matches) return;
   document.querySelectorAll('input[type="range"]:not([data-custom-slider])').forEach(input => {
@@ -3248,7 +3154,6 @@ initCustomMobileSliders();
     </div>
     <div class="info-modal-body">
 
-      <!-- CORE CONFIG -->
       <div class="info-panel" data-section="core">
         <div class="info-section">
           <dl class="info-kv">
@@ -3260,7 +3165,6 @@ initCustomMobileSliders();
         </div>
       </div>
 
-      <!-- RATING / GENRE LABEL -->
       <div class="info-panel" data-section="rating" style="display:none">
         <div class="info-section">
           <div class="info-section-title">Display Modes</div>
@@ -3289,7 +3193,6 @@ initCustomMobileSliders();
         </div>
       </div>
 
-      <!-- LOGO -->
       <div class="info-panel" data-section="logo" style="display:none">
         <div class="info-section">
           <div class="info-section-title">Textless Mode</div>
@@ -3308,7 +3211,6 @@ initCustomMobileSliders();
         </div>
       </div>
 
-      <!-- INFO SASH -->
       <div class="info-panel" data-section="sash" style="display:none">
         <div class="info-section">
           <div class="info-section-title">Sashes</div>
@@ -3323,7 +3225,6 @@ initCustomMobileSliders();
         </div>
       </div>
 
-      <!-- QUALITY BADGES -->
       <div class="info-panel" data-section="badges" style="display:none">
         <div class="info-section">
           <div class="info-section-title">Display Modes</div>
@@ -3346,7 +3247,6 @@ initCustomMobileSliders();
         </div>
       </div>
 
-      <!-- RATING WEIGHTS -->
       <div class="info-panel" data-section="weights" style="display:none">
         <div class="info-section">
           <div class="info-section-title">How Weights Work</div>
