@@ -117,8 +117,6 @@ def _parse_bool_env(key: str, default: bool = False) -> bool:
 
 # Rating Score Weight Defaults
 
-#  note to AI: do NOT remove the extras in this section that are set to 0. They are config options.
-
 MOVIE_WEIGHTS = {   # set weight of movie ranking providers, must sum to 1
     "letterboxd":     0.8,
     "trakt":          0,
@@ -167,18 +165,11 @@ GENRE_MAP = {
     10765: "Sci-Fi", 10766: "Soap", 10767: "Talk", 10768: "War",
 }
 
-# Can re-order to change the priority that genres appear with (reference genre map above)
-# Default Horror, Thriller, Mystery, Sci-Fi, Crime, Comedy, Fantasy, Adventure, Family, Action, History
-# Music, War, Western, Documentary, Drama, Adventure, Reality, Kids, News, Soap, Talk
-# Duplicate entries are not an accident, for certain genres TMDB uses two numbers, one for movies, one for shows.
-
 GENRE_PRIORITY = [
     27, 53, 9648, 878, 10765, 80, 35, 10749, 14, 16, 10751,
     28, 10759, 36, 10402, 10752, 10768, 37, 99, 18, 12,
     10764, 10762, 10763, 10766, 10767,
 ]
-
-# Text based fallback, not important if everything is working properly
 
 QUALITY_LABELS: dict[str, str] = {
     "4K":     "4K",
@@ -192,8 +183,6 @@ QUALITY_LABELS: dict[str, str] = {
     "DTSX":   "DTS:X",
 }
 
-# Normalizes all scores to be out of 100
-
 SCORE_NORMALISERS = {
     "imdb":           lambda v: (v / 10)  * 100,
     "letterboxd":     lambda v: (v / 5)   * 100,
@@ -206,8 +195,6 @@ SCORE_NORMALISERS = {
     "rogerebert":      lambda v: (v / 4)   * 100,
     "myanimelist":    lambda v: (v / 10)  * 100,
 }
-
-# Default Sash Priority
 
 SASH_PRIORITY: list[str] = [
     "wins",
@@ -228,12 +215,12 @@ SASH_PRIORITY: list[str] = [
 ]
 
 # V2 Features Defaults
-FROSTED_GLASS_INTENSITY = 12
-GRADIENT_TOP_ENABLE     = True
-GRADIENT_BOTTOM_ENABLE  = True
-DOMINANT_COLOR_LOGIC    = False
-SASH_STYLE              = "ribbon"
-TEXT_FONT_FAMILY        = "Inter"
-TEXT_DROP_SHADOW        = False
-USE_ORIGINAL_LOGO_COLOR = False
-MINIMAL_PILL_SCALE      = 1.0
+FROSTED_GLASS_INTENSITY   = 25
+GRADIENT_TOP_INTENSITY    = 50
+GRADIENT_BOTTOM_INTENSITY = 80
+DOMINANT_COLOR_LOGIC      = False
+SASH_STYLE                = "ribbon"
+TEXT_FONT_FAMILY          = "Inter"
+TEXT_DROP_SHADOW          = False
+USE_ORIGINAL_LOGO_COLOR   = False
+MINIMAL_PILL_SCALE        = 1.0
