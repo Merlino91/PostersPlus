@@ -226,14 +226,3 @@ SASH_PRIORITY: list[str] = [
     "true_story",
     "structural",
 ]
-
-# Nuovi attributi V2
-FROSTED_GLASS_INTENSITY = 12
-GRADIENT_TOP_ENABLE     = True
-GRADIENT_BOTTOM_ENABLE  = True
-DOMINANT_COLOR_LOGIC    = False
-SASH_STYLE              = "ribbon"
-TEXT_FONT_FAMILY        = "Inter"
-TEXT_DROP_SHADOW        = False
-USE_ORIGINAL_LOGO_COLOR = False
-MINIMAL_PILL_SCALE      = 1.0
