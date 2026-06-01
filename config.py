@@ -227,7 +227,7 @@ SASH_PRIORITY: list[str] = [
     "structural",
 ]
 
-# Nuovi attributi V2
+# V2 Features Defaults
 FROSTED_GLASS_INTENSITY = 12
 GRADIENT_TOP_ENABLE     = True
 GRADIENT_BOTTOM_ENABLE  = True
