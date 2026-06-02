@@ -117,12 +117,6 @@ async def fetch_poster_metadata(
             tmdb_data,
         )
 
-    # Build include_image_language so TMDB returns:
-    #   null  — language-neutral entries (TMDB's signal for textless/unspecified)
-    #   en    — English (logos + fallback posters)
-    #   logo_language — non-English logo candidates when requested
-    # Note: null-language ≠ guaranteed text-free; TMDB uses it for both truly
-    # textless art and posters where the language simply wasn't catalogued.
     _img_langs = "en,null" if logo_language == "en" else f"{logo_language},en,null"
 
     logger.info(f"External API Call: Requested meta from TMDB for {tmdb_id}")
@@ -153,8 +147,6 @@ async def fetch_poster_metadata(
     logos     = images.get("logos", [])
     backdrops = images.get("backdrops", [])
 
-    # iso_639_1 is None (JSON null) for most textless entries;
-    # older TMDB records occasionally use "" (empty string) for the same thing.
     textless = [p for p in posters if p.get("iso_639_1") in (None, "")]
 
     if textless:
@@ -167,15 +159,8 @@ async def fetch_poster_metadata(
 
     if not poster_path:
         logger.warning(f"No poster image on TMDB for tmdb_id={tmdb_id} — fallback canvas will be served")
-        is_textless = False  # no art, no point fetching logos
-        # poster_path stays None; get_poster will generate a fallback canvas
+        is_textless = False  
 
-    # Best backdrop — only consider null/unspecified language entries, which are
-    # the ones TMDB marks as language-neutral (almost always textless).
-    # Backdrops with an explicit language tag frequently have title text burned in,
-    # so we ignore them entirely rather than risk a borked crop.
-    # backdrop_path stays None if no null-language backdrop exists, which suppresses
-    # the backdrop fallback path in main.py.
     backdrop_candidates = [b for b in backdrops if b.get("iso_639_1") in (None, "")]
     if backdrop_candidates:
         best_backdrop = max(backdrop_candidates, key=lambda x: x.get("vote_average", 0))
@@ -226,22 +211,12 @@ async def fetch_poster_image(
     media_type: str,
     poster_path: str,
 ) -> Image.Image:
-    """
-    Fetch and cache the base poster image.
-
-    Disk cache format is JPEG (q=92 RGB) rather than PNG:
-      - ~4-5x faster decode on cache hit
-      - ~5x smaller on disk
-      - Imperceptible quality difference for photographic poster art
-    The image is returned as RGBA so the compositing pipeline can use
-    alpha_composite throughout without mode-checking.
-    """
+    
     poster_cache_key = f"{media_type}_{tmdb_id}_{poster_path.strip('/')}"
     cached_bytes = get_cached_tmdb_poster(poster_cache_key)
 
     if cached_bytes:
         logger.info(f"TMDB poster cache hit for {tmdb_id}")
-        # Stored as JPEG RGB — convert to RGBA for the compositing pipeline
         image = Image.open(io.BytesIO(cached_bytes)).convert("RGBA")
         if image.size != (POSTER_WIDTH, POSTER_HEIGHT):
             image = normalise_poster(image)
@@ -253,7 +228,6 @@ async def fetch_poster_image(
     image = Image.open(io.BytesIO(img_resp.content)).convert("RGBA")
     image = normalise_poster(image)
 
-    # Save as JPEG RGB (no alpha needed for base poster; restoring alpha on load is free)
     buf = io.BytesIO()
     image.convert("RGB").save(buf, format="JPEG", quality=92)
     set_cached_tmdb_poster(poster_cache_key, buf.getvalue())
@@ -266,13 +240,7 @@ async def fetch_backdrop_image(
     tmdb_id: str,
     backdrop_path: str,
 ) -> Image.Image:
-    """
-    Fetch, centre-crop, and cache a TMDB backdrop as a portrait poster.
 
-    Backdrops are 16:9 landscape; we take the full height and cut a centred
-    2:3 strip, giving a clean textless portrait without any AI inpainting.
-    Cached under the same JPEG scheme as regular posters.
-    """
     cache_key = f"backdrop_{tmdb_id}_{backdrop_path.strip('/')}"
     cached_bytes = get_cached_tmdb_poster(cache_key)
 
@@ -283,13 +251,11 @@ async def fetch_backdrop_image(
             image = normalise_poster(image)
         return image
 
-    # w1280 gives enough resolution to crop to a quality portrait
     logger.info(f"External API Call: Requested backdrop from TMDB for {tmdb_id}")
     img_resp = await client.get(f"https://image.tmdb.org/t/p/w1280{backdrop_path}")
     img_resp.raise_for_status()
     image = Image.open(io.BytesIO(img_resp.content)).convert("RGBA")
 
-    # Centre-crop 16:9 → 2:3: keep full height, take a centred vertical strip
     w, h = image.size
     crop_w = int(h * 2 / 3)
     if crop_w < w:
@@ -307,11 +273,77 @@ async def fetch_backdrop_image(
 
 async def fetch_logo(
     client: httpx.AsyncClient,
+    tmdb_id: str,
+    media_type: str,
+    tmdb_key: str,
+    fanart_key: str,
     logos: list[dict],
     logo_language: str = "en",
     use_original_colors: bool = False,
 ) -> Image.Image | None:
+    
+    # 1. Prova a scaricare il Logo HD da Fanart.tv se la chiave è presente
+    fanart_logo_url = None
+    if fanart_key:
+        query_id = tmdb_id
+        endpoint = "movies"
+        if media_type in ("tv", "series"):
+            try:
+                ext_resp = await client.get(f"https://api.themoviedb.org/3/tv/{tmdb_id}/external_ids", params={"api_key": tmdb_key})
+                if ext_resp.status_code == 200:
+                    query_id = ext_resp.json().get("tvdb_id")
+            except Exception as e:
+                logger.warning(f"Failed to get tvdb_id for Fanart logo: {e}")
+            endpoint = "tv"
 
+        if query_id:
+            try:
+                f_resp = await client.get(f"https://webservice.fanart.tv/v3/{endpoint}/{query_id}", params={"api_key": fanart_key})
+                if f_resp.status_code == 200:
+                    f_data = f_resp.json()
+                    if endpoint == "movies":
+                        f_logos = f_data.get("hdmovielogo", []) or f_data.get("movielogo", [])
+                    else:
+                        f_logos = f_data.get("hdtvlogo", []) or f_data.get("clearlogo", [])
+                        
+                    if f_logos:
+                        preferred = [l for l in f_logos if l.get("lang") == logo_language]
+                        english = [l for l in f_logos if l.get("lang") == "en"]
+                        candidates = preferred or english
+                        if candidates:
+                            candidates.sort(key=lambda x: int(x.get("likes", 0)), reverse=True)
+                            fanart_logo_url = candidates[0].get("url")
+            except Exception as e:
+                logger.warning(f"Fanart logo fetch failed: {e}")
+
+    # Processamento del Logo Fanart.tv
+    if fanart_logo_url:
+        logo_cache_key = "fanart_" + fanart_logo_url.split("/")[-1]
+        cached_bytes = get_cached_tmdb_logo(logo_cache_key)
+
+        if cached_bytes:
+            logger.info("Fanart logo cache hit")
+            logo = Image.open(io.BytesIO(cached_bytes)).convert("RGBA")
+            return logo
+
+        try:
+            logger.info("External API Call: Requested logo from Fanart.tv")
+            resp = await client.get(fanart_logo_url)
+            resp.raise_for_status()
+            logo = Image.open(io.BytesIO(resp.content)).convert("RGBA")
+            
+            bbox = logo.getchannel("A").getbbox()
+            if bbox: logo = logo.crop(bbox)
+            if not use_original_colors: logo = ensure_light_logo(logo)
+
+            buf = io.BytesIO()
+            logo.save(buf, format="PNG")
+            set_cached_tmdb_logo(logo_cache_key, buf.getvalue())
+            return logo
+        except Exception as e:
+            logger.warning(f"Failed to download Fanart logo, falling back to TMDB: {e}")
+
+    # 2. Fallback Originale su TMDB
     preferred = [
         lg for lg in logos
         if lg["file_path"].endswith(".png")
