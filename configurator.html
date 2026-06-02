@@ -2631,6 +2631,7 @@ function escHtml(s) {
 function build() { return buildPreviewUrl(); }
 
 function decodePlaceholders(url) {
+  // Normalizza i simboli rendendo il link bello, pulito e leggibile
   return url.replace(/%7B/g, '{')
             .replace(/%7D/g, '}')
             .replace(/%21/g, '!')
@@ -2644,6 +2645,7 @@ function buildBaseParams({ usePlaceholders = false } = {}) {
   const tmdbId         = usePlaceholders ? '{tmdb_id}'  : (resolvedTmdbId  || '{tmdb_id}');
   const accKey         = vEl('cfg-access-key');
   const type           = usePlaceholders ? '{type}'     : mediaType;
+  
   const userTmdbKey    = vEl('cfg-tmdb-key');
   const userMdblistKey = vEl('cfg-mdblist-key');
   const fanartKey      = vEl('cfg-fanart-key');
@@ -2654,12 +2656,13 @@ function buildBaseParams({ usePlaceholders = false } = {}) {
   params.set('imdb_id', imdbId);
   params.set('type',    type);
 
+  // Normalizza e aggiunge le chiavi di sicurezza/API in chiaro, MAI COME PLACEHOLDER (risolve il KeyError di AIOMetadata)
   if (accKey)         params.set('access_key',  accKey);
-  if (userTmdbKey)    params.set('tmdb_key',     usePlaceholders ? '{tmdb_key}'    : userTmdbKey);
-  if (userMdblistKey) params.set('mdblist_key',  usePlaceholders ? '{mdblist_key}' : userMdblistKey);
+  if (userTmdbKey)    params.set('tmdb_key',     userTmdbKey);
+  if (userMdblistKey) params.set('mdblist_key',  userMdblistKey);
   if (fanartKey)      params.set('fanart_key',   fanartKey);
 
-  // Funzione helper: aggiunge il parametro SOLO se differisce dal default di config.py
+  // Funzione magica per accorciare il link: aggiunge il parametro SOLO se è diverso dal default
   const setIf = (key, val, def) => { if (String(val) !== String(def)) params.set(key, val); };
 
   setIf('rating_display_mode', ni('cfg-rating-mode'), 1);
