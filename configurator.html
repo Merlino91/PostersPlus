@@ -2631,7 +2631,10 @@ function escHtml(s) {
 function build() { return buildPreviewUrl(); }
 
 function decodePlaceholders(url) {
-  return url.replace(/%7B/g, '{').replace(/%7D/g, '}');
+  return url.replace(/%7B/g, '{')
+            .replace(/%7D/g, '}')
+            .replace(/%21/g, '!')
+            .replace(/%2C/g, ',');
 }
 
 function buildBaseParams({ usePlaceholders = false } = {}) {
@@ -2645,91 +2648,93 @@ function buildBaseParams({ usePlaceholders = false } = {}) {
   const userMdblistKey = vEl('cfg-mdblist-key');
   const fanartKey      = vEl('cfg-fanart-key');
 
-  const ratingMode = ni('cfg-rating-mode');
-  const badgeMode  = ni('cfg-badge-display-mode');
-  const showSash   = c('tog-award-sash');
-
   const params = new URLSearchParams();
 
   params.set('tmdb_id', tmdbId);
   params.set('imdb_id', imdbId);
   params.set('type',    type);
+
   if (accKey)         params.set('access_key',  accKey);
-  
   if (userTmdbKey)    params.set('tmdb_key',     usePlaceholders ? '{tmdb_key}'    : userTmdbKey);
   if (userMdblistKey) params.set('mdblist_key',  usePlaceholders ? '{mdblist_key}' : userMdblistKey);
-  
-  // FIX: Non usare mai il placeholder {fanart_key} perché AIOMetadata non lo supporta e crasha.
-  // Inserisce sempre la chiave reale in chiaro nell'URL.
-  if (fanartKey)      params.set('fanart_key',   fanartKey); 
+  if (fanartKey)      params.set('fanart_key',   fanartKey);
 
-  params.set('rating_display_mode', ratingMode);
-  
-  params.set('gradient_top_intensity', vEl('cfg-grad-top'));
-  params.set('gradient_bottom_intensity', vEl('cfg-grad-bot'));
-  params.set('frosted_glass_intensity', vEl('cfg-glass-int'));
-  
-  params.set('dom_color_top', c('tog-dom-top') ? 'true' : 'false');
-  params.set('dom_color_bot', c('tog-dom-bot') ? 'true' : 'false');
-  params.set('dom_color_sash', c('tog-dom-sash') ? 'true' : 'false');
+  // Funzione helper: aggiunge il parametro SOLO se differisce dal default di config.py
+  const setIf = (key, val, def) => { if (String(val) !== String(def)) params.set(key, val); };
 
-  params.set('use_original_logo_color', c('tog-logo-color') ? 'true' : 'false');
-  params.set('text_drop_shadow', c('tog-text-shadow') ? 'true' : 'false');
-  params.set('text_font_family', vEl('cfg-font-family'));
-  params.set('sash_style', vEl('cfg-sash-style'));
-  params.set('minimal_pill_scale', n('cfg-pill-scale').toFixed(2));
+  setIf('rating_display_mode', ni('cfg-rating-mode'), 1);
+  setIf('gradient_top_intensity', vEl('cfg-grad-top'), 50);
+  setIf('gradient_bottom_intensity', vEl('cfg-grad-bot'), 80);
+  setIf('frosted_glass_intensity', vEl('cfg-glass-int'), 25);
+  
+  setIf('dom_color_top', c('tog-dom-top') ? 'true' : 'false', 'false');
+  setIf('dom_color_bot', c('tog-dom-bot') ? 'true' : 'false', 'false');
+  setIf('dom_color_sash', c('tog-dom-sash') ? 'true' : 'false', 'false');
 
-  if (ratingMode !== 0) {
-    if (ratingMode === 1 || ratingMode === 3) {
-      params.set('score_color_mode', ni('cfg-score-color-mode'));
+  setIf('use_original_logo_color', c('tog-logo-color') ? 'true' : 'false', 'false');
+  setIf('text_drop_shadow', c('tog-text-shadow') ? 'true' : 'false', 'false');
+  setIf('text_font_family', vEl('cfg-font-family'), 'Inter');
+  setIf('sash_style', vEl('cfg-sash-style'), 'ribbon');
+  setIf('minimal_pill_scale', n('cfg-pill-scale').toFixed(2), '1.00');
+
+  if (ni('cfg-rating-mode') !== 0) {
+    setIf('score_color_mode', ni('cfg-score-color-mode'), 2);
+    if (ni('cfg-rating-mode') === 1) {
+      setIf('accent_bar_font_size_ratio', n('cfg-font-mode1').toFixed(3), '0.080');
+      setIf('accent_bar_y_offset', n('cfg-y-mode1').toFixed(2), '0.90');
+      setIf('score_glow_threshold', ni('cfg-glow-thresh'), 85);
+      setIf('score_glow_blur', ni('cfg-glow-blur'), 1);
+      setIf('score_glow_alpha', ni('cfg-glow-alpha'), 40);
+    } else if (ni('cfg-rating-mode') === 2) {
+      setIf('numeric_score_font_size_ratio', n('cfg-font-mode2').toFixed(3), '0.100');
+      setIf('numeric_score_y_offset', n('cfg-y-mode2').toFixed(2), '0.90');
+    } else if (ni('cfg-rating-mode') === 3) {
+      setIf('minimalist_mode_font_size_ratio', n('cfg-font-mode3').toFixed(3), '0.055');
+      setIf('minimalist_mode_font_x_offset', n('cfg-x-mode3').toFixed(3), '0.050');
+      setIf('minimalist_mode_font_y_offset', n('cfg-y-mode3').toFixed(3), '0.920');
     }
-    if (ratingMode === 1) {
-      params.set('accent_bar_font_size_ratio', n('cfg-font-mode1').toFixed(3));
-      params.set('accent_bar_y_offset',        n('cfg-y-mode1').toFixed(2));
-      params.set('score_glow_threshold', ni('cfg-glow-thresh'));
-      params.set('score_glow_blur',      ni('cfg-glow-blur'));
-      params.set('score_glow_alpha',     ni('cfg-glow-alpha'));
-    } else if (ratingMode === 2) {
-      params.set('numeric_score_font_size_ratio', n('cfg-font-mode2').toFixed(3));
-      params.set('numeric_score_y_offset',        n('cfg-y-mode2').toFixed(2));
-    } else if (ratingMode === 3) {
-      params.set('minimalist_mode_font_size_ratio', n('cfg-font-mode3').toFixed(3));
-      params.set('minimalist_mode_font_x_offset',   n('cfg-x-mode3').toFixed(3));
-      params.set('minimalist_mode_font_y_offset',   n('cfg-y-mode3').toFixed(3));
-    }
+    
     const mw = getWeights('movie-weights', MOVIE_SOURCES);
-    const tw = getWeights('tv-weights',    TV_SOURCES);
-    params.set('movie_weights', Object.entries(mw).map(([k,v]) => `${k}:${v.toFixed(2)}`).join(','));
-    params.set('tv_weights',    Object.entries(tw).map(([k,v]) => `${k}:${v.toFixed(2)}`).join(','));
+    const mwStr = Object.entries(mw).map(([k,v]) => `${k}:${v.toFixed(2)}`).join(',');
+    const defMwStr = Object.entries(DEFAULT_MOVIE_W).map(([k,v]) => `${k}:${v.toFixed(2)}`).join(',');
+    setIf('movie_weights', mwStr, defMwStr);
+
+    const tw = getWeights('tv-weights', TV_SOURCES);
+    const twStr = Object.entries(tw).map(([k,v]) => `${k}:${v.toFixed(2)}`).join(',');
+    const defTwStr = Object.entries(DEFAULT_TV_W).map(([k,v]) => `${k}:${v.toFixed(2)}`).join(',');
+    setIf('tv_weights', twStr, defTwStr);
   }
 
-  params.set('textless',          c('tog-textless') ? 'true' : 'false');
-  params.set('logo_language',     logoLanguage);
-  params.set('logo_max_w_ratio',  n('cfg-logo-w').toFixed(2));
-  params.set('logo_max_h_ratio',  n('cfg-logo-h').toFixed(2));
-  params.set('logo_bottom_ratio', n('cfg-logo-bottom').toFixed(2));
+  setIf('textless', c('tog-textless') ? 'true' : 'false', 'false');
+  setIf('logo_language', logoLanguage, 'en');
+  setIf('logo_max_w_ratio', n('cfg-logo-w').toFixed(2), '0.84');
+  setIf('logo_max_h_ratio', n('cfg-logo-h').toFixed(2), '0.17');
+  setIf('logo_bottom_ratio', n('cfg-logo-bottom').toFixed(2), '0.28');
 
-  params.set('show_award_sash', showSash ? 'true' : 'false');
-  if (showSash) {
+  setIf('show_award_sash', c('tog-award-sash') ? 'true' : 'false', 'true');
+  if (c('tog-award-sash')) {
     const isBadge = (document.getElementById('cfg-sash-style').value !== 'ribbon');
-    params.set('sash_badge', isBadge ? 'true' : 'false');
+    setIf('sash_badge', isBadge ? 'true' : 'false', 'false');
     if (isBadge) {
-      params.set('sash_badge_x', n('cfg-sash-badge-x').toFixed(2));
-      params.set('sash_badge_y', n('cfg-sash-badge-y').toFixed(2));
+      setIf('sash_badge_x', n('cfg-sash-badge-x').toFixed(2), '0.62');
+      setIf('sash_badge_y', n('cfg-sash-badge-y').toFixed(2), '0.04');
     } else {
-      params.set('muted', c('tog-muted') ? 'true' : 'false');
+      setIf('muted', c('tog-muted') ? 'true' : 'false', 'false');
     }
-    params.set('sash_priority', getSashPriorityParam());
+    
+    const currentSashPriority = getSashPriorityParam();
+    const defaultSashPriority = SASH_SLOTS.map(s => s.id).join(',');
+    if (currentSashPriority !== defaultSashPriority) {
+      params.set('sash_priority', currentSashPriority);
+    }
   }
 
-  params.set('badge_display_mode', badgeMode);
-  if (badgeMode !== 0) {
-    params.set('badge_height',   ni('cfg-badge-h'));
-    params.set('badge_anchor_x', n('cfg-badge-x').toFixed(3));
-    params.set('badge_anchor_y', n('cfg-badge-y').toFixed(3));
-    if (badgeMode === 2) {
-      params.set('badge_gap', ni('cfg-badge-gap'));
-    }
+  setIf('badge_display_mode', ni('cfg-badge-display-mode'), 4);
+  if (ni('cfg-badge-display-mode') !== 0) {
+    setIf('badge_height', ni('cfg-badge-h'), 20);
+    setIf('badge_anchor_x', n('cfg-badge-x').toFixed(3), '0.050');
+    setIf('badge_anchor_y', n('cfg-badge-y').toFixed(3), '0.050');
+    if (ni('cfg-badge-display-mode') === 2) setIf('badge_gap', ni('cfg-badge-gap'), 8);
   }
 
   const finalUrl = `${domain}/poster?${params.toString()}`;
