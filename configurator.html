@@ -2655,9 +2655,13 @@ function buildBaseParams({ usePlaceholders = false } = {}) {
   params.set('imdb_id', imdbId);
   params.set('type',    type);
   if (accKey)         params.set('access_key',  accKey);
+  
   if (userTmdbKey)    params.set('tmdb_key',     usePlaceholders ? '{tmdb_key}'    : userTmdbKey);
   if (userMdblistKey) params.set('mdblist_key',  usePlaceholders ? '{mdblist_key}' : userMdblistKey);
-  if (fanartKey)      params.set('fanart_key',   usePlaceholders ? '{fanart_key}'  : fanartKey);
+  
+  // FIX: Non usare mai il placeholder {fanart_key} perché AIOMetadata non lo supporta e crasha.
+  // Inserisce sempre la chiave reale in chiaro nell'URL.
+  if (fanartKey)      params.set('fanart_key',   fanartKey); 
 
   params.set('rating_display_mode', ratingMode);
   
