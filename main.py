@@ -170,36 +170,27 @@ def _check_tmdb_id(val: str) -> None:
     if not _TMDB_ID_RE.match(val):
         raise HTTPException(status_code=400, detail="Invalid tmdb_id")
 
-
 def _check_imdb_id(val: str) -> None:
     if not _IMDB_ID_RE.match(val):
         raise HTTPException(status_code=400, detail="Invalid imdb_id")
-
 
 def _check_type(val: str) -> None:
     if val not in _VALID_TYPES:
         raise HTTPException(status_code=400, detail="Invalid type")
 
-
 def _resolve_tmdb_key(query_key: str) -> str | None:
-    if query_key:
-        return query_key
-    if _cfg.SERVER_TMDB_KEY:
-        return _cfg.SERVER_TMDB_KEY
+    if query_key: return query_key
+    if _cfg.SERVER_TMDB_KEY: return _cfg.SERVER_TMDB_KEY
     return None
 
 def _resolve_mdblist_key(query_key: str) -> str | None:
-    if query_key:
-        return query_key
-    if _cfg.SERVER_MDBLIST_KEY:
-        return _cfg.SERVER_MDBLIST_KEY
+    if query_key: return query_key
+    if _cfg.SERVER_MDBLIST_KEY: return _cfg.SERVER_MDBLIST_KEY
     return None
 
 def _resolve_fanart_key(query_key: str) -> str | None:
-    if query_key:
-        return query_key
-    if _cfg.SERVER_FANART_KEY:
-        return _cfg.SERVER_FANART_KEY
+    if query_key: return query_key
+    if _cfg.SERVER_FANART_KEY: return _cfg.SERVER_FANART_KEY
     return None
 
 
@@ -255,35 +246,29 @@ class RequestConfig:
 
 
 def _parse_bool(val: str | None, default: bool) -> bool:
-    if val is None:
-        return default
+    if val is None: return default
     return val.strip().lower() not in ("0", "false", "no")
 
 def _parse_weights(raw: str | None, sources: list[str]) -> dict | None:
-    if not raw:
-        return None
+    if not raw: return None
     out = {}
     try:
         for part in raw.split(","):
             part = part.strip()
-            if ":" not in part:
-                continue
+            if ":" not in part: continue
             key, val = part.split(":", 1)
             key = key.strip().lower()
             if key in sources:
                 out[key] = max(0.0, min(1.0, float(val)))
-    except Exception:
-        return None
+    except Exception: return None
     return out if out else None
 
 def _parse_sash_priority(raw: str | None) -> list[str]:
-    if not raw:
-        return list(_cfg.SASH_PRIORITY)
+    if not raw: return list(_cfg.SASH_PRIORITY)
     tokens = [s.strip() for s in raw.split(",") if s.strip()]
     excluded  = {t[1:] for t in tokens if t.startswith("-") and t[1:] in ALL_PRIORITY_SLOTS}
     active    = [t      for t in tokens if not t.startswith("-") and t in ALL_PRIORITY_SLOTS]
-    if not active and not excluded:
-        return list(_cfg.SASH_PRIORITY)
+    if not active and not excluded: return list(_cfg.SASH_PRIORITY)
     active_set = set(active)
     for slot in _cfg.SASH_PRIORITY:
         if slot not in active_set and slot not in excluded:
@@ -293,7 +278,6 @@ def _parse_sash_priority(raw: str | None) -> list[str]:
 
 def build_request_config(params: dict) -> RequestConfig:
     cfg = RequestConfig()
-
     def _b(key, default): return _parse_bool(params.get(key), default)
     def _f(key, default, lo: float, hi: float):
         try: return max(lo, min(hi, float(params[key]))) if key in params else default
@@ -301,8 +285,7 @@ def build_request_config(params: dict) -> RequestConfig:
     def _i(key, default, lo: int, hi: int):
         try: return max(lo, min(hi, int(params[key]))) if key in params else default
         except (ValueError, TypeError): return default
-    def _s(key, default):
-        return params.get(key, default).strip() if key in params else default
+    def _s(key, default): return params.get(key, default).strip() if key in params else default
 
     cfg.show_award_sash         = _b("show_award_sash",        cfg.show_award_sash)
     cfg.muted                   = _b("muted",                  cfg.muted)
@@ -386,42 +369,33 @@ def _text_center(draw: ImageDraw.ImageDraw, text: str, font, cx: float, cy: floa
         y = cy - bbox_height / 2 - bbox[1]
     return x, y
 
-
 def _get_dominant_color(image: Image.Image) -> tuple[int, int, int]:
     small_img = image.copy()
     small_img.thumbnail((50, 50))
     small_img = small_img.convert("RGB")
     colors = small_img.getcolors(2500)
-    if not colors:
-        return (100, 100, 100)
+    if not colors: return (100, 100, 100)
     colors.sort(key=lambda t: t[0], reverse=True)
     for count, color in colors:
         luminanza = 0.299 * color[0] + 0.587 * color[1] + 0.114 * color[2]
-        if 40 < luminanza < 215:
-            return color
+        if 40 < luminanza < 215: return color
     return colors[0][1]
 
 
 def draw_custom_top_tag(image: Image.Image, text: str, scale: float = 1.0, bg_color: tuple = (20, 20, 20), font_family: str = "Inter", drop_shadow: bool = False) -> Image.Image:
     width, height = image.size
     base_font_size = int(24 * scale)
-    try:
-        font = ImageFont.truetype(os.path.join(_FONTS_DIR, f"{font_family}-Bold.ttf"), base_font_size)
-    except IOError:
-        font = ImageFont.load_default()
+    try: font = ImageFont.truetype(os.path.join(_FONTS_DIR, f"{font_family}-Bold.ttf"), base_font_size)
+    except IOError: font = ImageFont.load_default()
 
     draw = ImageDraw.Draw(image)
     bbox = draw.textbbox((0, 0), text, font=font)
-    text_w = bbox[2] - bbox[0]
-    text_h = bbox[3] - bbox[1]
+    text_w = bbox[2] - bbox[0]; text_h = bbox[3] - bbox[1]
     
-    pad_x = int(20 * scale)
-    pad_y = int(12 * scale)
-    pill_w = text_w + pad_x * 2
-    pill_h = text_h + pad_y * 2
+    pad_x = int(20 * scale); pad_y = int(12 * scale)
+    pill_w = text_w + pad_x * 2; pill_h = text_h + pad_y * 2
     
-    pill_x = (width - pill_w) // 2
-    pill_y = 0 
+    pill_x = (width - pill_w) // 2; pill_y = 0 
     r = int(10 * scale) 
     
     overlay = Image.new("RGBA", (width, height), (0,0,0,0))
@@ -454,36 +428,7 @@ def draw_custom_top_tag(image: Image.Image, text: str, scale: float = 1.0, bg_co
         
     pill_draw.text((text_x, text_y), text, font=font, fill=text_color)
     overlay = Image.alpha_composite(overlay, pill_layer)
-    
     return Image.alpha_composite(image.convert("RGBA"), overlay)
-
-
-async def fetch_fanart_poster_url(client: httpx.AsyncClient, tmdb_id: str, type: str, tmdb_key: str, fanart_key: str, language: str) -> str | None:
-    if not fanart_key: return None
-    query_id = tmdb_id
-    endpoint = "movies"
-    if type in ("tv", "series"):
-        ext_resp = await client.get(f"https://api.themoviedb.org/3/tv/{tmdb_id}/external_ids", params={"api_key": tmdb_key})
-        if ext_resp.status_code == 200:
-            query_id = ext_resp.json().get("tvdb_id")
-        if not query_id: return None
-        endpoint = "tv"
-    try:
-        resp = await client.get(f"https://webservice.fanart.tv/v3/{endpoint}/{query_id}", params={"api_key": fanart_key})
-        if resp.status_code == 200:
-            data = resp.json()
-            posters = data.get("movieposter") if endpoint == "movies" else data.get("tvposter")
-            if posters:
-                posters.sort(key=lambda x: (x.get("lang") == language, int(x.get("likes", 0))), reverse=True)
-                return posters[0].get("url").replace("assets.fanart.tv/fanart/", "assets.fanart.tv/preview/")
-    except Exception as e:
-        logger.warning(f"Fanart fetch failed: {e}")
-    return None
-
-async def fetch_external_image(client: httpx.AsyncClient, url: str) -> Image.Image:
-    resp = await client.get(url)
-    resp.raise_for_status()
-    return Image.open(io.BytesIO(resp.content)).convert("RGBA")
 
 
 _GENRE_TINT: dict[str, tuple[float, float, float]] = {
@@ -505,9 +450,7 @@ def _make_fallback_canvas(genre_ids: list[int] | None = None) -> Image.Image:
         for gid in _cfg.GENRE_PRIORITY:
             if gid in gid_set:
                 name = _cfg.GENRE_MAP.get(gid)
-                if name and name in _GENRE_TINT:
-                    tint = _GENRE_TINT[name]
-                    break
+                if name and name in _GENRE_TINT: tint = _GENRE_TINT[name]; break
     r_mult, g_mult, b_mult = tint
     W, H = _cfg.POSTER_WIDTH, _cfg.POSTER_HEIGHT
     t    = np.linspace(0, np.pi, H, dtype=np.float32)
@@ -530,7 +473,6 @@ def build_poster(
     width, height = image.size
     draw = ImageDraw.Draw(image)
 
-    # Estrazione Colore Dominante pura all'inizio
     needs_dom = cfg.dom_color_top or cfg.dom_color_bot or cfg.dom_color_sash
     dom_color = _get_dominant_color(image) if needs_dom else (0, 0, 0)
 
@@ -556,7 +498,6 @@ def build_poster(
         bottom_crop = image.crop((0, bottom_start, width, height))
         blurred_bottom = bottom_crop.filter(ImageFilter.GaussianBlur(radius=radius))
         
-        # Effetto Glassmorphism 2.0 (Saturazione + Contrasto + Grana micro)
         blurred_bottom = ImageEnhance.Color(blurred_bottom).enhance(1.4)
         blurred_bottom = ImageEnhance.Contrast(blurred_bottom).enhance(1.15)
         
@@ -597,8 +538,7 @@ def build_poster(
         allowed_tokens  = {"4K", "1080P", "REMUX", "WEBDL", "DV", "HDR10+", "HDR10"}
         filtered_tokens = [t for t in tokens if t in allowed_tokens]
         if filtered_tokens:
-            bx = int(width  * cfg.badge_anchor_x)
-            by = int(height * cfg.badge_anchor_y)
+            bx = int(width  * cfg.badge_anchor_x); by = int(height * cfg.badge_anchor_y)
             badge_items: list[BadgeItem] = [(get_resized_badge(token, cfg.badge_height), _cfg.QUALITY_LABELS.get(token, token)) for token in filtered_tokens]
             render_badges_left(image, badge_items, x_start=bx, y_top=by, badge_height=cfg.badge_height, badge_gap=cfg.badge_gap)
 
@@ -609,7 +549,6 @@ def build_poster(
         try: font_size = int(width * 0.1); font = ImageFont.truetype(os.path.join(_FONTS_DIR, f"{cfg.text_font_family}-Bold.ttf"), font_size)
         except IOError: font = ImageFont.load_default()
         
-        # Posizionato all'80% dell'altezza per risaltare sul Frosted Glass
         title_cy = height - int(height * 0.20)
         max_width = int(width * 0.82)
         while True:
@@ -654,8 +593,7 @@ def build_poster(
             font_size = int(width * cfg.minimalist_mode_font_size_ratio)
             try: font_meta = ImageFont.truetype(os.path.join(_FONTS_DIR, f"{cfg.text_font_family}-Bold.ttf"), font_size)
             except IOError: font_meta = ImageFont.load_default()
-            y = round(height * cfg.minimalist_mode_font_y_offset)
-            right_edge = width - int(width * cfg.minimalist_mode_font_x_offset)
+            y = round(height * cfg.minimalist_mode_font_y_offset); right_edge = width - int(width * cfg.minimalist_mode_font_x_offset)
             year_text = str(release_year or ""); genre_text = genre
             pip_gap = int(font_size * 0.55); pip_w = max(4, int(font_size * 0.18)); pip_h = int(font_size * 1.4)
             genre_bb = draw.textbbox((0, 0), genre_text, font=font_meta); genre_w  = genre_bb[2] - genre_bb[0]
@@ -897,15 +835,8 @@ async def get_poster(
                 async with _mdblist_semaphore: return await _with_retry(fetch_rating, client, imdb_id, effective_mdblist_key, genre_ids, type, movie_weights=effective_movie_weights, tv_weights=effective_tv_weights)
             rating_coro = _fetch_rating_gated()
 
-        # LOGICA DI FETCH FANART COME PRIORITÀ
         is_no_poster = poster_path is None and not _use_backdrop
-        fanart_url = await fetch_fanart_poster_url(client, tmdb_id, type, effective_tmdb_key, effective_fanart_key, rcfg.logo_language)
-        
-        if fanart_url:
-            is_textless = True
-            is_no_poster = False
-            _image_coro = fetch_external_image(client, fanart_url)
-        elif _use_backdrop:
+        if _use_backdrop:
             _image_coro = fetch_backdrop_image(client, tmdb_id, backdrop_path)
         elif is_no_poster:
             _image_coro = _resolved(_make_fallback_canvas(genre_ids))
@@ -914,7 +845,7 @@ async def get_poster(
 
         (image, logo, rating_result, trending_rank) = await asyncio.gather(
             _image_coro,
-            fetch_logo(client, logos, rcfg.logo_language, getattr(rcfg, 'use_original_logo_color', False)) if (is_textless and not is_no_poster) else _resolved(None),
+            fetch_logo(client, tmdb_id, type, effective_tmdb_key, effective_fanart_key, logos, rcfg.logo_language, getattr(rcfg, 'use_original_logo_color', False)) if (is_textless and not is_no_poster) else _resolved(None),
             rating_coro,
             fetch_trending_rank(client, tmdb_id, effective_tmdb_key, type),
         )
@@ -957,7 +888,7 @@ async def get_poster(
 
         discovery_meta = extract_discovery_meta(tmdb_data=tmdb_data, media_type=type, award_wins=award_wins, award_noms=award_noms, trending_rank=trending_rank, release_date=rel, keywords=keywords if not rating_already_cached else [], festival_label_override=festival_label, is_cult_override=is_cult, is_true_story_override=is_true_story, is_metacritic_override=is_metacritic, is_digital_release_override=is_digital_release(imdb_id))
 
-        if debug and debug.strip() in ("1", "true"): return JSONResponse({"status": "ok", "message": "Debug output available"}) # Omitted full debug dict for brevity
+        if debug and debug.strip() in ("1", "true"): return JSONResponse({"status": "ok", "message": "Debug output available"})
 
         _bp_args = dict(
             logo=logo if (is_textless and not is_no_poster and not rcfg.textless) else None,
