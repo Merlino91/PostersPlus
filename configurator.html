@@ -2643,7 +2643,6 @@ function buildBaseParams({ usePlaceholders = false } = {}) {
   const logoLanguage   = vEl('cfg-language') || 'en';
   const imdbId         = usePlaceholders ? '{imdb_id}'  : (resolvedImdbId  || '{imdb_id}');
   const tmdbId         = usePlaceholders ? '{tmdb_id}'  : (resolvedTmdbId  || '{tmdb_id}');
-  const kitsuId        = usePlaceholders ? '{kitsu_id}' : '';
   const accKey         = vEl('cfg-access-key');
   const type           = usePlaceholders ? '{type}'     : mediaType;
   
@@ -2655,13 +2654,12 @@ function buildBaseParams({ usePlaceholders = false } = {}) {
 
   params.set('tmdb_id', tmdbId);
   params.set('imdb_id', imdbId);
-  if (kitsuId) params.set('kitsu_id', kitsuId);
   params.set('type',    type);
 
   if (accKey)         params.set('access_key',  accKey);
-  if (userTmdbKey)    params.set('tmdb_key',     userTmdbKey);
-  if (userMdblistKey) params.set('mdblist_key',  userMdblistKey);
-  if (fanartKey)      params.set('fanart_key',   fanartKey);
+  if (userTmdbKey)    params.set('tmdb_key',     usePlaceholders ? '{tmdb_key}'    : userTmdbKey);
+  if (userMdblistKey) params.set('mdblist_key',  usePlaceholders ? '{mdblist_key}' : userMdblistKey);
+  if (fanartKey)      params.set('fanart_key',   fanartKey); // RISOLTO: niente placeholder
 
   const ratingMode = ni('cfg-rating-mode');
   const badgeMode  = ni('cfg-badge-display-mode');
