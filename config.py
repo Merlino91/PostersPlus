@@ -16,6 +16,9 @@ SERVER_TMDB_KEY       = os.environ.get("TMDB_API_KEY", "").strip()
 SERVER_MDBLIST_KEY    = os.environ.get("MDBLIST_API_KEY", "").strip()
 SERVER_FANART_KEY     = os.environ.get("FANART_API_KEY", "").strip()
 
+# AOD
+AOD_URL               = "https://raw.githubusercontent.com/manami-project/anime-offline-database/master/anime-offline-database-minified.json"
+
 # Workers
 CDN_CACHE_TTL         = int(os.environ.get("CDN_CACHE_TTL", "0"))
 JPEG_QUALITY          = max(70, min(95, int(os.environ.get("JPEG_QUALITY", "85"))))
@@ -74,43 +77,24 @@ COMPOSITE_MAX_ENTRIES      = int(os.environ.get("COMPOSITE_MAX_ENTRIES", "0"))
 
 def _parse_bool_env(key: str, default: bool = False) -> bool:
     val = os.environ.get(key, "").strip().lower()
-    if not val:
-        return default
+    if not val: return default
     return val not in ("0", "false", "no")
 
 # Rating Score Weight Defaults
 MOVIE_WEIGHTS = {
-    "letterboxd":     0.8,
-    "trakt":          0,
-    "tomatoes":       0.2,
-    "popcorn":        0,
-    "imdb":           0,
-    "metacritic":     0,
-    "metacriticuser": 0,
-    "tmdb":           0,
-    "rogerebert":     0,
-    "myanimelist":    0,
+    "letterboxd":     0.8, "trakt":          0, "tomatoes":       0.2, "popcorn":        0,
+    "imdb":           0, "metacritic":     0, "metacriticuser": 0, "tmdb":           0,
+    "rogerebert":     0, "myanimelist":    0,
 }
 
 TV_WEIGHTS = {
-    "trakt":          0.8,
-    "tomatoes":       0.2,
-    "popcorn":        0,
-    "imdb":           0,
-    "metacritic":     0,
-    "metacriticuser": 0,
-    "tmdb":           0,
-    "myanimelist":    0,
+    "trakt":          0.8, "tomatoes":       0.2, "popcorn":        0, "imdb":           0,
+    "metacritic":     0, "metacriticuser": 0, "tmdb":           0, "myanimelist":    0,
 }
 
 BADGE_FILES: dict[str, str] = {
-    "4K":     "4K",
-    "1080P":  "1080p",
-    "REMUX":  "Remux",
-    "WEBDL":  "Web",
-    "DV":     "DV",
-    "HDR10+": "HDR10+",
-    "HDR10":  "HDR10",
+    "4K":     "4K", "1080P":  "1080p", "REMUX":  "Remux", "WEBDL":  "Web",
+    "DV":     "DV", "HDR10+": "HDR10+", "HDR10":  "HDR10",
 }
 
 GENRE_MAP = {
@@ -118,9 +102,9 @@ GENRE_MAP = {
     80: "Crime", 99: "Documentary", 18: "Drama", 10751: "Family",
     14: "Fantasy", 36: "History", 27: "Horror", 10402: "Music",
     9648: "Mystery", 10749: "Romance", 878: "Sci-Fi", 53: "Thriller",
-    10752: "War", 37: "Western",
-    10759: "Action", 10762: "Kids", 10763: "News", 10764: "Reality",
-    10765: "Sci-Fi", 10766: "Soap", 10767: "Talk", 10768: "War",
+    10752: "War", 37: "Western", 10759: "Action", 10762: "Kids", 
+    10763: "News", 10764: "Reality", 10765: "Sci-Fi", 10766: "Soap", 
+    10767: "Talk", 10768: "War",
 }
 
 GENRE_PRIORITY = [
@@ -130,31 +114,20 @@ GENRE_PRIORITY = [
 ]
 
 QUALITY_LABELS: dict[str, str] = {
-    "4K":     "4K",
-    "1080P":  "1080p",
-    "REMUX":  "Remux",
-    "WEBDL":  "Web",
-    "DV":     "DV",
-    "HDR10+": "HDR10+",
-    "HDR10":  "HDR10",
-    "ATMOS":  "Atmos",
-    "DTSX":   "DTS:X",
+    "4K":     "4K", "1080P":  "1080p", "REMUX":  "Remux", "WEBDL":  "Web",
+    "DV":     "DV", "HDR10+": "HDR10+", "HDR10":  "HDR10", "ATMOS":  "Atmos", "DTSX":   "DTS:X",
 }
 
 SCORE_NORMALISERS = {
-    "imdb":           lambda v: (v / 10)  * 100,
-    "letterboxd":     lambda v: (v / 5)   * 100,
-    "trakt":          lambda v: v,
-    "tomatoes":       lambda v: v,
-    "popcorn":        lambda v: v,
-    "metacritic":     lambda v: v,
-    "metacriticuser": lambda v: (v / 10)  * 100,
-    "tmdb":           lambda v: v,
-    "rogerebert":      lambda v: (v / 4)   * 100,
+    "imdb":           lambda v: (v / 10)  * 100, "letterboxd":     lambda v: (v / 5)   * 100,
+    "trakt":          lambda v: v, "tomatoes":       lambda v: v, "popcorn":        lambda v: v,
+    "metacritic":     lambda v: v, "metacriticuser": lambda v: (v / 10)  * 100,
+    "tmdb":           lambda v: v, "rogerebert":      lambda v: (v / 4)   * 100,
     "myanimelist":    lambda v: (v / 10)  * 100,
 }
 
 SASH_PRIORITY: list[str] = [
+    "upcoming",
     "wins",
     "gg_wins",
     "festival",
