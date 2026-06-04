@@ -10,12 +10,14 @@ import time
 import json
 import httpx
 import numpy as np
+from datetime import datetime
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass, field
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, Response, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageEnhance
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -189,10 +191,21 @@ def _resolve_tmdb_key(query_key: str) -> str | None:
     if _cfg.SERVER_TMDB_KEY: return _cfg.SERVER_TMDB_KEY
     return None
 
+# NUOVO: Gestione intelligente della rotazione chiavi MDBList
 def _resolve_mdblist_key(query_key: str) -> str | None:
     if query_key: return query_key
-    if _cfg.SERVER_MDBLIST_KEY: return _cfg.SERVER_MDBLIST_KEY
-    return None
+    keys = getattr(_cfg, 'SERVER_MDBLIST_KEYS', [])
+    if not keys: return None
+    
+    try:
+        now = asyncio.get_running_loop().time()
+    except RuntimeError:
+        now = time.time()
+        
+    for k in keys:
+        if now >= _mdblist_key_cooldown.get(k, 0.0):
+            return k
+    return None # Tutte le chiavi sono in cooldown
 
 def _resolve_fanart_key(query_key: str) -> str | None:
     if query_key: return query_key
@@ -562,7 +575,7 @@ async def server_caps(access_key: str = ""):
     if _cfg.ACCESS_KEY and not hmac.compare_digest(access_key, _cfg.ACCESS_KEY): raise HTTPException(status_code=403, detail="Unauthorized")
     return {
         "tmdb_key_set":          bool(_cfg.SERVER_TMDB_KEY),
-        "mdblist_key_set":       bool(_cfg.SERVER_MDBLIST_KEY),
+        "mdblist_key_set":       bool(getattr(_cfg, "SERVER_MDBLIST_KEYS", [])),
         "fanart_key_set":        bool(getattr(_cfg, "SERVER_FANART_KEY", "")),
         "aiostreams_configured": bool(_cfg.AIOSTREAMS_URL and _cfg.AIOSTREAMS_AUTH),
     }
@@ -890,9 +903,41 @@ async def get_poster(
                         draw.text((year_x, y), year_text, font=font_meta, fill=(235, 235, 235, 255))
                     if score not in ("N/A", None): draw_score_bar_vertical(image, score, x=pip_x, y_center=pip_cy, height=pip_h, width=pip_w, color_mode=cfg.score_color_mode)
 
-            # --- INFO SASH ---
-            if cfg.show_award_sash and discovery_meta is not None:
-                sash_result = pick_sash(discovery_meta, cfg.sash_priority)
+            # NUOVO: INFO SASH DINAMICI
+            if cfg.show_award_sash:
+                dynamic_sashes = {}
+                # Analizza i dati freschi da TMDB se è una serie TV
+                if type in ("tv", "series") and tmdb_data:
+                    status = tmdb_data.get("status", "")
+                    next_ep = tmdb_data.get("next_episode_to_air")
+                    
+                    if next_ep and "air_date" in next_ep:
+                        try:
+                            d = datetime.strptime(next_ep["air_date"], "%Y-%m-%d")
+                            mesi = ["Gen", "Feb", "Mar", "Apr", "Mag", "Giu", "Lug", "Ago", "Set", "Ott", "Nov", "Dic"]
+                            dynamic_sashes["next_episode"] = f"Prossimo Ep: {d.day} {mesi[d.month-1]}"
+                        except Exception:
+                            pass
+                    
+                    if status == "Ended":
+                        dynamic_sashes["ended"] = "Serie Terminata"
+                        dynamic_sashes["finale"] = "Stagione Finale"
+                    elif status == "Returning Series":
+                        dynamic_sashes["returning"] = "In Corso"
+
+                sash_result = None
+                # Il ciclo rispetta l'ordine di priorità imposto dal file config.py / UI
+                for sash_id in cfg.sash_priority:
+                    if sash_id in dynamic_sashes:
+                        sash_result = (dynamic_sashes[sash_id], sash_id)
+                        break
+                    elif discovery_meta is not None:
+                        # Se non è un tag dinamico, chiediamo a discovery.py se la serie ha vinto questo premio
+                        temp_res = pick_sash(discovery_meta, [sash_id])
+                        if temp_res:
+                            sash_result = temp_res
+                            break
+
                 if sash_result is not None:
                     label, sash_type = sash_result
                     if cfg.sash_style == "minimal_pill":
@@ -917,11 +962,12 @@ async def get_poster(
 
         if rating_failed:
             if rate_limited:
-                backoff_secs = min(float(rating_result.retry_after), 3600.0) if rating_result.retry_after else 3600.0
+                backoff_secs = min(float(rating_result.retry_after), 3600.0) if getattr(rating_result, 'retry_after', None) else 3600.0
                 _global_window = min(backoff_secs, 120.0)
                 _new_global_until = asyncio.get_running_loop().time() + _global_window
-                if effective_mdblist_key and _new_global_until > _mdblist_key_cooldown.get(effective_mdblist_key, 0.0):
+                if effective_mdblist_key:
                     _mdblist_key_cooldown[effective_mdblist_key] = _new_global_until
+                    logger.warning(f"MDBList API Key in rate limit. Cooldown per {_global_window}s.")
             else:
                 fail_n = _rating_fail_count.get(imdb_id, 0) + 1; _rating_fail_count[imdb_id] = fail_n
                 backoff_secs = min(30 * (4 ** (fail_n - 1)), 3600.0)
