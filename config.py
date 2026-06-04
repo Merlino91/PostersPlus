@@ -25,8 +25,8 @@ SERVER_MDBLIST_KEYS   = [k.strip() for k in _mdblist_keys_raw.split(",") if k.st
 AOD_URL               = "https://raw.githubusercontent.com/manami-project/anime-offline-database/master/anime-offline-database-minified.json"
 
 # Workers
-CDN_CACHE_TTL         = int(os.environ.get("CDN_CACHE_TTL", "0"))
-JPEG_QUALITY          = max(70, min(95, int(os.environ.get("JPEG_QUALITY", "85"))))
+CDN_CACHE_TTL         = _parse_int_env("CDN_CACHE_TTL", 0)
+JPEG_QUALITY          = max(70, min(95, _parse_int_env("JPEG_QUALITY", 85)))
 
 # Feature Defaults 
 SHOW_RATING_DISPLAY_MODE = 1
@@ -71,21 +71,22 @@ DAYS_CONSIDERED_NEW          = 14
 NEW_CACHE_DURATION           = 1
 OLD_CACHE_DURATION           = 14
 TRENDING_CACHE_DURATION      = 1
-QUALITY_OLD_CACHE_DURATION   = int(os.environ.get("QUALITY_OLD_CACHE_DURATION", "90"))
-QUALITY_BG_CONCURRENCY       = int(os.environ.get("QUALITY_BG_CONCURRENCY", "5"))
+QUALITY_OLD_CACHE_DURATION   = _parse_int_env("QUALITY_OLD_CACHE_DURATION", 90)
+QUALITY_BG_CONCURRENCY       = _parse_int_env("QUALITY_BG_CONCURRENCY", 5)
 # NUOVO: Concorrenza allineata a 5 per evitare colli di bottiglia
-MDBLIST_CONCURRENCY          = int(os.environ.get("MDBLIST_CONCURRENCY", "5"))
+MDBLIST_CONCURRENCY          = _parse_int_env("MDBLIST_CONCURRENCY", 5)
 
 DIGITAL_RELEASE_MIN_AGE_DAYS = 1
 DIGITAL_RELEASE_MAX_AGE_DAYS = 30
 
-COMPOSITE_CACHE_TTL        = int(os.environ.get("COMPOSITE_CACHE_TTL", "604800"))
-COMPOSITE_MAX_ENTRIES      = int(os.environ.get("COMPOSITE_MAX_ENTRIES", "0"))
+COMPOSITE_CACHE_TTL          = _parse_int_env("COMPOSITE_CACHE_TTL", 604800)
+COMPOSITE_MAX_ENTRIES        = _parse_int_env("COMPOSITE_MAX_ENTRIES", 0)
 
-def _parse_bool_env(key: str, default: bool = False) -> bool:
-    val = os.environ.get(key, "").strip().lower()
-    if not val: return default
-    return val not in ("0", "false", "no")
+# NUOVO HELPER: Previene il crash se su Dokploy lasciamo il campo vuoto
+def _parse_int_env(key: str, default: int) -> int:
+    val = os.environ.get(key, "").strip()
+    try: return int(val) if val else default
+    except ValueError: return default
 
 # Rating Score Weight Defaults
 MOVIE_WEIGHTS = {
