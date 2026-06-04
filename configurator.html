@@ -743,24 +743,27 @@ const TMDB_IMG = 'https://image.tmdb.org/t/p/w92';
 
 // ── NUOVA LISTA CON UPCOMING ──
 const SASH_SLOTS = [
-  { id:'upcoming',   label:'Prossime Uscite (Calendario)',      color:'#e8c76a' },
-  { id:'wins',       label:'Best Picture / Major Emmy Win',     color:'#c9a84c' },
-  { id:'gg_wins',    label:'Golden Globe Win',                  color:'#c9a84c' },
-  { id:'festival',   label:'Festival Winner',                   color:'#c9a84c' },
-  { id:'pic_noms',   label:'Best Picture / Major Emmy Nom',     color:'#9a9a9a' },
-  { id:'gg_noms',    label:'Golden Globe Nom',                  color:'#9a9a9a' },
-  { id:'studio',     label:'Notable Studio Name',               color:'#9060cc' },
-  { id:'director',   label:'Notable Director Name',             color:'#9060cc' },
-  { id:'cast',       label:'Notable Cast Name',                 color:'#4ab87a' },
-  { id:'trending',   label:'TMDB Trending Top 40',              color:'#5aaaff' },
-  { id:'cult',       label:'Cult Classic',                      color:'#5aaaff' },
-  { id:'foreign',    label:'Foreign Language',                  color:'#3ab0a8' },
-  { id:'new_release', label:'Newly Streaming',                  color:'#3ab0a8' },
-  { id:'metacritic', label:'Metacritic Must-See',               color:'#9a9a9a' },
-  { id:'true_story', label:'True Story',                        color:'#3ab0a8' },
-  { id:'structural', label:'Short / Mini / Binge',              color:'#3ab0a8' },
+  { id:'next_episode', label:'Prossimo Ep. (Data Esatta)',      color:'#e8c76a' },
+  { id:'finale',       label:'Stagione Finale',                 color:'#c9a84c' },
+  { id:'upcoming',     label:'Prossime Uscite (Calendario)',    color:'#e8c76a' },
+  { id:'wins',         label:'Best Picture / Major Emmy Win',   color:'#c9a84c' },
+  { id:'gg_wins',      label:'Golden Globe Win',                color:'#c9a84c' },
+  { id:'festival',     label:'Festival Winner',                 color:'#c9a84c' },
+  { id:'pic_noms',     label:'Best Picture / Major Emmy Nom',   color:'#9a9a9a' },
+  { id:'gg_noms',      label:'Golden Globe Nom',                color:'#9a9a9a' },
+  { id:'studio',       label:'Notable Studio Name',             color:'#9060cc' },
+  { id:'director',     label:'Notable Director Name',           color:'#9060cc' },
+  { id:'cast',         label:'Notable Cast Name',               color:'#4ab87a' },
+  { id:'trending',     label:'TMDB Trending Top 40',            color:'#5aaaff' },
+  { id:'cult',         label:'Cult Classic',                    color:'#5aaaff' },
+  { id:'foreign',      label:'Foreign Language',                color:'#3ab0a8' },
+  { id:'new_release',  label:'Newly Streaming',                 color:'#3ab0a8' },
+  { id:'returning',    label:'In Corso (Serie Attiva)',         color:'#3ab0a8' },
+  { id:'ended',        label:'Serie Terminata',                 color:'#9a9a9a' },
+  { id:'metacritic',   label:'Metacritic Must-See',             color:'#9a9a9a' },
+  { id:'true_story',   label:'True Story',                      color:'#3ab0a8' },
+  { id:'structural',   label:'Short / Mini / Binge',            color:'#3ab0a8' },
 ];
-
 let sashOrder    = SASH_SLOTS.map(s => s.id);
 let sashDisabled = new Set();
 let mediaType = 'movie', resolvedImdbId = '', resolvedTmdbId = '';
@@ -1156,7 +1159,7 @@ function decodePlaceholders(url) {
 
 function buildBaseParams({ usePlaceholders = false } = {}) {
   const domain         = vEl('cfg-domain').replace(/\/$/, '') || 'https://your-instance.com';
-  const logoLanguage   = vEl('cfg-language') || 'en';
+  const logoLanguage   = vEl('cfg-language') || 'it';
   const imdbId         = usePlaceholders ? '{imdb_id}'  : (resolvedImdbId  || '{imdb_id}');
   const tmdbId         = usePlaceholders ? '{tmdb_id}'  : (resolvedTmdbId  || '{tmdb_id}');
   const kitsuId        = usePlaceholders ? '{kitsu_id}' : ''; // Supporto AOD Anime
@@ -1227,7 +1230,7 @@ function buildBaseParams({ usePlaceholders = false } = {}) {
   }
 
   setIf('textless', c('tog-textless') ? 'true' : 'false', 'false');
-  setIf('logo_language', logoLanguage, 'en');
+  setIf('logo_language', logoLanguage, 'it');
   setIf('logo_max_w_ratio', n('cfg-logo-w').toFixed(2), '0.84');
   setIf('logo_max_h_ratio', n('cfg-logo-h').toFixed(2), '0.17');
   setIf('logo_bottom_ratio', n('cfg-logo-bottom').toFixed(2), '0.28');
