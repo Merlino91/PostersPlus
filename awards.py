@@ -1316,7 +1316,7 @@ def draw_award_badge(
 
     SS = 3  # render at 3× then LANCZOS-downscale for crisp text and edges
 
-    # ── Colour palette (mirrors draw_award_sash) ──────────────────────────────
+# ── Colour palette (mirrors draw_award_sash) ──────────────────────────────
     if sash_type == "win":
         border_rgb = (212, 175, 55)
     elif sash_type == "prestige":
@@ -1327,7 +1327,7 @@ def draw_award_badge(
         border_rgb = (100, 220, 210)
     elif sash_type == "trending":
         border_rgb = (160, 220, 255)
-elif sash_type == "next_episode":
+    elif sash_type == "next_episode":
         border_rgb = (255, 160, 60)
     elif sash_type == "ended":
         border_rgb = (220, 60, 60)
@@ -1483,7 +1483,7 @@ def draw_award_sash(
 
     sl, sh = sash_length * SS, sash_height * SS
 
-    if sash_type == "win":
+if sash_type == "win":
         hi, lo        = (212, 175, 55, 255), (160, 130, 40, 255)
         border_colour = (212, 175, 55, 255)
     elif sash_type == "prestige":
@@ -1498,11 +1498,11 @@ def draw_award_sash(
     elif sash_type == "trending":
         hi, lo        = (90, 170, 255, 255), (50, 110, 190, 255)
         border_colour = (160, 220, 255, 255)
-elif sash_type == "next_episode":
-        hi, lo        = (255, 140, 40, 255), (190, 90, 20, 255)  # Toni Arancioni
+    elif sash_type == "next_episode":
+        hi, lo        = (255, 140, 40, 255), (190, 90, 20, 255)
         border_colour = (255, 160, 60, 255)
     elif sash_type == "ended":
-        hi, lo        = (190, 40, 40, 255), (130, 20, 20, 255)   # Toni Rossi
+        hi, lo        = (190, 40, 40, 255), (130, 20, 20, 255)
         border_colour = (220, 60, 60, 255)
     else:  # "nom"
         hi, lo        = (180, 180, 190, 255), (110, 110, 120, 255)
@@ -1582,7 +1582,7 @@ def draw_minimal_pill(
     width, height = image.size
     SS = 3
 
-    if bg_color is None:
+if bg_color is None:
         if sash_type == "win":
             bg_color = (212, 175, 55)
         elif sash_type == "prestige":
@@ -1593,7 +1593,7 @@ def draw_minimal_pill(
             bg_color = (100, 220, 210)
         elif sash_type == "trending":
             bg_color = (160, 220, 255)
-elif sash_type == "next_episode":
+        elif sash_type == "next_episode":
             bg_color = (255, 160, 60)
         elif sash_type == "ended":
             bg_color = (220, 60, 60)
