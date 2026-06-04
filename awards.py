@@ -1317,7 +1317,7 @@ def draw_award_badge(
     SS = 3  # render at 3× then LANCZOS-downscale for crisp text and edges
 
 # ── Colour palette (mirrors draw_award_sash) ──────────────────────────────
-    if sash_type == "win":
+if sash_type == "win":
         border_rgb = (212, 175, 55)
     elif sash_type == "prestige":
         border_rgb = (190, 140, 255)
@@ -1582,8 +1582,7 @@ def draw_minimal_pill(
     width, height = image.size
     SS = 3
 
-if bg_color is None:
-        if sash_type == "win":
+if sash_type == "win":
             bg_color = (212, 175, 55)
         elif sash_type == "prestige":
             bg_color = (190, 140, 255)
