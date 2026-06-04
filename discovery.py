@@ -74,10 +74,10 @@ LANGUAGE_LABELS: dict[str, str] = {
 
 # NUOVO: Aggiunti i nuovi tag dinamici e assegnati alle loro famiglie di colore
 _SASH_TYPES: dict[str, str] = {
-    "next_episode":    "trending",  # Usa i toni dell'azzurro
-    "finale":          "win",       # Usa i toni dell'oro
-    "returning":       "info",      # Usa i toni del verde acqua
-    "ended":           "nom",       # Usa i toni del grigio
+    "next_episode":    "next_episode",  # Usa il nuovo set di colori arancioni
+    "finale":          "win",           # Manteniamo l'oro dei vincitori
+    "returning":       "info",          # Manteniamo il verde acqua
+    "ended":           "ended",         # Usa il nuovo set di colori rossi
     "upcoming":        "trending",  
     "wins":            "win",       
     "gg_wins":         "win",       
