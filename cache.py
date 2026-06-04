@@ -14,7 +14,7 @@ from config import (
     TRENDING_CACHE_DURATION, TMDB_POSTER_CACHE_DIR, TMDB_POSTER_CACHE_DURATION,
     TMDB_LOGO_CACHE_DIR, TMDB_LOGO_CACHE_DURATION, TMDB_METADATA_CACHE_DURATION,
     COMPOSITE_CACHE_TTL, COMPOSITE_MAX_ENTRIES, QUALITY_OLD_CACHE_DURATION,
-    DIGITAL_RELEASE_MAX_AGE_DAYS,
+    DIGITAL_RELEASE_MAX_AGE_DAYS, COMPOSITE_CACHE_DIR
 )
 
 _db_conn: sqlite3.Connection | None = None
@@ -28,6 +28,9 @@ def init_db() -> None:
     global _db_conn
     os.makedirs(TMDB_POSTER_CACHE_DIR, exist_ok=True)
     os.makedirs(TMDB_LOGO_CACHE_DIR, exist_ok=True)
+    # NUOVO: Creiamo la directory fisica per i poster composti
+    os.makedirs(COMPOSITE_CACHE_DIR, exist_ok=True)
+    
     _db_conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     _db_conn.execute("PRAGMA journal_mode=WAL")
     _db_conn.execute("PRAGMA synchronous=NORMAL")
@@ -35,6 +38,9 @@ def init_db() -> None:
     _db_conn.execute("PRAGMA temp_store=MEMORY")
     _db_conn.execute("PRAGMA busy_timeout=5000")
     _db_conn.execute("PRAGMA wal_autocheckpoint=1000")
+
+    # NUOVO: Pulizia automatica della vecchia tabella BLOB se si proviene dalla v4
+    _db_conn.execute("DROP TABLE IF EXISTS final_poster_cache")
 
     _db_conn.execute("""
     CREATE TABLE IF NOT EXISTS rating_cache (
@@ -64,11 +70,11 @@ def init_db() -> None:
         CREATE TABLE IF NOT EXISTS tmdb_metadata_cache (
             cache_key TEXT PRIMARY KEY, title TEXT, release_year TEXT, genre_ids TEXT, is_textless INTEGER,
             poster_path TEXT, logos_json TEXT, cached_at INTEGER, credits_json TEXT, production_cos_json TEXT,
-            runtime INTEGER, number_of_seasons INTEGER, number_of_episodes INTEGER, original_language TEXT, backdrop_path TEXT
+            runtime INTEGER, number_of_seasons INTEGER, number_of_episodes INTEGER, original_language TEXT, backdrop_path TEXT,
+            status TEXT, next_episode_to_air TEXT
         )
     """)
 
-    _db_conn.execute("""CREATE TABLE IF NOT EXISTS final_poster_cache (cache_key TEXT PRIMARY KEY, jpeg_bytes BLOB NOT NULL, cached_at INTEGER NOT NULL)""")
     _db_conn.execute("""CREATE TABLE IF NOT EXISTS digital_release_cache (imdb_id TEXT PRIMARY KEY, posted_at INTEGER NOT NULL)""")
 
     existing_meta_cols = {row[1] for row in _db_conn.execute("PRAGMA table_info(tmdb_metadata_cache)").fetchall()}
@@ -123,37 +129,48 @@ def _quality_ttl(release_date: str | None) -> int:
         return NEW_CACHE_DURATION if days_since <= DAYS_CONSIDERED_NEW else QUALITY_OLD_CACHE_DURATION
     except ValueError: return QUALITY_OLD_CACHE_DURATION
 
+
+# NUOVO: Helper per pulire i nomi dei file (i due punti ":" non piacciono ad alcuni OS)
+def _get_composite_path(cache_key: str) -> str:
+    safe_key = cache_key.replace(":", "_") + ".jpg"
+    return os.path.realpath(os.path.join(COMPOSITE_CACHE_DIR, safe_key))
+
+# NUOVO: Lettura da File System invece che da SQLite
 def get_cached_final_poster(cache_key: str) -> bytes | None:
+    path = _get_composite_path(cache_key)
+    if not os.path.exists(path): return None
+    if (time.time() - os.path.getmtime(path)) > COMPOSITE_CACHE_TTL:
+        try: os.remove(path)
+        except FileNotFoundError: pass
+        return None
     try:
-        row = get_db().execute("SELECT jpeg_bytes, cached_at FROM final_poster_cache WHERE cache_key = ?", (cache_key,)).fetchone()
-        if not row: return None
-        jpeg_bytes, cached_at = row
-        if time.time() - cached_at > COMPOSITE_CACHE_TTL:
-            with _db_lock:
-                get_db().execute("DELETE FROM final_poster_cache WHERE cache_key = ?", (cache_key,))
-                get_db().commit()
-            return None
-        return bytes(jpeg_bytes)
+        with open(path, "rb") as f: return f.read()
     except Exception: return None
 
+# NUOVO: Scrittura su File System e gestione della capienza massima
 def set_cached_final_poster(cache_key: str, jpeg_bytes: bytes) -> None:
     try:
-        with _db_lock:
-            get_db().execute("INSERT OR REPLACE INTO final_poster_cache (cache_key, jpeg_bytes, cached_at) VALUES (?, ?, ?)", (cache_key, jpeg_bytes, int(time.time())))
-            if COMPOSITE_MAX_ENTRIES > 0:
-                (count,) = get_db().execute("SELECT COUNT(*) FROM final_poster_cache").fetchone()
-                overflow = count - COMPOSITE_MAX_ENTRIES
-                if overflow > 0:
-                    get_db().execute("DELETE FROM final_poster_cache WHERE cache_key IN (SELECT cache_key FROM final_poster_cache ORDER BY cached_at ASC LIMIT ?)", (overflow,))
-            get_db().commit()
+        path = _get_composite_path(cache_key)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "wb") as f: f.write(jpeg_bytes)
+        
+        # Gestione del COMPOSITE_MAX_ENTRIES limitando il numero di file
+        if COMPOSITE_MAX_ENTRIES > 0:
+            files = [os.path.join(COMPOSITE_CACHE_DIR, f) for f in os.listdir(COMPOSITE_CACHE_DIR) if f.endswith('.jpg')]
+            if len(files) > COMPOSITE_MAX_ENTRIES:
+                files.sort(key=os.path.getmtime) # Ordina dal più vecchio al più nuovo
+                overflow = len(files) - COMPOSITE_MAX_ENTRIES
+                for f in files[:overflow]:
+                    try: os.remove(f)
+                    except OSError: pass
     except Exception: pass
 
 def prune_caches() -> None:
     now = int(time.time())
     try:
+        # Pulisce i dati testuali su SQLite
         with _db_lock:
             db = get_db()
-            db.execute("DELETE FROM final_poster_cache WHERE cached_at < ?", (now - COMPOSITE_CACHE_TTL,))
             db.execute("DELETE FROM rating_cache WHERE cached_at < ?", (now - OLD_CACHE_DURATION * 86400,))
             db.execute("DELETE FROM quality_cache WHERE cached_at < ?", (now - QUALITY_OLD_CACHE_DURATION * 86400,))
             db.execute("DELETE FROM tmdb_metadata_cache WHERE cached_at < ?", (now - TMDB_METADATA_CACHE_DURATION * 86400,))
@@ -162,6 +179,13 @@ def prune_caches() -> None:
         with _db_lock:
             get_db().execute("PRAGMA incremental_vacuum(100)")
             get_db().commit()
+            
+        # NUOVO: Pulisce le vecchie immagini fisiche dal disco
+        for f in os.listdir(COMPOSITE_CACHE_DIR):
+            p = os.path.join(COMPOSITE_CACHE_DIR, f)
+            if os.path.isfile(p) and (now - os.path.getmtime(p)) > COMPOSITE_CACHE_TTL:
+                try: os.remove(p)
+                except OSError: pass
     except Exception: pass
 
 def get_cached_rating(imdb_id: str):
@@ -181,26 +205,6 @@ def set_cached_rating(imdb_id: str, ratings_dict: dict, genre: str, rel: str | N
     try:
         with _db_lock:
             get_db().execute("INSERT OR REPLACE INTO rating_cache (imdb_id, ratings_json, genre, cached_at, release_date, award_wins, award_noms, awards_fetched, festival_label, age_rating, is_cult, is_true_story, is_metacritic) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", (imdb_id, json.dumps(ratings_dict), genre, int(time.time()), rel, "|".join(award_wins or []), "|".join(award_noms or []), int(awards_fetched), festival_label, age_rating, int(is_cult), int(is_true_story), int(is_metacritic)))
-            get_db().commit()
-    except Exception: pass
-
-def get_cached_quality(imdb_id: str, release_date: str | None = None) -> list[str] | None:
-    try:
-        row = get_db().execute("SELECT tokens, cached_at, release_date FROM quality_cache WHERE imdb_id = ?", (imdb_id,)).fetchone()
-        if row is None: return None
-        tokens_raw, cached_at, stored_release = row
-        if (time.time() - cached_at) / 86400 > _quality_ttl(release_date or stored_release):
-            with _db_lock:
-                get_db().execute("DELETE FROM quality_cache WHERE imdb_id = ?", (imdb_id,))
-                get_db().commit()
-            return None
-        return [t for t in (tokens_raw or "").split("|") if t]
-    except Exception: return None
-
-def set_cached_quality(imdb_id: str, tokens: list[str], release_date: str | None = None) -> None:
-    try:
-        with _db_lock:
-            get_db().execute("INSERT OR REPLACE INTO quality_cache (imdb_id, tokens, cached_at, release_date) VALUES (?, ?, ?, ?)", (imdb_id, "|".join(tokens), int(time.time()), release_date))
             get_db().commit()
     except Exception: pass
 
