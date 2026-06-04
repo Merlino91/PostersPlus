@@ -1134,6 +1134,29 @@ function clearSelection() {
 
 function escHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
+  function updateRatingFields() {
+  const mode = ni('cfg-rating-mode'); // 0: Hidden, 1: Score Bar, 2: Clean, 3: Minimalist, 4: Minimal ITA
+  
+  const m1 = document.getElementById('rating-mode1-fields');
+  const m2 = document.getElementById('rating-mode2-fields');
+  const m3 = document.getElementById('rating-mode3-fields');
+  const fontWrap = document.getElementById('rating-font-wrap');
+  const colorWrap = document.getElementById('rating-alt-colors-toggle');
+  const glowWrap = document.getElementById('rating-glow-fields');
+
+  // Mostra/Nascondi le impostazioni corrette in base alla scelta
+  if (m1) m1.style.display = (mode === 1) ? 'block' : 'none';
+  if (m2) m2.style.display = (mode === 2) ? 'block' : 'none';
+  if (m3) m3.style.display = (mode === 3 || mode === 4) ? 'block' : 'none';
+  
+  // Mostra Font e Palette Colori solo se il rating non è nascosto
+  if (fontWrap) fontWrap.style.display = (mode !== 0) ? 'block' : 'none';
+  if (colorWrap) colorWrap.style.display = (mode !== 0) ? 'block' : 'none';
+  
+  // Il Glow (bagliore) serve solo per la Score Bar classica (mode 1)
+  if (glowWrap) glowWrap.style.display = (mode === 1) ? 'block' : 'none';
+}
+  
 function updateSashStyleFields() {
   const style = document.getElementById('cfg-sash-style').value;
   const showBadgePos = (style === 'corner_badge');
