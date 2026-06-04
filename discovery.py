@@ -72,7 +72,12 @@ LANGUAGE_LABELS: dict[str, str] = {
     "hu": "Hungarian", "cs": "Czech", "he": "Hebrew", "el": "Greek",
 }
 
+# NUOVO: Aggiunti i nuovi tag dinamici e assegnati alle loro famiglie di colore
 _SASH_TYPES: dict[str, str] = {
+    "next_episode":    "trending",  # Usa i toni dell'azzurro
+    "finale":          "win",       # Usa i toni dell'oro
+    "returning":       "info",      # Usa i toni del verde acqua
+    "ended":           "nom",       # Usa i toni del grigio
     "upcoming":        "trending",  
     "wins":            "win",       
     "gg_wins":         "win",       
@@ -207,6 +212,21 @@ def _is_future(date_str: str) -> bool:
     except ValueError: return False
 
 def _evaluate_slot(slot: str, meta: DiscoveryMeta) -> str | None:
+    # NUOVO: Gestione intelligente dei nuovi Sash Dinamici
+    if slot == "next_episode":
+        if meta.next_episode_to_air and _is_future(meta.next_episode_to_air):
+            return f"Prossimo Ep: {_format_date_it(meta.next_episode_to_air)}"
+        return None
+    if slot == "finale":
+        if meta.status == "Ended": return "Stagione Finale"
+        return None
+    if slot == "returning":
+        if meta.status == "Returning Series": return "In Corso (Serie Attiva)"
+        return None
+    if slot == "ended":
+        if meta.status == "Ended": return "Serie Terminata"
+        return None
+
     if slot == "upcoming":
         if meta.next_episode_to_air and _is_future(meta.next_episode_to_air):
             return f"Nuovo Ep. {_format_date_it(meta.next_episode_to_air)}"
@@ -248,7 +268,9 @@ def _evaluate_slot(slot: str, meta: DiscoveryMeta) -> str | None:
         return None
     return None
 
+# NUOVO: Aggiunti i nuovi ID alla whitelist di sicurezza
 ALL_PRIORITY_SLOTS: list[str] = [
+    "next_episode", "finale", "returning", "ended", 
     "upcoming", "wins", "gg_wins", "festival", "pic_noms", "gg_noms", "studio", "director",
     "cast", "trending", "cult", "foreign", "new_release", "metacritic", "true_story",
     "structural", "emmy_noms", "digital_release", "noms",
