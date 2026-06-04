@@ -8,22 +8,29 @@ services:
       - "8000:8000"
     restart: unless-stopped
     volumes:
-      - ./postersplus-cache:/app/cache  # cache DB, TMDB posters/logos, discovery_overrides.json
+      - ./postersplus-cache:/app/cache  # cache DB, TMDB posters/logos, e la NUOVA cartella /composites
     env_file:
-      - .env # see this file for an explanation of what each flag does
+      - .env 
     environment: 
       - TMDB_API_KEY=${TMDB_API_KEY:-}
-      - MDBLIST_API_KEY=${MDBLIST_API_KEY:-}
+      # Cambiato in plurale per supportare la rotazione delle chiavi (separate da virgola)
+      - MDBLIST_API_KEYS=${MDBLIST_API_KEYS:-}
+      # Aggiunta la chiave Fanart esplicitamente per allinearla a backend e UI
+      - FANART_API_KEY=${FANART_API_KEY:-}
       - ACCESS_KEY=${ACCESS_KEY:-}
-      - WORKERS=${WORKERS:-2}
+      # Aumentati i workers di default da 2 a 4 per gestire meglio i picchi di Stremio
+      - WORKERS=${WORKERS:-4}
       - AIOSTREAMS_URL=${AIOSTREAMS_URL:-}
       - AIOSTREAMS_AUTH=${AIOSTREAMS_AUTH:-}
       - QUALITY_OLD_CACHE_DURATION=${QUALITY_OLD_CACHE_DURATION:-90}
       - QUALITY_BG_CONCURRENCY=${QUALITY_BG_CONCURRENCY:-5}
+      # Aggiunta la concorrenza MDBList per allinearla a quella di AIOStreams
+      - MDBLIST_CONCURRENCY=${MDBLIST_CONCURRENCY:-5}
       - CDN_CACHE_TTL=${CDN_CACHE_TTL:-0}
       - COMPOSITE_CACHE_TTL=${COMPOSITE_CACHE_TTL:-604800}
       - COMPOSITE_MAX_ENTRIES=${COMPOSITE_MAX_ENTRIES:-0}
-      - DEFAULT_LOGO_LANGUAGE=${DEFAULT_LOGO_LANGUAGE:-en}
+      # Assicuriamoci che corrisponda al default della UI
+      - DEFAULT_LOGO_LANGUAGE=${DEFAULT_LOGO_LANGUAGE:-it}
     healthcheck:
       test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 30s
