@@ -329,3 +329,23 @@ def add_digital_releases(entries: list[tuple[str, int]]) -> int:
             get_db().commit()
     except Exception: pass
     return inserted
+
+def get_cached_quality(imdb_id: str, release_date: str | None) -> list[str] | None:
+    try:
+        row = get_db().execute("SELECT tokens, cached_at FROM quality_cache WHERE imdb_id = ?", (imdb_id,)).fetchone()
+        if not row: return None
+        tokens_raw, cached_at = row
+        if (time.time() - cached_at) / 86400 > _quality_ttl(release_date):
+            with _db_lock:
+                get_db().execute("DELETE FROM quality_cache WHERE imdb_id = ?", (imdb_id,))
+                get_db().commit()
+            return None
+        return json.loads(tokens_raw or "[]")
+    except Exception: return None
+
+def set_cached_quality(imdb_id: str, tokens: list[str], release_date: str | None) -> None:
+    try:
+        with _db_lock:
+            get_db().execute("INSERT OR REPLACE INTO quality_cache (imdb_id, tokens, cached_at, release_date) VALUES (?, ?, ?, ?)", (imdb_id, json.dumps(tokens), int(time.time()), release_date))
+            get_db().commit()
+    except Exception: pass
