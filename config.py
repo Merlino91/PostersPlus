@@ -7,14 +7,19 @@ DB_PATH               = "/app/cache/cache.db"
 BADGE_DIR             = "/app/badges"
 TMDB_POSTER_CACHE_DIR = "/app/cache/tmdb_posters"
 TMDB_LOGO_CACHE_DIR   = "/app/cache/tmdb_logos"
+# NUOVO: Directory per salvare i poster finali su disco invece che in SQLite
+COMPOSITE_CACHE_DIR   = "/app/cache/composites" 
 
 # Environment
 ACCESS_KEY            = os.environ.get("ACCESS_KEY")
 AIOSTREAMS_URL        = os.environ.get("AIOSTREAMS_URL", "")
 AIOSTREAMS_AUTH       = os.environ.get("AIOSTREAMS_AUTH", "")
 SERVER_TMDB_KEY       = os.environ.get("TMDB_API_KEY", "").strip()
-SERVER_MDBLIST_KEY    = os.environ.get("MDBLIST_API_KEY", "").strip()
 SERVER_FANART_KEY     = os.environ.get("FANART_API_KEY", "").strip()
+
+# NUOVO: Gestione array di chiavi MDBList (supporta fallback per compatibilità)
+_mdblist_keys_raw     = os.environ.get("MDBLIST_API_KEYS", os.environ.get("MDBLIST_API_KEY", ""))
+SERVER_MDBLIST_KEYS   = [k.strip() for k in _mdblist_keys_raw.split(",") if k.strip()]
 
 # AOD
 AOD_URL               = "https://raw.githubusercontent.com/manami-project/anime-offline-database/master/anime-offline-database-minified.json"
@@ -49,7 +54,8 @@ SCORE_GLOW_ALPHA     = 40
 LOGO_MAX_W_RATIO  = 0.84
 LOGO_MAX_H_RATIO  = 0.17
 LOGO_BOTTOM_RATIO = 0.28
-DEFAULT_LOGO_LANGUAGE = os.environ.get("DEFAULT_LOGO_LANGUAGE", "en")
+# NUOVO: Allineato alla UI per usare l'italiano di default
+DEFAULT_LOGO_LANGUAGE = os.environ.get("DEFAULT_LOGO_LANGUAGE", "it")
 
 # Quality Badge Defaults
 BADGE_HEIGHT = 20
@@ -67,7 +73,8 @@ OLD_CACHE_DURATION           = 14
 TRENDING_CACHE_DURATION      = 1
 QUALITY_OLD_CACHE_DURATION   = int(os.environ.get("QUALITY_OLD_CACHE_DURATION", "90"))
 QUALITY_BG_CONCURRENCY       = int(os.environ.get("QUALITY_BG_CONCURRENCY", "5"))
-MDBLIST_CONCURRENCY          = int(os.environ.get("MDBLIST_CONCURRENCY", "3"))
+# NUOVO: Concorrenza allineata a 5 per evitare colli di bottiglia
+MDBLIST_CONCURRENCY          = int(os.environ.get("MDBLIST_CONCURRENCY", "5"))
 
 DIGITAL_RELEASE_MIN_AGE_DAYS = 1
 DIGITAL_RELEASE_MAX_AGE_DAYS = 30
@@ -126,8 +133,11 @@ SCORE_NORMALISERS = {
     "myanimelist":    lambda v: (v / 10)  * 100,
 }
 
+# NUOVO: Ampliata la priorità dei Sash con tag dinamici sulle release
 SASH_PRIORITY: list[str] = [
-    "upcoming",
+    "next_episode",  # Es: "Prossimo Ep: 24 Ott" (Molto utile averlo in cima)
+    "finale",        # Es: "Stagione Finale"
+    "upcoming",      # Es: "Prossime Uscite"
     "wins",
     "gg_wins",
     "festival",
@@ -140,6 +150,8 @@ SASH_PRIORITY: list[str] = [
     "cult",
     "foreign",
     "new_release",
+    "returning",     # Es: "In Corso"
+    "ended",         # Es: "Serie Terminata"
     "metacritic",
     "true_story",
     "structural",
