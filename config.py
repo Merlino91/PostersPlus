@@ -2,12 +2,25 @@
 import os
 import json
 
+# ==========================================
+# HELPER FUNCTIONS (Devono stare in cima!)
+# ==========================================
+def _parse_bool_env(key: str, default: bool = False) -> bool:
+    val = os.environ.get(key, "").strip().lower()
+    if not val: return default
+    return val not in ("0", "false", "no")
+
+def _parse_int_env(key: str, default: int) -> int:
+    val = os.environ.get(key, "").strip()
+    try: return int(val) if val else default
+    except ValueError: return default
+# ==========================================
+
 # Storage
 DB_PATH               = "/app/cache/cache.db"
 BADGE_DIR             = "/app/badges"
 TMDB_POSTER_CACHE_DIR = "/app/cache/tmdb_posters"
 TMDB_LOGO_CACHE_DIR   = "/app/cache/tmdb_logos"
-# NUOVO: Directory per salvare i poster finali su disco invece che in SQLite
 COMPOSITE_CACHE_DIR   = "/app/cache/composites" 
 
 # Environment
@@ -17,14 +30,13 @@ AIOSTREAMS_AUTH       = os.environ.get("AIOSTREAMS_AUTH", "")
 SERVER_TMDB_KEY       = os.environ.get("TMDB_API_KEY", "").strip()
 SERVER_FANART_KEY     = os.environ.get("FANART_API_KEY", "").strip()
 
-# NUOVO: Gestione array di chiavi MDBList (supporta fallback per compatibilità)
 _mdblist_keys_raw     = os.environ.get("MDBLIST_API_KEYS", os.environ.get("MDBLIST_API_KEY", ""))
 SERVER_MDBLIST_KEYS   = [k.strip() for k in _mdblist_keys_raw.split(",") if k.strip()]
 
 # AOD
 AOD_URL               = "https://raw.githubusercontent.com/manami-project/anime-offline-database/master/anime-offline-database-minified.json"
 
-# Workers
+# Workers & TTL (Ora la funzione _parse_int_env esiste già e non darà errore)
 CDN_CACHE_TTL         = _parse_int_env("CDN_CACHE_TTL", 0)
 JPEG_QUALITY          = max(70, min(95, _parse_int_env("JPEG_QUALITY", 85)))
 
@@ -82,11 +94,6 @@ DIGITAL_RELEASE_MAX_AGE_DAYS = 30
 COMPOSITE_CACHE_TTL          = _parse_int_env("COMPOSITE_CACHE_TTL", 604800)
 COMPOSITE_MAX_ENTRIES        = _parse_int_env("COMPOSITE_MAX_ENTRIES", 0)
 
-# NUOVO HELPER: Previene il crash se su Dokploy lasciamo il campo vuoto
-def _parse_int_env(key: str, default: int) -> int:
-    val = os.environ.get(key, "").strip()
-    try: return int(val) if val else default
-    except ValueError: return default
 
 # Rating Score Weight Defaults
 MOVIE_WEIGHTS = {
