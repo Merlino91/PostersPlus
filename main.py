@@ -625,6 +625,17 @@ async def get_poster(
 ):
     if _cfg.ACCESS_KEY and not hmac.compare_digest(access_key, _cfg.ACCESS_KEY): raise HTTPException(status_code=403, detail="Unauthorized")
 
+    # --- KITSU INTERCEPTOR (V5) ---
+    # Estrae i numeri se AIOMetadata nasconde l'id di kitsu in tmdb_id o imdb_id
+    if not kitsu_id:
+        if "kitsu" in tmdb_id.lower():
+            kitsu_id = "".join(filter(str.isdigit, tmdb_id))
+            tmdb_id = ""
+        elif "kitsu" in imdb_id.lower():
+            kitsu_id = "".join(filter(str.isdigit, imdb_id))
+            imdb_id = ""
+    # ------------------------------
+
     if not tmdb_id and kitsu_id:
         mapping = get_aod_mapping(kitsu_id)
         if mapping:
