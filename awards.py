@@ -1327,6 +1327,10 @@ def draw_award_badge(
         border_rgb = (100, 220, 210)
     elif sash_type == "trending":
         border_rgb = (160, 220, 255)
+elif sash_type == "next_episode":
+        border_rgb = (255, 160, 60)
+    elif sash_type == "ended":
+        border_rgb = (220, 60, 60)
     else:  # "nom"
         border_rgb = (192, 192, 200)
 
@@ -1494,6 +1498,12 @@ def draw_award_sash(
     elif sash_type == "trending":
         hi, lo        = (90, 170, 255, 255), (50, 110, 190, 255)
         border_colour = (160, 220, 255, 255)
+elif sash_type == "next_episode":
+        hi, lo        = (255, 140, 40, 255), (190, 90, 20, 255)  # Toni Arancioni
+        border_colour = (255, 160, 60, 255)
+    elif sash_type == "ended":
+        hi, lo        = (190, 40, 40, 255), (130, 20, 20, 255)   # Toni Rossi
+        border_colour = (220, 60, 60, 255)
     else:  # "nom"
         hi, lo        = (180, 180, 190, 255), (110, 110, 120, 255)
         border_colour = (192, 192, 200, 255)
@@ -1583,6 +1593,10 @@ def draw_minimal_pill(
             bg_color = (100, 220, 210)
         elif sash_type == "trending":
             bg_color = (160, 220, 255)
+elif sash_type == "next_episode":
+            bg_color = (255, 160, 60)
+        elif sash_type == "ended":
+            bg_color = (220, 60, 60)
         else:
             bg_color = (192, 192, 200)
 
