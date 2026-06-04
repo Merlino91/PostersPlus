@@ -1185,7 +1185,6 @@ function buildBaseParams({ usePlaceholders = false } = {}) {
   const logoLanguage   = vEl('cfg-language') || 'it';
   const imdbId         = usePlaceholders ? '{imdb_id}'  : (resolvedImdbId  || '{imdb_id}');
   const tmdbId         = usePlaceholders ? '{tmdb_id}'  : (resolvedTmdbId  || '{tmdb_id}');
-  const kitsuId        = usePlaceholders ? '{kitsu_id}' : ''; // Supporto AOD Anime
   const type           = usePlaceholders ? '{type}'     : mediaType;
   
   const accKey         = vEl('cfg-access-key');
@@ -1197,7 +1196,6 @@ function buildBaseParams({ usePlaceholders = false } = {}) {
 
   params.set('tmdb_id', tmdbId);
   params.set('imdb_id', imdbId);
-  if (kitsuId) params.set('kitsu_id', kitsuId); // Trasmissione dell'ID al backend Python
   params.set('type',    type);
 
   // Le tue chiavi in chiaro: la soluzione al crash di AIOMetadata!
