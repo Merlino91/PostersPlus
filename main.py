@@ -513,9 +513,19 @@ async def _update_aod_loop():
                             for item in data.get("data", []):
                                 k, t, mt = None, None, "tv"
                                 for src in item.get("sources", []):
-                                    if "kitsu.io/anime/" in src: k = src.split("/")[-1]
-                                    elif "themoviedb.org/tv/" in src: t = src.split("/")[-1]; mt = "tv"
-                                    elif "themoviedb.org/movie/" in src: t = src.split("/")[-1]; mt = "movie"
+                                    # Kitsu ID
+                                    if "kitsu.io/anime/" in src:
+                                        match = re.search(r'kitsu\.io/anime/(\d+)', src)
+                                        if match: k = match.group(1)
+                                    # TMDB TV ID
+                                    elif "themoviedb.org/tv/" in src:
+                                        match = re.search(r'themoviedb\.org/tv/(\d+)', src)
+                                        if match: t = match.group(1); mt = "tv"
+                                    # TMDB Movie ID
+                                    elif "themoviedb.org/movie/" in src:
+                                        match = re.search(r'themoviedb\.org/movie/(\d+)', src)
+                                        if match: t = match.group(1); mt = "movie"
+                                        
                                 if k and t: m.append((k, t, mt))
                             return m
                         mappings = await asyncio.get_running_loop().run_in_executor(None, _parse)
