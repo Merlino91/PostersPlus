@@ -72,11 +72,10 @@ LANGUAGE_LABELS: dict[str, str] = {
     "hu": "Hungarian", "cs": "Czech", "he": "Hebrew", "el": "Greek",
 }
 
-# Completamente ripulito. Non ci sono più returning ed ended.
+# Tag cancellati permanentemente dalla mappa
 _SASH_TYPES: dict[str, str] = {
     "next_episode":    "next_episode",  
     "canceled":        "nom",           
-    "finale":          "win",           
     "upcoming":        "trending",  
     "wins":            "win",       
     "gg_wins":         "win",       
@@ -126,8 +125,8 @@ class DiscoveryMeta:
     next_episode_to_air: str | None = None
     release_date: str | None = None
     
-    is_ended_this_year: bool = False
     num_seasons: int = 0
+    is_tv: bool = False
 
 
 def extract_discovery_meta(
@@ -182,6 +181,8 @@ def extract_discovery_meta(
         if name in cast_list: meta.matched_cast.append(cast_list[name])
 
     is_tv = media_type in ("tv", "series")
+    meta.is_tv = is_tv
+    
     if not is_tv:
         runtime = tmdb_data.get("runtime") or 0
         meta.is_short_film = 0 < runtime < 40
@@ -196,12 +197,6 @@ def extract_discovery_meta(
         
         if num_seasons >= 3 and num_episodes > 0:
             meta.is_binge_ready = 6 <= (num_episodes / num_seasons) <= 20
-            
-        # Potenziato: Usa last_air_date di TMDB per capire se è davvero finita quest'anno
-        last_air = tmdb_data.get("last_air_date") or ""
-        current_year = str(date.today().year)
-        if last_air.startswith(current_year):
-            meta.is_ended_this_year = True
 
     if _is_recent(release_date): meta.is_new_release = True
     return meta
@@ -249,11 +244,6 @@ def _evaluate_slot(slot: str, meta: DiscoveryMeta) -> str | None:
             return "Serie Cancellata"
         return None
 
-    if slot == "finale":
-        if meta.status == "Ended" and meta.num_seasons > 1 and meta.is_ended_this_year:
-            return "Stagione Finale"
-        return None
-
     if slot == "wins":
         w = [v for v in meta.award_wins if v != "Golden Globe"]
         return w[0] if w else None
@@ -270,9 +260,13 @@ def _evaluate_slot(slot: str, meta: DiscoveryMeta) -> str | None:
     if slot == "director": return f"{meta.matched_directors[0]}" if meta.matched_directors else None
     if slot == "cast": return meta.matched_cast[0] if meta.matched_cast else None
     if slot == "trending": return f"#{meta.trending_rank} Today" if meta.trending_rank else None
+    
+    # CORRETTO: Film riceve "Nuova Uscita", Serie TV riceve "Nuovi Episodi"
     if slot in ("new_release", "digital_release"):
-        if meta.is_new_release or meta.is_digital_release: return "Nuovi Episodi"
+        if meta.is_new_release or meta.is_digital_release: 
+            return "Nuovi Episodi" if meta.is_tv else "Nuova Uscita"
         return None
+        
     if slot == "metacritic": return "Da Non Perdere" if meta.is_metacritic_must_see else None
     if slot == "cult": return "Cult Classic" if meta.is_cult else None
     if slot == "true_story": return "Tratto da una storia vera" if meta.is_true_story else None
@@ -284,8 +278,9 @@ def _evaluate_slot(slot: str, meta: DiscoveryMeta) -> str | None:
         return None
     return None
 
+# Rimossi anche dalla whitelist di sicurezza in fondo
 ALL_PRIORITY_SLOTS: list[str] = [
-    "next_episode", "upcoming", "canceled", "finale", 
+    "next_episode", "upcoming", "canceled", 
     "wins", "gg_wins", "festival", "pic_noms", "gg_noms", "studio", "director",
     "cast", "trending", "cult", "foreign", "new_release", "metacritic", "true_story",
     "structural", "emmy_noms", "digital_release", "noms",
