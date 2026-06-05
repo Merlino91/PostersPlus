@@ -503,37 +503,27 @@ async def _update_aod_loop():
         last_update = get_sys_meta("aod_last_update")
         now = time.time()
         if not last_update or now - float(last_update) > 604800:
-            logger.info("Checking AOD Database updates...")
+            logger.info("Checking Anime Mapping Database updates...")
             try:
                 if _HTTP_CLIENT:
-                    resp = await _HTTP_CLIENT.get(getattr(_cfg, "AOD_URL", "https://raw.githubusercontent.com/manami-project/anime-offline-database/master/anime-offline-database-minified.json"), timeout=45.0)
+                    resp = await _HTTP_CLIENT.get(getattr(_cfg, "AOD_URL", "https://raw.githubusercontent.com/Fribb/anime-lists/master/anime-list-full.json"), timeout=45.0)
                     if resp.status_code == 200:
                         def _parse():
-                            data = resp.json(); m = []
-                            for item in data.get("data", []):
-                                k, t, mt = None, None, "tv"
-                                for src in item.get("sources", []):
-                                    # Kitsu ID
-                                    if "kitsu.io/anime/" in src:
-                                        match = re.search(r'kitsu\.io/anime/(\d+)', src)
-                                        if match: k = match.group(1)
-                                    # TMDB TV ID
-                                    elif "themoviedb.org/tv/" in src:
-                                        match = re.search(r'themoviedb\.org/tv/(\d+)', src)
-                                        if match: t = match.group(1); mt = "tv"
-                                    # TMDB Movie ID
-                                    elif "themoviedb.org/movie/" in src:
-                                        match = re.search(r'themoviedb\.org/movie/(\d+)', src)
-                                        if match: t = match.group(1); mt = "movie"
-                                        
-                                if k and t: m.append((k, t, mt))
+                            data = resp.json()
+                            m = []
+                            for item in data:
+                                k = item.get("kitsu_id")
+                                t = item.get("themoviedb_id")
+                                if k and t:
+                                    mt = "movie" if str(item.get("type", "")).upper() == "MOVIE" else "tv"
+                                    m.append((str(k), str(t), mt))
                             return m
                         mappings = await asyncio.get_running_loop().run_in_executor(None, _parse)
                         if mappings:
                             update_aod_mapping(mappings)
                             set_sys_meta("aod_last_update", str(now))
-                            logger.info(f"AOD database updated with {len(mappings)} entries.")
-            except Exception as e: logger.error(f"Failed to update AOD: {e}")
+                            logger.info(f"Anime mapping database updated with {len(mappings)} entries.")
+            except Exception as e: logger.error(f"Failed to update Anime mapping: {e}")
         await asyncio.sleep(86400)
 
 
