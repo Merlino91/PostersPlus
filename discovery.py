@@ -72,10 +72,10 @@ LANGUAGE_LABELS: dict[str, str] = {
     "hu": "Hungarian", "cs": "Czech", "he": "Hebrew", "el": "Greek",
 }
 
-# NUOVO: Pulizia effettuata, inserito 'canceled'
+# Completamente ripulito. Non ci sono più returning ed ended.
 _SASH_TYPES: dict[str, str] = {
     "next_episode":    "next_episode",  
-    "canceled":        "nom",           # Tono grigio come le nomination (sobrio)
+    "canceled":        "nom",           
     "finale":          "win",           
     "upcoming":        "trending",  
     "wins":            "win",       
@@ -126,7 +126,6 @@ class DiscoveryMeta:
     next_episode_to_air: str | None = None
     release_date: str | None = None
     
-    # Nuovi controlli strutturali avanzati
     is_ended_this_year: bool = False
     num_seasons: int = 0
 
@@ -193,16 +192,15 @@ def extract_discovery_meta(
         
         meta.num_seasons = num_seasons
         
-        # FIX: Mini Serie rigorosa (1 stagione, max 8 episodi, conclusa)
         meta.is_mini_series = (num_seasons == 1 and 0 < num_episodes <= 8 and status == "Ended")
         
         if num_seasons >= 3 and num_episodes > 0:
             meta.is_binge_ready = 6 <= (num_episodes / num_seasons) <= 20
             
-        # Controllo Anno Corrente: Verifica se TMDB indica che la serie è finita nell'anno solare in corso
-        release_year_str = str(tmdb_data.get("release_year") or "")
+        # Potenziato: Usa last_air_date di TMDB per capire se è davvero finita quest'anno
+        last_air = tmdb_data.get("last_air_date") or ""
         current_year = str(date.today().year)
-        if release_year_str.endswith(current_year):
+        if last_air.startswith(current_year):
             meta.is_ended_this_year = True
 
     if _is_recent(release_date): meta.is_new_release = True
@@ -236,7 +234,6 @@ def _evaluate_slot(slot: str, meta: DiscoveryMeta) -> str | None:
         if meta.next_episode_to_air and _is_future(meta.next_episode_to_air):
             return f"Nuovo Ep. {_format_date_it(meta.next_episode_to_air)}"
             
-        # FIX: "Prossimamente" solo per stati specifici o date future, non per serie già in corso
         if meta.status in ("In Production", "Planned", "Post Production") or (meta.release_date and _is_future(meta.release_date)):
             if meta.release_date and _is_future(meta.release_date):
                 try:
@@ -247,13 +244,11 @@ def _evaluate_slot(slot: str, meta: DiscoveryMeta) -> str | None:
             return "Prossimamente"
         return None
         
-    # NUOVO TAG: Cancellata
     if slot == "canceled":
         if meta.status == "Canceled":
             return "Serie Cancellata"
         return None
 
-    # FIX: "Stagione Finale" rigorosa (Più di 1 stagione, finita, andata in onda nell'anno solare corrente)
     if slot == "finale":
         if meta.status == "Ended" and meta.num_seasons > 1 and meta.is_ended_this_year:
             return "Stagione Finale"
@@ -289,7 +284,6 @@ def _evaluate_slot(slot: str, meta: DiscoveryMeta) -> str | None:
         return None
     return None
 
-# Mappatura pulita e riorganizzata (rimossi returning e ended)
 ALL_PRIORITY_SLOTS: list[str] = [
     "next_episode", "upcoming", "canceled", "finale", 
     "wins", "gg_wins", "festival", "pic_noms", "gg_noms", "studio", "director",
