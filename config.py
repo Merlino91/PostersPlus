@@ -33,8 +33,8 @@ SERVER_FANART_KEY     = os.environ.get("FANART_API_KEY", "").strip()
 _mdblist_keys_raw     = os.environ.get("MDBLIST_API_KEYS", os.environ.get("MDBLIST_API_KEY", ""))
 SERVER_MDBLIST_KEYS   = [k.strip() for k in _mdblist_keys_raw.split(",") if k.strip()]
 
-# AOD
-AOD_URL               = "https://raw.githubusercontent.com/manami-project/anime-offline-database/master/anime-offline-database-minified.json"
+# AOD / Fribb Mapping
+AOD_URL               = "https://raw.githubusercontent.com/Fribb/anime-lists/master/anime-list-full.json"
 
 # Workers & TTL (Ora la funzione _parse_int_env esiste già e non darà errore)
 CDN_CACHE_TTL         = _parse_int_env("CDN_CACHE_TTL", 0)
