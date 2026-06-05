@@ -1289,16 +1289,6 @@ function buildBaseParams({ usePlaceholders = false } = {}) {
   return usePlaceholders ? decodePlaceholders(finalUrl) : finalUrl;
 }
 
-  setIf('badge_display_mode', ni('cfg-badge-display-mode'), 4);
-  if (ni('cfg-badge-display-mode') !== 0) {
-    setIf('badge_height', ni('cfg-badge-h'), 20);
-    setIf('badge_anchor_x', n('cfg-badge-x').toFixed(3), '0.050');
-    setIf('badge_anchor_y', n('cfg-badge-y').toFixed(3), '0.050');
-  }
-
-  const finalUrl = `${domain}/poster?${params.toString()}`;
-  return usePlaceholders ? decodePlaceholders(finalUrl) : finalUrl;
-}
 
 function build() { return buildBaseParams(); }
 
