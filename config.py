@@ -158,8 +158,6 @@ SASH_PRIORITY: list[str] = [
     "cult",
     "foreign",
     "new_release",
-    "returning",     # Es: "In Corso"
-    "ended",         # Es: "Serie Terminata"
     "metacritic",
     "true_story",
     "structural",
