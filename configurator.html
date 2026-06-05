@@ -1181,7 +1181,7 @@ function decodePlaceholders(url) {
 function buildBaseParams({ usePlaceholders = false } = {}) {
   const domain         = vEl('cfg-domain').replace(/\/$/, '') || 'https://your-instance.com';
   const logoLanguage   = vEl('cfg-language') || 'it';
-const imdbId         = usePlaceholders ? '{imdb_id}'  : (resolvedImdbId  || '{imdb_id}');
+  const imdbId         = usePlaceholders ? '{imdb_id}'  : (resolvedImdbId  || '{imdb_id}');
   const tmdbId         = usePlaceholders ? '{tmdb_id}'  : (resolvedTmdbId  || '{tmdb_id}');
   const type           = usePlaceholders ? '{type}'     : mediaType;
   const kitsuId        = usePlaceholders ? '{kitsu_id}' : '';
@@ -1194,23 +1194,21 @@ const imdbId         = usePlaceholders ? '{imdb_id}'  : (resolvedImdbId  || '{im
 
   const params = new URLSearchParams();
 
-const params = new URLSearchParams();
-
   params.set('tmdb_id', tmdbId);
   params.set('imdb_id', imdbId);
+  
   if (usePlaceholders) {
     params.set('kitsu_id', kitsuId);
     params.set('mal_id', malId);
   }
-  params.set('type',    type);
+  
+  params.set('type', type);
 
-  // Le tue chiavi in chiaro: la soluzione al crash di AIOMetadata!
   if (accKey)         params.set('access_key',  accKey);
   if (userTmdbKey)    params.set('tmdb_key',     userTmdbKey);
   if (userMdblistKey) params.set('mdblist_key',  userMdblistKey);
   if (fanartKey)      params.set('fanart_key',   fanartKey);
 
-  // setIf omette la variabile dall'URL se è già quella di default, accorciando drasticamente il link
   const setIf = (key, val, def) => { if (String(val) !== String(def)) params.set(key, val); };
 
   setIf('rating_display_mode', ni('cfg-rating-mode'), 1);
@@ -1279,6 +1277,17 @@ const params = new URLSearchParams();
       params.set('sash_priority', currentSashPriority);
     }
   }
+
+  setIf('badge_display_mode', ni('cfg-badge-display-mode'), 4);
+  if (ni('cfg-badge-display-mode') !== 0) {
+    setIf('badge_height', ni('cfg-badge-h'), 20);
+    setIf('badge_anchor_x', n('cfg-badge-x').toFixed(3), '0.050');
+    setIf('badge_anchor_y', n('cfg-badge-y').toFixed(3), '0.050');
+  }
+
+  const finalUrl = `${domain}/poster?${params.toString()}`;
+  return usePlaceholders ? decodePlaceholders(finalUrl) : finalUrl;
+}
 
   setIf('badge_display_mode', ni('cfg-badge-display-mode'), 4);
   if (ni('cfg-badge-display-mode') !== 0) {
