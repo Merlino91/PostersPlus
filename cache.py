@@ -88,11 +88,15 @@ def init_db() -> None:
     _db_conn.commit()
 
 # --- AOD HELPERS ---
-def get_aod_mapping(kitsu_id: str):
+def get_aod_mapping(provider_id: str):
     try:
-        row = get_db().execute("SELECT tmdb_id, media_type FROM aod_cache WHERE kitsu_id = ?", (kitsu_id,)).fetchone()
+        row = get_db().execute("SELECT tmdb_id, media_type FROM aod_cache WHERE kitsu_id = ?", (provider_id,)).fetchone()
+        # Fallback per evitare rotture con salvataggi precedenti
+        if not row and provider_id.startswith("kitsu_"):
+            legacy_id = provider_id.replace("kitsu_", "")
+            row = get_db().execute("SELECT tmdb_id, media_type FROM aod_cache WHERE kitsu_id = ?", (legacy_id,)).fetchone()
         return row if row else None
-    except Exception as exc: return None
+    except Exception: return None
 
 def update_aod_mapping(mappings: list[tuple[str, str, str]]):
     try:
@@ -100,6 +104,7 @@ def update_aod_mapping(mappings: list[tuple[str, str, str]]):
             get_db().executemany("INSERT OR REPLACE INTO aod_cache (kitsu_id, tmdb_id, media_type) VALUES (?, ?, ?)", mappings)
             get_db().commit()
     except Exception as exc: logger.error(f"AOD cache write error: {exc}")
+# -------------------
 
 def get_sys_meta(key: str):
     try:
