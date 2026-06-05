@@ -929,12 +929,6 @@ async def get_poster(
                             dynamic_sashes["next_episode"] = f"Prossimo Ep: {d.day} {mesi[d.month-1]}"
                         except Exception:
                             pass
-                    
-                    if status == "Ended":
-                        dynamic_sashes["ended"] = "Serie Terminata"
-                        dynamic_sashes["finale"] = "Stagione Finale"
-                    elif status == "Returning Series":
-                        dynamic_sashes["returning"] = "In Corso"
 
                 sash_result = None
                 # Il ciclo rispetta l'ordine di priorità imposto dal file config.py / UI
