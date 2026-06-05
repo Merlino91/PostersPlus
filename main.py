@@ -512,11 +512,21 @@ async def _update_aod_loop():
                             data = resp.json()
                             m = []
                             for item in data:
+                                # Estrae SOLO numeri dal tmdb_id per evitare il crash "tv/123"
+                                t_raw = str(item.get("themoviedb_id", ""))
+                                t_match = re.search(r'\d+', t_raw)
+                                if not t_match: continue
+                                t = t_match.group(0)
+                                
+                                mt = "movie" if str(item.get("type", "")).upper() == "MOVIE" else "tv"
+                                
+                                # Aggiunge alla mappatura Kitsu
                                 k = item.get("kitsu_id")
-                                t = item.get("themoviedb_id")
-                                if k and t:
-                                    mt = "movie" if str(item.get("type", "")).upper() == "MOVIE" else "tv"
-                                    m.append((str(k), str(t), mt))
+                                if k: m.append((f"kitsu_{k}", t, mt))
+                                
+                                # Aggiunge alla mappatura MAL
+                                mal = item.get("mal_id")
+                                if mal: m.append((f"mal_{mal}", t, mt))
                             return m
                         mappings = await asyncio.get_running_loop().run_in_executor(None, _parse)
                         if mappings:
@@ -619,14 +629,13 @@ async def resolve_imdb(tmdb_id: str, type: str = "movie", tmdb_key: str = "", ac
 
 @app.get("/poster")
 async def get_poster(
-    request: Request, tmdb_id: str = "", imdb_id: str = "", kitsu_id: str = "", type: str = "movie", quality: str = "", season: int = 1, episode: int = 1,
+    request: Request, tmdb_id: str = "", imdb_id: str = "", kitsu_id: str = "", mal_id: str = "", type: str = "movie", quality: str = "", season: int = 1, episode: int = 1,
     access_key: str = "", mdblist_key: str = "", tmdb_key: str = "", fanart_key: str = "",
     debug: str | None = None,
 ):
     if _cfg.ACCESS_KEY and not hmac.compare_digest(access_key, _cfg.ACCESS_KEY): raise HTTPException(status_code=403, detail="Unauthorized")
 
-    # --- KITSU INTERCEPTOR (V5) ---
-    # Estrae i numeri se AIOMetadata nasconde l'id di kitsu in tmdb_id o imdb_id
+    # --- ANIME INTERCEPTOR (Kitsu + MAL) ---
     if not kitsu_id:
         if "kitsu" in tmdb_id.lower():
             kitsu_id = "".join(filter(str.isdigit, tmdb_id))
@@ -634,15 +643,29 @@ async def get_poster(
         elif "kitsu" in imdb_id.lower():
             kitsu_id = "".join(filter(str.isdigit, imdb_id))
             imdb_id = ""
+
+    if not mal_id:
+        if "mal" in tmdb_id.lower():
+            mal_id = "".join(filter(str.isdigit, tmdb_id))
+            tmdb_id = ""
+        elif "mal" in imdb_id.lower():
+            mal_id = "".join(filter(str.isdigit, imdb_id))
+            imdb_id = ""
+
+    if kitsu_id: kitsu_id = "".join(filter(str.isdigit, kitsu_id))
+    if mal_id: mal_id = "".join(filter(str.isdigit, mal_id))
     # ------------------------------
 
-    if not tmdb_id and kitsu_id:
-        mapping = get_aod_mapping(kitsu_id)
-        if mapping:
-            tmdb_id, type = mapping
+    if not tmdb_id:
+        if kitsu_id:
+            mapping = get_aod_mapping(f"kitsu_{kitsu_id}")
+            if mapping: tmdb_id, type = mapping
+        elif mal_id:
+            mapping = get_aod_mapping(f"mal_{mal_id}")
+            if mapping: tmdb_id, type = mapping
 
     if not tmdb_id:
-        raise HTTPException(status_code=400, detail="Missing tmdb_id or valid kitsu_id")
+        raise HTTPException(status_code=400, detail="Missing tmdb_id or valid kitsu/mal id")
 
     _check_tmdb_id(tmdb_id)
     if imdb_id:
@@ -655,7 +678,7 @@ async def get_poster(
 
     if not effective_tmdb_key: raise HTTPException(status_code=400, detail="No TMDB API key available.")
 
-    raw_params = { k: v for k, v in request.query_params.items() if k not in ("tmdb_id", "imdb_id", "kitsu_id", "mdblist_key", "tmdb_key", "fanart_key", "type", "quality", "season", "episode", "access_key", "debug") }
+    raw_params = { k: v for k, v in request.query_params.items() if k not in ("tmdb_id", "imdb_id", "kitsu_id", "mal_id", "mdblist_key", "tmdb_key", "fanart_key", "type", "quality", "season", "episode", "access_key", "debug") }
     rcfg = build_request_config(raw_params)
 
     if not quality:
