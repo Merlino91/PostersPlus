@@ -635,27 +635,26 @@ async def get_poster(
 ):
     if _cfg.ACCESS_KEY and not hmac.compare_digest(access_key, _cfg.ACCESS_KEY): raise HTTPException(status_code=403, detail="Unauthorized")
 
-    # --- ANIME INTERCEPTOR (Kitsu + MAL) ---
-    if not kitsu_id:
-        if "kitsu" in tmdb_id.lower():
-            kitsu_id = "".join(filter(str.isdigit, tmdb_id))
-            tmdb_id = ""
-        elif "kitsu" in imdb_id.lower():
-            kitsu_id = "".join(filter(str.isdigit, imdb_id))
-            imdb_id = ""
+# --- SANITIZER & ANIME INTERCEPTOR ---
+    # 1. Pulisce eventuali placeholder lasciati testuali (non risolti) da AIOmetadata
+    if tmdb_id == "{tmdb_id}": tmdb_id = ""
+    if imdb_id == "{imdb_id}": imdb_id = ""
+    if kitsu_id == "{kitsu_id}": kitsu_id = ""
+    if mal_id == "{mal_id}": mal_id = ""
 
-    if not mal_id:
-        if "mal" in tmdb_id.lower():
-            mal_id = "".join(filter(str.isdigit, tmdb_id))
-            tmdb_id = ""
-        elif "mal" in imdb_id.lower():
-            mal_id = "".join(filter(str.isdigit, imdb_id))
-            imdb_id = ""
+    # 2. Intercetta ID "sporchi" inseriti in tmdb_id da addon terzi
+    if not kitsu_id and "kitsu" in tmdb_id.lower():
+        kitsu_id = tmdb_id
+        tmdb_id = ""
+    elif not mal_id and "mal" in tmdb_id.lower():
+        mal_id = tmdb_id
+        tmdb_id = ""
 
+    # 3. Estrae in modo sicuro solo i numeri per il mapping interno
     if kitsu_id: kitsu_id = "".join(filter(str.isdigit, kitsu_id))
     if mal_id: mal_id = "".join(filter(str.isdigit, mal_id))
-    # ------------------------------
-
+    # -------------------------------------
+    
     if not tmdb_id:
         if kitsu_id:
             mapping = get_aod_mapping(f"kitsu_{kitsu_id}")
