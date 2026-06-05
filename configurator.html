@@ -1181,9 +1181,11 @@ function decodePlaceholders(url) {
 function buildBaseParams({ usePlaceholders = false } = {}) {
   const domain         = vEl('cfg-domain').replace(/\/$/, '') || 'https://your-instance.com';
   const logoLanguage   = vEl('cfg-language') || 'it';
-  const imdbId         = usePlaceholders ? '{imdb_id}'  : (resolvedImdbId  || '{imdb_id}');
+const imdbId         = usePlaceholders ? '{imdb_id}'  : (resolvedImdbId  || '{imdb_id}');
   const tmdbId         = usePlaceholders ? '{tmdb_id}'  : (resolvedTmdbId  || '{tmdb_id}');
   const type           = usePlaceholders ? '{type}'     : mediaType;
+  const kitsuId        = usePlaceholders ? '{kitsu_id}' : '';
+  const malId          = usePlaceholders ? '{mal_id}'   : '';
   
   const accKey         = vEl('cfg-access-key');
   const userTmdbKey    = vEl('cfg-tmdb-key');
@@ -1192,8 +1194,14 @@ function buildBaseParams({ usePlaceholders = false } = {}) {
 
   const params = new URLSearchParams();
 
+const params = new URLSearchParams();
+
   params.set('tmdb_id', tmdbId);
   params.set('imdb_id', imdbId);
+  if (usePlaceholders) {
+    params.set('kitsu_id', kitsuId);
+    params.set('mal_id', malId);
+  }
   params.set('type',    type);
 
   // Le tue chiavi in chiaro: la soluzione al crash di AIOMetadata!
