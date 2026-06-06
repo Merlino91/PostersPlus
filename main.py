@@ -635,36 +635,35 @@ async def get_poster(
 ):
     if _cfg.ACCESS_KEY and not hmac.compare_digest(access_key, _cfg.ACCESS_KEY): raise HTTPException(status_code=403, detail="Unauthorized")
 
-    # --- 1. SANITIZER: DISTRUZIONE SEGNAPOSTO TESTUALI ---
-    # Elimina istantaneamente le stringhe come "{tmdb_id}" trasformandole in vuote
+# --- 1. SANITIZER: DISTRUZIONE SEGNAPOSTO TESTUALI ---
     if "{" in tmdb_id: tmdb_id = ""
     if "{" in imdb_id: imdb_id = ""
     if "{" in kitsu_id: kitsu_id = ""
     if "{" in mal_id: mal_id = ""
 
-    # --- 2. ANIME INTERCEPTOR (Kitsu + MAL) ---
+    # --- 2. ANIME INTERCEPTOR SICURO (Kitsu + MAL) ---
+    # Intercetta SOLO se la stringa inzia ESATTAMENTE con i prefissi noti
+    # evitando falsi positivi con parole come "normal" o "animal"
+    
     if not kitsu_id:
-        if "kitsu" in tmdb_id.lower():
+        if tmdb_id.lower().startswith("kitsu:") or tmdb_id.lower().startswith("kitsu_"):
             kitsu_id = "".join(filter(str.isdigit, tmdb_id))
             tmdb_id = ""
-        elif "kitsu" in imdb_id.lower():
+        elif imdb_id.lower().startswith("kitsu:") or imdb_id.lower().startswith("kitsu_"):
             kitsu_id = "".join(filter(str.isdigit, imdb_id))
             imdb_id = ""
-            
-    # ... [il resto del codice continua inalterato] ...
 
     if not mal_id:
-        if "mal" in tmdb_id.lower():
-            mal_id = tmdb_id
+        if tmdb_id.lower().startswith("mal:") or tmdb_id.lower().startswith("mal_"):
+            mal_id = "".join(filter(str.isdigit, tmdb_id))
             tmdb_id = ""
-        elif "mal" in imdb_id.lower():
-            mal_id = imdb_id
+        elif imdb_id.lower().startswith("mal:") or imdb_id.lower().startswith("mal_"):
+            mal_id = "".join(filter(str.isdigit, imdb_id))
             imdb_id = ""
 
-    # 3. Estrae in modo sicuro solo i numeri
+    # 3. Estrae in modo sicuro solo i numeri (se passati direttamente come argomenti URL)
     if kitsu_id: kitsu_id = "".join(filter(str.isdigit, kitsu_id))
     if mal_id: mal_id = "".join(filter(str.isdigit, mal_id))
-    # ------------------------------
     
     if not tmdb_id:
         if kitsu_id:
