@@ -1184,8 +1184,6 @@ function buildBaseParams({ usePlaceholders = false } = {}) {
   const imdbId         = usePlaceholders ? '{imdb_id}'  : (resolvedImdbId  || '{imdb_id}');
   const tmdbId         = usePlaceholders ? '{tmdb_id}'  : (resolvedTmdbId  || '{tmdb_id}');
   const type           = usePlaceholders ? '{type}'     : mediaType;
-  const kitsuId        = usePlaceholders ? '{kitsu_id}' : '';
-  const malId          = usePlaceholders ? '{mal_id}'   : '';
   
   const accKey         = vEl('cfg-access-key');
   const userTmdbKey    = vEl('cfg-tmdb-key');
@@ -1196,12 +1194,6 @@ function buildBaseParams({ usePlaceholders = false } = {}) {
 
   params.set('tmdb_id', tmdbId);
   params.set('imdb_id', imdbId);
-  
-  if (usePlaceholders) {
-    params.set('kitsu_id', kitsuId);
-    params.set('mal_id', malId);
-  }
-  
   params.set('type', type);
 
   if (accKey)         params.set('access_key',  accKey);
