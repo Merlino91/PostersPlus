@@ -635,51 +635,54 @@ async def get_poster(
 ):
     if _cfg.ACCESS_KEY and not hmac.compare_digest(access_key, _cfg.ACCESS_KEY): raise HTTPException(status_code=403, detail="Unauthorized")
 
-# --- 1. SANITIZER: DISTRUZIONE SEGNAPOSTO TESTUALI ---
-    if "{" in tmdb_id: tmdb_id = ""
-    if "{" in imdb_id: imdb_id = ""
-    if "{" in kitsu_id: kitsu_id = ""
-    if "{" in mal_id: mal_id = ""
+    # ==========================================
+    # --- SMART ROUTER UNIVERSALE ---
+    # ==========================================
+    import re
 
-    # --- 2. ANIME INTERCEPTOR SICURO (Kitsu + MAL) ---
-    # Intercetta SOLO se la stringa inzia ESATTAMENTE con i prefissi noti
-    # evitando falsi positivi con parole come "normal" o "animal"
+    # 1. Raccogliamo tutti i valori ricevuti scartando gli errori testuali di AIOMetadata (le graffe)
+    valid_ids = [val.lower() for val in (tmdb_id, imdb_id, kitsu_id, mal_id) if "{" not in val]
+    incoming_data = " ".join(valid_ids)
     
-    if not kitsu_id:
-        if tmdb_id.lower().startswith("kitsu:") or tmdb_id.lower().startswith("kitsu_"):
-            kitsu_id = "".join(filter(str.isdigit, tmdb_id))
-            tmdb_id = ""
-        elif imdb_id.lower().startswith("kitsu:") or imdb_id.lower().startswith("kitsu_"):
-            kitsu_id = "".join(filter(str.isdigit, imdb_id))
-            imdb_id = ""
-
-    if not mal_id:
-        if tmdb_id.lower().startswith("mal:") or tmdb_id.lower().startswith("mal_"):
-            mal_id = "".join(filter(str.isdigit, tmdb_id))
-            tmdb_id = ""
-        elif imdb_id.lower().startswith("mal:") or imdb_id.lower().startswith("mal_"):
-            mal_id = "".join(filter(str.isdigit, imdb_id))
-            imdb_id = ""
-
-    # 3. Estrae in modo sicuro solo i numeri (se passati direttamente come argomenti URL)
-    if kitsu_id: kitsu_id = "".join(filter(str.isdigit, kitsu_id))
-    if mal_id: mal_id = "".join(filter(str.isdigit, mal_id))
+    # Resettiamo gli ID originali: sarà il Router a decidere i veri valori finali
+    tmdb_id = ""
+    imdb_id = ""
     
-    if not tmdb_id:
-        if kitsu_id:
-            mapping = get_aod_mapping(f"kitsu_{kitsu_id}")
-            if mapping: tmdb_id, type = mapping
-        elif mal_id:
-            mapping = get_aod_mapping(f"mal_{mal_id}")
+    # 2. Routing per Kitsu
+    if "kitsu" in incoming_data:
+        # Trova la parola kitsu e cattura tutti i numeri che la seguono
+        kitsu_match = re.search(r'kitsu.*?(\d+)', incoming_data)
+        if kitsu_match:
+            mapping = get_aod_mapping(f"kitsu_{kitsu_match.group(1)}")
             if mapping: tmdb_id, type = mapping
 
+    # 3. Routing per MAL (si attiva solo se non è Kitsu)
+    elif "mal" in incoming_data:
+        mal_match = re.search(r'mal.*?(\d+)', incoming_data)
+        if mal_match:
+            mapping = get_aod_mapping(f"mal_{mal_match.group(1)}")
+            if mapping: tmdb_id, type = mapping
+
+    # 4. Routing per Film/Serie Normali
+    else:
+        # Se non è un anime, riassegnamo i valori corretti guardando la formattazione
+        for val in valid_ids:
+            if val.startswith("tt"): 
+                imdb_id = val
+            elif val.isdigit(): 
+                tmdb_id = val
+
+    # 5. Verifica e validazione finale
     if not tmdb_id:
-        raise HTTPException(status_code=400, detail="Missing tmdb_id or valid kitsu/mal id")
+        # Se non c'è tmdb_id o la mappatura anime è fallita, abortiamo la richiesta
+        # Questo permette a Stremio di mostrare istantaneamente la locandina originale di fallback
+        raise HTTPException(status_code=400, detail="Missing tmdb_id or mapping failed")
 
     _check_tmdb_id(tmdb_id)
     if imdb_id:
         _check_imdb_id(imdb_id)
     _check_type(type)
+    # ==========================================
 
     effective_tmdb_key    = _resolve_tmdb_key(tmdb_key)
     effective_mdblist_key = _resolve_mdblist_key(mdblist_key)
