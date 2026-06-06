@@ -346,6 +346,7 @@ class RequestConfig:
     """
     show_award_sash:     bool = field(default_factory=lambda: _cfg.SHOW_AWARD_SASH)
     cinema_greyscale:    bool = True    # greyscale art when release_status == "Cinema"
+    cinema_greyscale_skip_if_available: bool = False  # keep colour if Web/Remux source found
     release_status_cinema_only: bool = True   # only show release status when "Cinema"
     badge_display_mode:  int  = field(default_factory=lambda: _cfg.BADGE_DISPLAY_MODE)
     rating_display_mode: int  = field(default_factory=lambda: _cfg.SHOW_RATING_DISPLAY_MODE)
@@ -435,6 +436,7 @@ class RequestConfig:
     sash_length_ratio: float = 1.15  # diagonal sash length as fraction of poster width
     sash_height_ratio: float = 0.12  # diagonal sash height (thickness) as fraction of poster width
     wait_for_quality: bool = False  # block response until quality is fetched (for poster-warm workflows)
+    greyscale_no_quality: bool = False  # greyscale art when no quality found (needs wait_for_quality)
 
 
 def _parse_bool(val: str | None, default: bool) -> bool:
@@ -508,6 +510,7 @@ def build_request_config(params: dict) -> RequestConfig:
 
     cfg.show_award_sash         = _b("show_award_sash",        cfg.show_award_sash)
     cfg.cinema_greyscale        = _b("cinema_greyscale",       cfg.cinema_greyscale)
+    cfg.cinema_greyscale_skip_if_available = _b("cinema_greyscale_skip_if_available", cfg.cinema_greyscale_skip_if_available)
     cfg.release_status_cinema_only = _b("release_status_cinema_only", cfg.release_status_cinema_only)
     cfg.muted                   = _b("muted",                  cfg.muted)
     cfg.score_out_of_10         = _b("score_out_of_10",        cfg.score_out_of_10)
@@ -543,6 +546,7 @@ def build_request_config(params: dict) -> RequestConfig:
     cfg.sash_length_ratio       = _f("sash_length_ratio",      cfg.sash_length_ratio,      0.8, 1.5)
     cfg.sash_height_ratio       = _f("sash_height_ratio",      cfg.sash_height_ratio,      0.06, 0.20)
     cfg.wait_for_quality        = _b("wait_for_quality",        cfg.wait_for_quality)
+    cfg.greyscale_no_quality    = _b("greyscale_no_quality",    cfg.greyscale_no_quality)
     cfg.score_color_mode        = _i("score_color_mode",       cfg.score_color_mode,       0,   2)
     cfg.badge_display_mode      = _i("badge_display_mode",     cfg.badge_display_mode,     0,   4)
     cfg.rating_display_mode     = _i("rating_display_mode",    cfg.rating_display_mode,    0,   4)
@@ -779,13 +783,22 @@ def build_poster(
 
     width, height = image.size
 
-    # Greyscale the base art when the title isn't available yet — still only in
-    # cinemas, or still in production (release_status "Cinema" / "Production").
-    # Overlays drawn afterwards (sashes, badges, ratings, logo) stay in colour.
-    # release_status is only populated when the release-status sash is enabled,
-    # so this is implicitly gated on it.
-    if (cfg.cinema_greyscale and discovery_meta is not None
-            and discovery_meta.release_status in ("Cinema", "Production")):
+    # Greyscale the base art to flag "not available".  Overlays drawn afterwards
+    # (sashes, badges, ratings, logo) stay in colour.  Two independent triggers:
+    #   - cinema_greyscale: title still in cinemas / production (release_status,
+    #     so implicitly gated on the release-status sash being enabled).
+    #   - greyscale_no_quality: no stream quality was found.  Only meaningful
+    #     when wait_for_quality is on (otherwise tokens may just not be fetched
+    #     yet), so it's gated on it.
+    _cinema_grey = (cfg.cinema_greyscale and discovery_meta is not None
+                    and discovery_meta.release_status in ("Cinema", "Production"))
+    # Override: if a real digital source (Web / Remux) was found, the title is
+    # actually available — keep it in colour despite the cinema/production status.
+    if (_cinema_grey and cfg.cinema_greyscale_skip_if_available and quality_tokens
+            and any(t in ("WEBDL", "REMUX") for t in quality_tokens)):
+        _cinema_grey = False
+    _noquality_grey = (cfg.greyscale_no_quality and cfg.wait_for_quality and not quality_tokens)
+    if _cinema_grey or _noquality_grey:
         image = ImageOps.grayscale(image).convert("RGBA")
 
     draw = ImageDraw.Draw(image)

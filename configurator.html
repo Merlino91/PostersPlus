@@ -149,34 +149,27 @@
   /* What's new chip — same typographic treatment as the GitHub link.
      Always visible so users can re-open the list; the dot only appears
      when there are changes the user hasn't acknowledged. */
-  .header-whatsnew {
-    display: flex;
-    align-items: center;
-    gap: 7px;
+  /* Version number doubles as the What's New trigger: silver normally, glowing
+     gold (with a subtle pulse) when there's an unacknowledged update. */
+  .whatsnew-version {
     font-family: var(--mono);
-    font-size: 10px;
-    letter-spacing: 0.12em;
-    color: var(--text-muted);
     background: transparent;
     border: none;
     padding: 0;
-    text-transform: uppercase;
     cursor: pointer;
-    opacity: 0.7;
-    transition: opacity 0.15s, color 0.15s;
-    margin-top: 11px;
+    color: var(--silver-dim);
+    transition: color 0.15s, text-shadow 0.15s;
   }
-  .header-whatsnew:hover { opacity: 1; color: var(--silver); }
-  .header-whatsnew .whatsnew-dot {
-    display: inline-block;
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: var(--gold);
-    box-shadow: 0 0 6px var(--gold);
-    flex-shrink: 0;
+  .whatsnew-version:hover { color: var(--silver); }
+  .whatsnew-version[data-acked="false"] {
+    color: var(--gold-bright);
+    text-shadow: 0 0 8px var(--gold-glow), 0 0 4px var(--gold);
+    animation: whatsnew-pulse 2s ease-in-out infinite;
   }
-  .header-whatsnew[data-acked="true"] .whatsnew-dot { display: none; }
+  @keyframes whatsnew-pulse {
+    0%, 100% { text-shadow: 0 0 6px var(--gold-glow), 0 0 3px rgba(201,168,76,0.5); }
+    50%      { text-shadow: 0 0 12px var(--gold-glow), 0 0 6px var(--gold); }
+  }
 
   .whatsnew-list {
     margin: 0;
@@ -340,13 +333,24 @@
     text-transform: uppercase;
   }
 
+  /* Section host — JS locks its height to the Core tab; taller tabs scroll
+     within it so the panel (and the matched preview) keep a constant size. */
+  #tab-host {
+    overflow-y: auto;
+    scrollbar-width: none;
+  }
+  #tab-host::-webkit-scrollbar { display: none; }
+
   /* ── SECTIONS ── */
+  /* No inter-section border: each tab shows a single section, so a bottom
+     border would render as a stray trailing line.  The only multi-section tab
+     (Weights) keeps a divider between its two sections via the rule below. */
   .section {
-    border-bottom: 1px solid var(--border);
     background: var(--black1);
   }
-
-  .section:last-child { border-bottom: none; }
+  .section[data-tab="weights"] + .section[data-tab="weights"] {
+    border-top: 1px solid var(--border);
+  }
 
   .section-header {
     display: flex;
@@ -967,16 +971,15 @@
   }
 
   .preview-panel {
-    background: var(--black1);
+    /* Match the controls/log section colour (black2) so the empty tail below
+       the controls reads as a continuation of that section rather than a
+       separate strip, while the panel still stretches to the config height. */
+    background: var(--black2);
     border: 1px solid var(--border);
     position: relative;
     display: flex;
     flex-direction: column;
-    /* Height = content only (flex: none, not flex: 1).  The panel no longer
-       stretches to match the taller config column, so no black1 strip shows
-       below the controls — the leftover column space is just the page
-       background.  Cross-axis stretch still keeps it full column width. */
-    flex: none;
+    flex: 1;
   }
 
   .preview-frame {
@@ -1337,6 +1340,14 @@
   }
 
 
+  /* Let the controls column absorb the panel's spare height and the log line
+     fill it, so the status text sits centred in the empty space below the
+     buttons rather than hugging the top of it. */
+  .preview-controls {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+  }
   .log-line {
     font-size: 9px;
     color: var(--text-muted);
@@ -1347,13 +1358,14 @@
     overflow-wrap: break-word;
     word-break: break-word;
     white-space: normal;
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
   }
 
-  .log-line::before { content: '› '; color: var(--border); }
   .log-line.ok  { color: var(--gold-dim); }
-  .log-line.ok::before { color: var(--gold-dim); }
   .log-line.err { color: #9a3030; }
-  .log-line.err::before { color: #9a3030; }
   .log-line.info{ color: var(--silver-dim); }
 
   /* ── MISC ── */
@@ -1387,29 +1399,13 @@
     .header { flex-direction: row; align-items: center; }
     .logo-sep, .logo-sub { display: none; }
     .header-github,
-    .header-discord,
-    .header-whatsnew { opacity: 0.6; margin-top: 0; }
+    .header-discord { opacity: 0.6; margin-top: 0; }
 
     /* Mobile header right cluster: icons only — there isn't room for the
        text labels next to a half-width preview poster. */
     .github-label,
-    .discord-label,
-    .whatsnew-label { display: none; }
+    .discord-label { display: none; }
 
-    /* The dot IS the whole indicator on mobile (no label backing it), so it's
-       always visible and slightly larger to balance the icons next to it.
-       Grey when nothing's new, gold when there is. The first selector beats
-       the desktop "hide when acked" rule by matching the same specificity. */
-    .header-whatsnew[data-acked="true"] .whatsnew-dot,
-    .header-whatsnew .whatsnew-dot {
-      display: inline-block;
-      width: 8px;
-      height: 8px;
-    }
-    .header-whatsnew[data-acked="true"] .whatsnew-dot {
-      background: var(--text-muted);
-      box-shadow: none;
-    }
     .two-col, .inline-grid { grid-template-columns: 1fr; }
     .weight-item { grid-template-columns: 96px 1fr 38px; column-gap: 8px; }
     .btn-row { flex-wrap: wrap; }
@@ -1514,10 +1510,6 @@
       </div>
     </div>
     <div class="header-right">
-      <button type="button" class="header-whatsnew" id="whatsnew-chip" onclick="openWhatsNew()" data-acked="true" aria-label="What's new">
-        <span class="whatsnew-dot"></span>
-        <span class="whatsnew-label">What's new</span>
-      </button>
       <!-- Placeholder Discord URL — operators (e.g. ElfHosted) can point this at their own community link. -->
       <a class="header-discord" href="https://discord.gg/wEgTPNXUMU" target="_blank" rel="noopener">
         <svg width="18" height="14" viewBox="0 0 256 199" fill="currentColor" aria-hidden="true">
@@ -1541,7 +1533,7 @@
       <div class="notch"></div>
       <div class="panel-header">
         <span class="panel-title">Configuration</span>
-        <span class="panel-index">v1.1-dev</span>
+        <button type="button" class="panel-index whatsnew-version" id="whatsnew-version" onclick="openWhatsNew()" data-acked="true" title="What's new">v1.1-dev</button>
       </div>
       <div class="panel-body">
 
@@ -1575,6 +1567,10 @@
             <span class="tab-btn-label">Weights</span>
           </div>
         </div>
+
+        <!-- Tab sections — height locked to the tallest tab so swapping tabs
+             never resizes the panel (and thus the matched-height preview). -->
+        <div id="tab-host">
 
         <!-- 1. CORE CONFIG -->
         <div class="section" data-tab="core">
@@ -1648,7 +1644,7 @@
                 <option value="fr">French ★</option>
                 <option value="de">German</option>
                 <option value="it">Italian</option>
-                <option value="pt">Portuguese</option>
+                <option value="pt">Portuguese ★</option>
                 <option value="ja">Japanese</option>
                 <option value="ko">Korean</option>
                 <option value="zh">Chinese</option>
@@ -2031,10 +2027,20 @@
             <div class="toggle-row">
               <div>
                 <div class="toggle-label">Greyscale Poster if Unavailable</div>
-                <div class="field-hint">Greyscales titles still in cinemas or in production. Requires the Release Status sash to be enabled.</div>
+                <div class="field-hint">Applies to "cinema" and "production." Requires the Release Status sash to be enabled.</div>
               </div>
               <label class="toggle-switch">
-                <input type="checkbox" id="tog-cinema-greyscale" checked onchange="build(); queuePreviewReload()">
+                <input type="checkbox" id="tog-cinema-greyscale" checked onchange="updateCinemaGreyscaleRows(); build(); queuePreviewReload()">
+                <div class="toggle-track"><div class="toggle-thumb"></div></div>
+              </label>
+            </div>
+            <div class="toggle-row" id="cinema-greyscale-skip-row" style="display:none;">
+              <div>
+                <div class="toggle-label">Keep Colour if Source Found</div>
+                <div class="field-hint">Quality badges must be enabled, trigger is a valid webDL or remux response.</div>
+              </div>
+              <label class="toggle-switch">
+                <input type="checkbox" id="tog-cinema-greyscale-skip" onchange="build(); queuePreviewReload()">
                 <div class="toggle-track"><div class="toggle-thumb"></div></div>
               </label>
             </div>
@@ -2179,11 +2185,21 @@
                     <div class="toggle-label">Wait for Quality</div>
                   </div>
                   <label class="toggle-switch">
-                    <input type="checkbox" id="tog-wait-quality" onchange="build(); queuePreviewReload()">
+                    <input type="checkbox" id="tog-wait-quality" onchange="updateWaitQualityRows(); build(); queuePreviewReload()">
                     <div class="toggle-track"><div class="toggle-thumb"></div></div>
                   </label>
                 </div>
                 <div class="field-hint" style="margin-top:4px;">By default quality is fetched in the background if uncached, this will prevent the poster rendering until it's ready.</div>
+                <div class="toggle-row" id="greyscale-noquality-row" style="display:none; margin-top:8px;">
+                  <div>
+                    <div class="toggle-label">Greyscale if No Quality</div>
+                  </div>
+                  <label class="toggle-switch">
+                    <input type="checkbox" id="tog-greyscale-noquality" onchange="build(); queuePreviewReload()">
+                    <div class="toggle-track"><div class="toggle-thumb"></div></div>
+                  </label>
+                </div>
+                <div class="field-hint" id="greyscale-noquality-hint" style="display:none; margin-top:4px;">Desaturates the poster when no stream quality is found — a visual "unavailable" cue.</div>
               </div>
             </div>
             <!-- All layout controls collapse when Display Mode = Hidden (mode 0). -->
@@ -2253,6 +2269,8 @@
             <div class="field-hint" style="margin-top:8px;">Normalization is applied to always reach 100%. 100% Trakt, 100% RT becomes 50% of each if both are available.</div>
           </div>
         </div>
+
+        </div><!-- /tab-host -->
 
       </div><!-- /panel-body -->
     </div>
@@ -2455,6 +2473,35 @@ function showTab(tab) {
   if (body) body.scrollTop = 0;
 }
 
+// Lock the section host to the CORE tab's height so switching tabs (and the
+// height-matched preview) never resizes.  Core is the reference size: shorter
+// tabs simply leave a little space, taller tabs scroll inside the host.
+// Recomputed on resize / zoom since both can change the measured height.
+let _lockTabHeightRAF = null;
+function _lockTabHeight() {
+  const host = document.getElementById('tab-host');
+  if (!host) return;
+  const active = document.querySelector('.tab-btn.active')?.dataset.tab || 'core';
+  host.style.height = 'auto';
+  // Measure the Core tab (use scrollHeight + a small buffer so sub-pixel
+  // rounding at non-100% zoom doesn't leave Core a hair short and scrolling).
+  document.querySelectorAll('.section').forEach(s => {
+    s.style.display = (s.dataset.tab === 'core') ? '' : 'none';
+  });
+  const coreH = Math.ceil(host.scrollHeight) + 2;
+  host.style.height = coreH + 'px';
+  showTab(active);   // restore the tab the user was on
+}
+function _scheduleLockTabHeight() {
+  if (_lockTabHeightRAF) cancelAnimationFrame(_lockTabHeightRAF);
+  _lockTabHeightRAF = requestAnimationFrame(_lockTabHeight);
+}
+window.addEventListener('resize', _scheduleLockTabHeight);
+// Browser/pinch zoom fires on visualViewport rather than window in some browsers.
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', _scheduleLockTabHeight);
+}
+
 function updateRange(el, outId) {
   const v = parseFloat(el.value);
   const dec = el.step.includes('.') ? el.step.split('.')[1].length : 0;
@@ -2607,6 +2654,22 @@ function updateScraperHint() {
     const qualityOk = serverCaps.quality_configured || serverCaps.aiostreams_configured;
     aiosHint.style.display = (serverCapsLoaded && qualityMode && !qualityOk) ? '' : 'none';
   }
+  updateWaitQualityRows();
+}
+
+// "Greyscale if No Quality" only applies while Wait for Quality is on, so it's
+// only shown then.
+function updateWaitQualityRows() {
+  const on = c('tog-wait-quality');
+  document.getElementById('greyscale-noquality-row').style.display = on ? '' : 'none';
+  document.getElementById('greyscale-noquality-hint').style.display = on ? '' : 'none';
+}
+
+// The "Keep Colour if Source Found" override only matters when greyscale-if-
+// unavailable is on, so only show it then.
+function updateCinemaGreyscaleRows() {
+  const on = c('tog-cinema-greyscale');
+  document.getElementById('cinema-greyscale-skip-row').style.display = on ? '' : 'none';
 }
 
 function updateBadgeModeHint() {
@@ -3239,6 +3302,7 @@ function buildBaseParams({ usePlaceholders = false, domainOverride = null } = {}
   // ── Info Sash ──────────────────────────────────────────────────────────────
   params.set('show_award_sash', showSash ? 'true' : 'false');
   params.set('cinema_greyscale', c('tog-cinema-greyscale') ? 'true' : 'false');
+  if (c('tog-cinema-greyscale')) params.set('cinema_greyscale_skip_if_available', c('tog-cinema-greyscale-skip') ? 'true' : 'false');
   params.set('release_status_cinema_only', c('tog-release-cinema-only') ? 'true' : 'false');
   if (showSash) {
     const isBadge = c('tog-sash-badge');
@@ -3284,6 +3348,7 @@ function buildBaseParams({ usePlaceholders = false, domainOverride = null } = {}
   }
   if (c('tog-wait-quality') && [1,2,4].includes(badgeMode)) {
     params.set('wait_for_quality', 'true');
+    if (c('tog-greyscale-noquality')) params.set('greyscale_no_quality', 'true');
   }
 
   const finalUrl = `${domain}/poster?${params.toString()}`;
@@ -3578,7 +3643,13 @@ function _buildPresetGrid() {
   PRESETS.forEach(preset => {
     const card = document.createElement('div');
     card.className = 'preset-card';
-    card.ondblclick = () => loadPreset(preset.id);
+    // Desktop: single click. Touch devices: double tap, so a stray tap while
+    // scrolling the preset list doesn't load a preset by accident.
+    if (window.matchMedia('(pointer: coarse)').matches) {
+      card.ondblclick = () => loadPreset(preset.id);
+    } else {
+      card.onclick = () => loadPreset(preset.id);
+    }
 
     const imgWrap = document.createElement('div');
     if (preset.screenshot) {
@@ -3657,16 +3728,16 @@ function openWhatsNew() {
 function closeWhatsNew() {
   document.getElementById('whatsnew-modal').classList.remove('open');
   try { localStorage.setItem('postersplus_whatsnew_acked', WHATS_NEW_VERSION); } catch (_) {}
-  const chip = document.getElementById('whatsnew-chip');
-  if (chip) chip.dataset.acked = 'true';
+  const ver = document.getElementById('whatsnew-version');
+  if (ver) ver.dataset.acked = 'true';
 }
 
 function checkWhatsNew() {
-  const chip = document.getElementById('whatsnew-chip');
-  if (!chip) return;
+  const ver = document.getElementById('whatsnew-version');
+  if (!ver) return;
   let acked = null;
   try { acked = localStorage.getItem('postersplus_whatsnew_acked'); } catch (_) {}
-  chip.dataset.acked = (acked === WHATS_NEW_VERSION) ? 'true' : 'false';
+  ver.dataset.acked = (acked === WHATS_NEW_VERSION) ? 'true' : 'false';
 }
 
 function _setEl(id, value) {
@@ -3748,7 +3819,8 @@ function importUrl(urlStr, { silent = false, settingsOnly = false } = {}) {
 
   // ── Sash ────────────────────────────────────────────────────────────────
   if (p.has('show_award_sash')) _setEl('tog-award-sash',    p.get('show_award_sash'));
-  if (p.has('cinema_greyscale')) _setEl('tog-cinema-greyscale', p.get('cinema_greyscale'));
+  if (p.has('cinema_greyscale')) { _setEl('tog-cinema-greyscale', p.get('cinema_greyscale')); updateCinemaGreyscaleRows(); }
+  if (p.has('cinema_greyscale_skip_if_available')) _setEl('tog-cinema-greyscale-skip', p.get('cinema_greyscale_skip_if_available'));
   if (p.has('release_status_cinema_only')) _setEl('tog-release-cinema-only', p.get('release_status_cinema_only'));
   if (p.has('muted'))           _setEl('tog-muted',         p.get('muted'));
   if (p.has('sash_badge'))               _setEl('tog-sash-badge',              p.get('sash_badge'));
@@ -3826,6 +3898,7 @@ function importUrl(urlStr, { silent = false, settingsOnly = false } = {}) {
   if (p.has('badge_anchor_x'))     _setEl('cfg-badge-x',  p.get('badge_anchor_x'));
   if (p.has('badge_anchor_y'))     _setEl('cfg-badge-y',  p.get('badge_anchor_y'));
   if (p.has('wait_for_quality'))   _setEl('tog-wait-quality', p.get('wait_for_quality'));
+  if (p.has('greyscale_no_quality')) _setEl('tog-greyscale-noquality', p.get('greyscale_no_quality'));
 
   // ── Rating weights ──────────────────────────────────────────────────────
   function applyWeights(paramName, containerId, sources) {
@@ -3933,12 +4006,15 @@ updateRatingFields();
 updateOriginalArt();
 updateBadgeModeHint();
 updateSashBadgeFields();
+updateCinemaGreyscaleRows();
 _initRangeValEditing();
 checkWhatsNew();
 showTab('core');   // start on the Core Config category
 build();
 // Hydrate is complete — from here on every build() persists settings.
 _settingsReady = true;
+// Lock tab height after layout settles (fonts/images can shift it slightly).
+requestAnimationFrame(_lockTabHeight);
 
 fetchServerCaps().then(() => { queuePreviewReload(); });
 
