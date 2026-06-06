@@ -635,21 +635,23 @@ async def get_poster(
 ):
     if _cfg.ACCESS_KEY and not hmac.compare_digest(access_key, _cfg.ACCESS_KEY): raise HTTPException(status_code=403, detail="Unauthorized")
 
-# --- SANITIZER & ANIME INTERCEPTOR ---
-    # 1. Pulisce i placeholder letterali non risolti da AIOMetadata
+    # --- 1. SANITIZER: DISTRUZIONE SEGNAPOSTO TESTUALI ---
+    # Elimina istantaneamente le stringhe come "{tmdb_id}" trasformandole in vuote
     if "{" in tmdb_id: tmdb_id = ""
     if "{" in imdb_id: imdb_id = ""
     if "{" in kitsu_id: kitsu_id = ""
     if "{" in mal_id: mal_id = ""
 
-    # 2. Intercetta gli ID "sporchi" inseriti in tmdb o imdb da Stremio
+    # --- 2. ANIME INTERCEPTOR (Kitsu + MAL) ---
     if not kitsu_id:
         if "kitsu" in tmdb_id.lower():
-            kitsu_id = tmdb_id
+            kitsu_id = "".join(filter(str.isdigit, tmdb_id))
             tmdb_id = ""
         elif "kitsu" in imdb_id.lower():
-            kitsu_id = imdb_id
+            kitsu_id = "".join(filter(str.isdigit, imdb_id))
             imdb_id = ""
+            
+    # ... [il resto del codice continua inalterato] ...
 
     if not mal_id:
         if "mal" in tmdb_id.lower():
