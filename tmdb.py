@@ -58,6 +58,8 @@ from config import (
     LOGO_STRETCH_DISABLED,
     LOGO_STRETCH_FACTOR,
     DEBUG_LOGO_SIZING,
+    TMDB_POSTER_MIN_VOTES,
+    TMDB_POSTER_MAX_SCORE_DROP,
 )
 
 
@@ -230,6 +232,42 @@ def _recolor_logo_solid(logo: Image.Image, rgb: tuple[int, int, int]) -> Image.I
 # Fetch helpers
 # ---------------------------------------------------------------------------
 
+def tmdb_metadata_cache_key(
+    endpoint: str, tmdb_id: str, logo_language: str
+) -> str:
+    selection_sig = (
+        f"p{TMDB_POSTER_MIN_VOTES}"
+        f"d{TMDB_POSTER_MAX_SCORE_DROP:g}"
+    )
+    return f"{endpoint}_{tmdb_id}_{logo_language}_{selection_sig}"
+
+
+def _select_textless_poster(posters: list[dict]) -> dict | None:
+    """Prefer sufficiently voted art without accepting a large score downgrade."""
+    if not posters:
+        return None
+
+    def _rating(poster: dict) -> float:
+        return float(poster.get("vote_average") or 0)
+
+    def _votes(poster: dict) -> int:
+        return int(poster.get("vote_count") or 0)
+
+    best_rating = max(_rating(poster) for poster in posters)
+    competitive = [
+        poster for poster in posters
+        if _rating(poster) >= best_rating - TMDB_POSTER_MAX_SCORE_DROP
+    ]
+    voted = [
+        poster for poster in competitive
+        if _votes(poster) >= TMDB_POSTER_MIN_VOTES
+    ]
+    return max(
+        voted or competitive,
+        key=lambda poster: (_rating(poster), _votes(poster)),
+    )
+
+
 async def fetch_poster_metadata(
     client: httpx.AsyncClient,
     tmdb_id: str,
@@ -248,7 +286,9 @@ async def fetch_poster_metadata(
     # Key by logo_language too: the images fetched (logos + posters) depend on it,
     # so a title cached under one language must not be served to another without
     # that language's art.  Each language gets its own correctly-fetched entry.
-    metadata_cache_key = f"{endpoint}_{tmdb_id}_{logo_language}"
+    metadata_cache_key = tmdb_metadata_cache_key(
+        endpoint, tmdb_id, logo_language
+    )
 
     meta = get_cached_tmdb_metadata(metadata_cache_key)
 
@@ -258,6 +298,7 @@ async def fetch_poster_metadata(
             "credits":               meta.get("credits", {}),
             "production_companies":  meta.get("production_companies", []),
             "original_language":     meta.get("original_language"),
+            "original_title":        meta.get("original_title"),
             "runtime":               meta.get("runtime"),
             "number_of_seasons":     meta.get("number_of_seasons"),
             "number_of_episodes":    meta.get("number_of_episodes"),
@@ -298,6 +339,8 @@ async def fetch_poster_metadata(
     resp.raise_for_status()
     data = resp.json()
 
+    original_title = data.get("original_title") or data.get("original_name")
+
     title = (
         data.get("title")
         or data.get("name")
@@ -319,7 +362,7 @@ async def fetch_poster_metadata(
     textless = [p for p in posters if p.get("iso_639_1") in (None, "")]
 
     if textless:
-        best = max(textless, key=lambda x: x.get("vote_average", 0))
+        best = _select_textless_poster(textless)
         poster_path = best["file_path"]
         is_textless = True
     else:
@@ -435,6 +478,7 @@ async def fetch_poster_metadata(
         credits=credits,
         production_companies=production_companies,
         original_language=original_language,
+        original_title=original_title,
         runtime=runtime,
         number_of_seasons=number_of_seasons,
         number_of_episodes=number_of_episodes,
@@ -450,6 +494,7 @@ async def fetch_poster_metadata(
         "credits":              credits,
         "production_companies": production_companies,
         "original_language":    original_language,
+        "original_title":       original_title,
         "runtime":              runtime,
         "number_of_seasons":    number_of_seasons,
         "number_of_episodes":   number_of_episodes,
@@ -508,7 +553,8 @@ async def fetch_poster_image(
 # algorithm are invalidated rather than served.
 #   v2 = face-aware cropping
 #   v3 = focus a single face when subjects are too far apart to both fit
-_CROP_VERSION = "v3"
+#   v4 = derive text avoidance from PP-OCR polygons
+_CROP_VERSION = "v4"
 
 
 def _face_crop_left(image: Image.Image, crop_w: int) -> "int | None":
@@ -691,8 +737,8 @@ async def fetch_backdrop_image(
     than always defaulting to the centre.  This keeps the main subject in frame
     when cinematographers frame wide shots off-centre.
 
-    When *avoid_text* is set (text-detection feature on), an EAST per-column text
-    profile biases the crop away from burned-in title text.  Cached under the
+    When *avoid_text* is set (text-detection feature on), PP-OCR polygons
+    produce a profile that biases the crop away from burned-in title text.  Cached under the
     same JPEG scheme as regular posters (text-aware crops keyed separately).
     """
     # Cache key carries a crop-logic version so changing the crop algorithm
@@ -717,9 +763,8 @@ async def fetch_backdrop_image(
     img_resp.raise_for_status()
     image = Image.open(io.BytesIO(img_resp.content)).convert("RGBA")
 
-    # The crop runs face/text OpenCV inference (CPU + a serialising lock), so do
-    # it in the thread pool — never inline on the event loop, or it would stall
-    # request handling while waiting on the shared inference lock.
+    # The crop runs CPU-heavy face/text inference, so do it in the thread pool;
+    # running it inline would stall the event loop and delay unrelated requests.
     image = await asyncio.get_running_loop().run_in_executor(
         None, _crop_and_normalise_backdrop, image, tmdb_id, avoid_text
     )

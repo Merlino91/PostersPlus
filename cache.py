@@ -24,6 +24,7 @@ from config import (
     COMPOSITE_MAX_ENTRIES,
     QUALITY_OLD_CACHE_DURATION,
     DIGITAL_RELEASE_MAX_AGE_DAYS,
+    RATING_MIN_VOTES,
 )
 
 # One SQLite connection PER THREAD (thread-local).  A single shared connection
@@ -48,6 +49,18 @@ def _apply_conn_pragmas(conn: sqlite3.Connection) -> None:
     conn.execute("PRAGMA wal_autocheckpoint=1000")  # fold WAL back into main DB at 1000 pages (~4 MB)
 
 
+def _enable_wal_with_retry(conn: sqlite3.Connection) -> None:
+    """Enable WAL despite simultaneous worker startup on the same database."""
+    for attempt in range(20):
+        try:
+            conn.execute("PRAGMA journal_mode=WAL")
+            return
+        except sqlite3.OperationalError as exc:
+            if "locked" not in str(exc).lower() or attempt == 19:
+                raise
+            time.sleep(0.1)
+
+
 def get_db() -> sqlite3.Connection:
     if not _initialised:
         raise RuntimeError("Database not initialized")
@@ -57,6 +70,23 @@ def get_db() -> sqlite3.Connection:
         _apply_conn_pragmas(conn)
         _local.conn = conn
     return conn
+
+def _add_column_if_missing(
+    conn: sqlite3.Connection, table: str, column: str, definition: str
+) -> None:
+    """Apply an additive migration safely when multiple workers start together."""
+    columns = {
+        row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()
+    }
+    if column in columns:
+        return
+    try:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+    except sqlite3.OperationalError as exc:
+        # Another worker may have added the column after our PRAGMA snapshot.
+        if "duplicate column name" not in str(exc).lower():
+            raise
+
 
 def init_db() -> None:
     global _initialised
@@ -76,7 +106,9 @@ def init_db() -> None:
     if _is_new_db:
         conn.execute("PRAGMA auto_vacuum=INCREMENTAL")
 
-    conn.execute("PRAGMA journal_mode=WAL")             # DB-level; persists in the file
+    _enable_wal_with_retry(conn)
+    # Serialize all schema creation and additive migrations across workers.
+    conn.execute("BEGIN IMMEDIATE")
 
     conn.execute("""
     CREATE TABLE IF NOT EXISTS rating_cache (
@@ -92,14 +124,11 @@ def init_db() -> None:
         age_rating     INTEGER,
         is_cult        INTEGER NOT NULL DEFAULT 0,
         is_true_story  INTEGER NOT NULL DEFAULT 0,
-        is_metacritic  INTEGER NOT NULL DEFAULT 0
+        is_metacritic  INTEGER NOT NULL DEFAULT 0,
+        rating_min_votes INTEGER
     )
     """)
 
-    existing_cols = {
-        row[1]
-        for row in conn.execute("PRAGMA table_info(rating_cache)").fetchall()
-    }
     for col, definition in (
         ("award_wins",     "TEXT NOT NULL DEFAULT ''"),
         ("award_noms",     "TEXT NOT NULL DEFAULT ''"),
@@ -109,11 +138,9 @@ def init_db() -> None:
         ("is_cult",        "INTEGER NOT NULL DEFAULT 0"),
         ("is_true_story",  "INTEGER NOT NULL DEFAULT 0"),
         ("is_metacritic",  "INTEGER NOT NULL DEFAULT 0"),
+        ("rating_min_votes", "INTEGER"),
     ):
-        if col not in existing_cols:
-            conn.execute(
-                f"ALTER TABLE rating_cache ADD COLUMN {col} {definition}"
-            )
+        _add_column_if_missing(conn, "rating_cache", col, definition)
 
     conn.execute("""
         CREATE TABLE IF NOT EXISTS quality_cache (
@@ -185,7 +212,7 @@ def init_db() -> None:
     """)
 
     # Burned-in-text detection results, keyed by source asset + detection params.
-    # The EAST scan (~200ms) depends only on the image bytes and min_boxes, never
+    # The PP-OCR scan depends only on the image bytes and confidence, never
     # on the user's URL config — so memoising it here stops the most expensive
     # feature from re-running on every config change (composite-cache miss).
     # TMDB image paths are content-addressed (immutable), so results never go
@@ -198,11 +225,7 @@ def init_db() -> None:
         )
     """)
 
-    # Migrate existing tmdb_metadata_cache rows
-    existing_meta_cols = {
-        row[1]
-        for row in conn.execute("PRAGMA table_info(tmdb_metadata_cache)").fetchall()
-    }
+    # Migrate existing tmdb_metadata_cache rows.
     for col, definition in (
         ("credits_json",        "TEXT"),
         ("production_cos_json", "TEXT"),
@@ -210,6 +233,7 @@ def init_db() -> None:
         ("number_of_seasons",   "INTEGER"),
         ("number_of_episodes",  "INTEGER"),
         ("original_language",   "TEXT"),
+        ("original_title",      "TEXT"),
         ("backdrop_path",       "TEXT"),
         ("tmdb_status",         "TEXT"),
         ("vote_count",          "INTEGER"),
@@ -217,10 +241,7 @@ def init_db() -> None:
         ("original_poster_path","TEXT"),
         ("poster_langs_json",   "TEXT"),
     ):
-        if col not in existing_meta_cols:
-            conn.execute(
-                f"ALTER TABLE tmdb_metadata_cache ADD COLUMN {col} {definition}"
-            )
+        _add_column_if_missing(conn, "tmdb_metadata_cache", col, definition)
 
     conn.commit()
 
@@ -485,7 +506,8 @@ def get_cached_rating(
             """
             SELECT ratings_json, genre, cached_at, release_date,
                    award_wins, award_noms, awards_fetched, festival_label,
-                   age_rating, is_cult, is_true_story, is_metacritic
+                   age_rating, is_cult, is_true_story, is_metacritic,
+                   rating_min_votes
             FROM rating_cache
             WHERE imdb_id = ?
             """,
@@ -497,7 +519,21 @@ def get_cached_rating(
 
         (ratings_json, genre, cached_at, release_date,
          wins_raw, noms_raw, awards_fetched_int, festival_label,
-         age_rating, is_cult_int, is_true_story_int, is_metacritic_int) = row
+         age_rating, is_cult_int, is_true_story_int, is_metacritic_int,
+         rating_min_votes) = row
+
+        if rating_min_votes != RATING_MIN_VOTES:
+            logger.info(
+                f"Rating cache policy changed for {imdb_id}: "
+                f"stored={rating_min_votes!r}, current={RATING_MIN_VOTES}; refreshing"
+            )
+            with _db_lock:
+                get_db().execute(
+                    "DELETE FROM rating_cache WHERE imdb_id = ?",
+                    (imdb_id,),
+                )
+                get_db().commit()
+            return None
 
         age_days = (time.time() - cached_at) / 86400
 
@@ -557,9 +593,10 @@ def set_cached_rating(
                         age_rating,
                         is_cult,
                         is_true_story,
-                        is_metacritic
+                        is_metacritic,
+                        rating_min_votes
                     )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     imdb_id,
@@ -575,6 +612,7 @@ def set_cached_rating(
                     int(is_cult),
                     int(is_true_story),
                     int(is_metacritic),
+                    RATING_MIN_VOTES,
                 ),
             )
             get_db().commit()
@@ -803,7 +841,7 @@ def get_cached_tmdb_metadata(cache_key: str) -> dict | None:
                    logos_json, cached_at,
                    credits_json, production_cos_json,
                    runtime, number_of_seasons, number_of_episodes,
-                   original_language, backdrop_path, tmdb_status, vote_count,
+                   original_language, original_title, backdrop_path, tmdb_status, vote_count,
                    text_backdrop_path, original_poster_path,
                    poster_langs_json
             FROM tmdb_metadata_cache
@@ -819,7 +857,7 @@ def get_cached_tmdb_metadata(cache_key: str) -> dict | None:
             logos_json, cached_at,
             credits_json, production_cos_json,
             runtime, number_of_seasons, number_of_episodes,
-            original_language, backdrop_path, tmdb_status, vote_count,
+            original_language, original_title, backdrop_path, tmdb_status, vote_count,
             text_backdrop_path, original_poster_path,
             poster_langs_json,
         ) = row
@@ -827,6 +865,19 @@ def get_cached_tmdb_metadata(cache_key: str) -> dict | None:
         age_days = (time.time() - cached_at) / 86400
         if age_days > TMDB_METADATA_CACHE_DURATION:
             logger.info(f"TMDB metadata cache expired for {cache_key} ({age_days:.1f}d old)")
+            with _db_lock:
+                get_db().execute(
+                    "DELETE FROM tmdb_metadata_cache WHERE cache_key = ?", (cache_key,)
+                )
+                get_db().commit()
+            return None
+
+        # Rows created before vote_count or original_title was added were migrated
+        # with NULL. Refresh once so detection has complete title aliases.
+        if vote_count is None or original_title is None:
+            logger.info(
+                f"TMDB metadata cache missing vote_count or original_title for {cache_key}; refreshing"
+            )
             with _db_lock:
                 get_db().execute(
                     "DELETE FROM tmdb_metadata_cache WHERE cache_key = ?", (cache_key,)
@@ -847,6 +898,7 @@ def get_cached_tmdb_metadata(cache_key: str) -> dict | None:
             "number_of_seasons":    number_of_seasons,
             "number_of_episodes":   number_of_episodes,
             "original_language":    original_language,
+            "original_title":       original_title,
             "backdrop_path":        backdrop_path,
             "tmdb_status":          tmdb_status,
             "vote_count":           vote_count,
@@ -871,6 +923,7 @@ def set_cached_tmdb_metadata(
     credits: dict | None = None,
     production_companies: list[dict] | None = None,
     original_language: str | None = None,
+    original_title: str | None = None,
     runtime: int | None = None,
     number_of_seasons: int | None = None,
     number_of_episodes: int | None = None,
@@ -890,10 +943,10 @@ def set_cached_tmdb_metadata(
                      poster_path, logos_json, cached_at,
                      credits_json, production_cos_json,
                      runtime, number_of_seasons, number_of_episodes,
-                     original_language, backdrop_path, tmdb_status, vote_count,
+                     original_language, original_title, backdrop_path, tmdb_status, vote_count,
                      text_backdrop_path, original_poster_path,
                      poster_langs_json)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     cache_key,
@@ -910,6 +963,7 @@ def set_cached_tmdb_metadata(
                     number_of_seasons,
                     number_of_episodes,
                     original_language,
+                    original_title,
                     backdrop_path,
                     tmdb_status,
                     vote_count,

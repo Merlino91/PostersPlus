@@ -82,7 +82,9 @@ services:
     environment:
       - TMDB_API_KEY=your_tmdb_key
       - MDBLIST_API_KEY=your_mdblist_key
-      - WORKERS=2
+      - WORKERS=1
+      - TEXTLESS_DETECTION_CONCURRENCY=2
+      - TEXTLESS_DETECTION_MAX_VOTES=3000
       - ACCESS_KEY=youraccesskey # Highly suggested if exposing to the internet.*
       # See .env.example for all available options
 ```
@@ -116,7 +118,7 @@ All configuration is done via environment variables. Copy `.env.example` to `.en
 | `MDBLIST_API_KEY` | - | MDBList API key for ratings and award data |
 | `MDBLIST_API_KEY_2` | - | Optional second MDBList key. Automatically rotated to when the primary key is rate-limited |
 | `ACCESS_KEY` | - | Shared secret for request authentication. Leave blank to allow open access |
-| `WORKERS` | `2` | Number of Uvicorn worker processes |
+| `WORKERS` | `1` | Uvicorn worker processes. One worker avoids duplicate uncached renders, scans, and API work across processes |
 | `AIOSTREAMS_URL` | - | Base URL of your AIOStreams instance (used when `QUALITY_SOURCE=aiostreams`) |
 | `AIOSTREAMS_AUTH` | - | AIOStreams credentials as Base64 `user:password` |
 | `QUALITY_SOURCE` | `aiostreams` | Quality data source: `aiostreams` or `scraper`. Set to `scraper` to use any Stremio stream addon instead of AIOStreams |
@@ -132,16 +134,24 @@ All configuration is done via environment variables. Copy `.env.example` to `.en
 | `LOGO_STRETCH_DISABLED` | `true` | Fill-stretch is off by default — every logo is kept at its true clamped size. Set `false` to enable the stretch below |
 | `LOGO_STRETCH_FACTOR` | `1.2` | When stretching is enabled, a slim logo is enlarged toward its size cap by up to this factor (one axis only). `1.0` = no enlargement |
 | `DEBUG_LOGO_SIZING` | `false` | Log per-logo sizing telemetry at INFO level. For tuning only |
+| `TMDB_POSTER_MIN_VOTES` | `3` | Prefer textless posters with at least this many votes when they remain competitively rated |
+| `TMDB_POSTER_MAX_SCORE_DROP` | `1.0` | Maximum rating downgrade allowed when preferring a textless poster that meets the vote minimum |
+| `RATING_MIN_VOTES` | `10` | Ignore provider ratings below this vote count. Roger Ebert is exempt |
 | `TEXTLESS_TEXT_DETECTION` | `true` | Detect burned-in title text on posters TMDB mislabelled as "textless" and skip our own logo so the title isn't doubled. Set `false` to opt out |
-| `TEXTLESS_DETECTION_MAX_VOTES` | `300` | Only run text detection on titles with at most this many TMDB votes (mislabels concentrate in the long tail; popular titles are trusted) |
-| `TEXTLESS_MIN_BOXES` | `110` | Min EAST text activations (at the 320×640 reference, auto-scaled to the active resolution) before a poster is treated as having burned-in text. Higher = stricter. Changing it auto-invalidates cached detection results + composites |
-| `TEXTLESS_DETECTION_CONCURRENCY` | `1` | Max text scans allowed into the worker pool at once. Keeps the pool free for compositing during a burst |
-| `EAST_INPUT_WIDTH` / `EAST_INPUT_HEIGHT` | `256` / `512` | EAST scan input resolution (each a multiple of 32). Smaller = faster (192×384 ≈ 2.7× but misses thin serif titles); `min_boxes` auto-scales so its meaning is preserved |
+| `TEXTLESS_DETECTION_MAX_VOTES` | `3000` | Foreground OCR vote limit. Higher-vote assets render without waiting, skip composite caching, and enter the idle background scan queue. Raise for foreground accuracy; lower for faster stale-cache bursts |
+| `PPOCR_BOX_THRESHOLD` | `0.70` | Minimum PP-OCR text-box confidence. Higher is stricter; changing it invalidates cached detections and composites |
+| `PPOCR_WIDE_BOX_THRESHOLD` | `0.30` | Lower confidence accepted for wide, title-shaped text regions |
+| `PPOCR_WIDE_MIN_ASPECT` | `3.0` | Minimum width-to-height ratio for the lower-confidence title fallback |
+| `PPOCR_WIDE_MIN_AREA` | `0.01` | Minimum fraction of image area occupied by a lower-confidence title box |
+| `PPOCR_WIDE_MIN_Y` | `0.55` | Minimum vertical centre for the poster-only geometric fallback when OCR cannot read a centred title block |
+| `TEXTLESS_DETECTION_CONCURRENCY` | `2` | Independent PP-OCR sessions in a dedicated executor. Use `1` on small hosts; each extra session uses roughly 25-40 MB; capped at 4 and CPU count |
 | `TEXTLESS_SCAN_TOP` | `0.08` | Fraction of poster height skipped from the top before counting text (covers top/middle/bottom titles; ignores top-edge logos) |
-| `BAKE_EAST_MODEL` | `true` | Build-time only. Bake the ~96MB EAST model into the image. Set `false` for a leaner image that downloads it once at runtime |
-
-> The ~96 MB EAST model is baked into the image by default. Set `BAKE_EAST_MODEL=false` (build arg / `.env`) for a leaner image that downloads it once into the cache volume on first use instead.
+| `BAKE_PPOCR_MODEL` | `true` | Build-time only. Bake the ~4.6MB PP-OCRv5 Mobile model into the image |
 | `DEFAULT_LOGO_LANGUAGE` | `en` | ISO 639-1 language code for title logos |
+
+> CPU guidance: keep `WORKERS × TEXTLESS_DETECTION_CONCURRENCY` at or below the CPU cores available to the container. Larger values can oversubscribe CPU, duplicate uncached work across workers, and reduce sustained throughput.
+
+> The ~4.6 MB PP-OCRv5 Mobile model is baked into the image by default. Set `BAKE_PPOCR_MODEL=false` to download it into the cache volume on first use.
 
 ---
 

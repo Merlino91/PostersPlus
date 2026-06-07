@@ -413,7 +413,7 @@
     line-height: 1.6;
   }
   .field-hint a {
-    color: var(--accent, #6ea8fe);
+    color: var(--silver);
     text-decoration: underline;
     cursor: pointer;
   }
@@ -738,6 +738,12 @@
   /* A separated toggle centres its content, so match bottom padding to the top
      so it sits evenly between its separator and its own bottom border. */
   .toggle-row.cfg-sep { padding-bottom: 14px !important; }
+  .toggle-row.weights-fallback-toggle {
+    padding-bottom: 14px;
+  }
+  .toggle-row.weights-fallback-toggle + .weight-grid {
+    margin-top: 12px;
+  }
   /* A toggle centres its label/switch with align-items, so match the bottom
      padding to the top so the content stays centred between this separator and
      the row's own bottom border (otherwise it sits high). */
@@ -2259,6 +2265,16 @@
             <span class="section-chevron">▼</span>
           </div>
           <div class="section-body">
+            <div class="toggle-row weights-fallback-toggle">
+              <div>
+                <div class="toggle-label">Fallback to IMDB</div>
+                <div class="field-hint">Use IMDB only when the selected weighted sources have no score.</div>
+              </div>
+              <label class="toggle-switch">
+                <input type="checkbox" id="tog-fallback-imdb" onchange="build(); queuePreviewReload()">
+                <div class="toggle-track"><div class="toggle-thumb"></div></div>
+              </label>
+            </div>
             <div class="weight-grid" id="movie-weights"></div>
             <div class="weight-total">
               <span>Total</span>
@@ -3254,6 +3270,7 @@ function buildBaseParams({ usePlaceholders = false, domainOverride = null } = {}
   if (userMdblistKey) params.set('mdblist_key',  usePlaceholders ? '{mdblist_key}' : userMdblistKey);
   params.set('top_gradient',    vEl('cfg-top-gradient')    || 'high');
   params.set('bottom_gradient', vEl('cfg-bottom-gradient') || 'high');
+  params.set('fallback_to_imdb', c('tog-fallback-imdb') ? 'true' : 'false');
 
   // ── Rating / Genre Label ───────────────────────────────────────────────────
   params.set('rating_display_mode', ratingMode);
@@ -3833,6 +3850,7 @@ function importUrl(urlStr, { silent = false, settingsOnly = false } = {}) {
     const _bg = (p.get('bottom_gradient') || '').toLowerCase();
     if (['off','low','medium','high'].includes(_bg)) _setEl('cfg-bottom-gradient', _bg);
   }
+  if (p.has('fallback_to_imdb')) _setEl('tog-fallback-imdb', p.get('fallback_to_imdb'));
 
   // ── Sash ────────────────────────────────────────────────────────────────
   if (p.has('sash_poster_color')) _setEl('tog-sash-poster-color', p.get('sash_poster_color'));

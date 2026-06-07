@@ -24,7 +24,23 @@ from config import (
     SCORE_GLOW_THRESHOLD,
     SCORE_GLOW_BLUR,
     SCORE_GLOW_ALPHA,
+    RATING_MIN_VOTES,
 )
+
+
+_RATING_VOTE_KEYS = ("vote_count", "votes", "count", "rating_count", "ratings_count")
+
+
+def _rating_vote_count(raw: dict) -> int | None:
+    for key in _RATING_VOTE_KEYS:
+        value = raw.get(key)
+        if value is None:
+            continue
+        try:
+            return int(str(value).replace(",", ""))
+        except (TypeError, ValueError):
+            continue
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -106,8 +122,18 @@ async def fetch_rating(
     for r in data.get("ratings", []):
         source = (r.get("source") or "").lower()
         value  = r.get("value")
-        if source in SCORE_NORMALISERS and value is not None:
-            ratings_dict[source] = value
+        if source not in SCORE_NORMALISERS or value is None:
+            continue
+
+        vote_count = _rating_vote_count(r)
+        if source != "rogerebert" and vote_count is not None and vote_count < RATING_MIN_VOTES:
+            logger.info(
+                f"Skipping {source} rating for {imdb_id}: "
+                f"vote_count={vote_count} < {RATING_MIN_VOTES}"
+            )
+            continue
+
+        ratings_dict[source] = value
 
     return ratings_dict, genre, release_date, keywords, age_rating
 
@@ -565,6 +591,8 @@ def draw_frosted_bar(
 def calculate_weighted_score(
     ratings: dict,
     weights: dict,
+    *,
+    fallback_to_imdb: bool = False,
 ) -> int | str:
 
     total_weight = 0.0
@@ -588,6 +616,10 @@ def calculate_weighted_score(
         total_weight += weight
 
     if total_weight == 0:
+        imdb_value = ratings.get("imdb")
+        imdb_normaliser = SCORE_NORMALISERS.get("imdb")
+        if fallback_to_imdb and imdb_value is not None and imdb_normaliser:
+            return round(imdb_normaliser(imdb_value))
         return "N/A"
 
     return round(weighted_sum / total_weight)

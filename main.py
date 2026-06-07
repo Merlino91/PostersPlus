@@ -8,6 +8,7 @@ import os
 import re
 import httpx
 import numpy as np
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass, field
 from fastapi import FastAPI, HTTPException, Request
@@ -153,12 +154,31 @@ _rating_fetch_inflight:         dict[str, asyncio.Event] = {}
 _rating_backoff:                dict[str, float]          = {}  # imdb_id -> retry-after (loop time)
 _rating_fail_count:             dict[str, int]            = {}  # imdb_id -> consecutive network-failure count (for escalating back-off)
 _mdblist_semaphore:             "asyncio.Semaphore | None" = None  # caps concurrent MDBlist HTTP calls; created inside event loop
-# Caps how many burned-in-text scans may occupy thread-pool workers at once.
-# The scan is already serialised by text_detect._infer_lock, so extra in-flight
-# scan tasks would just block on that lock while squatting on pool workers —
-# starving compositing/encode of the rest of a poster burst.  Gating admission
-# here keeps the shared executor free.  Created inside the event loop.
+# Caps parallel burned-in-text scans. Each slot owns an independent RapidOCR
+# session in a dedicated executor, so cold-cache OCR cannot occupy render workers.
+# Created inside the event loop.
 _detect_semaphore:              "asyncio.Semaphore | None" = None
+_detect_executor:               "ThreadPoolExecutor | None" = None
+# Maps immutable image/detector keys to active OCR tasks. Different poster
+# configurations often render the same source image during a burst; they should
+# share one scan even when their final composite cache keys differ.
+_text_detection_inflight:       dict[str, "asyncio.Task[bool | None]"] = {}
+_foreground_detection_count = 0
+_active_poster_renders = 0
+_background_detection_queue: "asyncio.Queue[_DeferredTextDetection] | None" = None
+_background_detection_keys: set[str] = set()
+_background_detection_task: "asyncio.Task[None] | None" = None
+
+
+@dataclass(frozen=True)
+class _DeferredTextDetection:
+    cache_key: str
+    image_cache_key: str
+    title: tuple[str, ...]
+    source: str
+    tmdb_id: str
+    vote_count: int | None
+    source_key: str
 
 
 def _get_detect_semaphore() -> "asyncio.Semaphore":
@@ -167,6 +187,183 @@ def _get_detect_semaphore() -> "asyncio.Semaphore":
     if _detect_semaphore is None:
         _detect_semaphore = asyncio.Semaphore(_cfg.TEXTLESS_DETECTION_CONCURRENCY)
     return _detect_semaphore
+
+
+def _get_detect_executor() -> ThreadPoolExecutor:
+    """Dedicated workers so OCR bursts cannot starve poster compositing."""
+    global _detect_executor
+    if _detect_executor is None:
+        _detect_executor = ThreadPoolExecutor(
+            max_workers=_cfg.TEXTLESS_DETECTION_CONCURRENCY,
+            thread_name_prefix="text-detect",
+        )
+    return _detect_executor
+
+
+def _shutdown_detect_executor() -> None:
+    global _detect_executor
+    if _detect_executor is not None:
+        _detect_executor.shutdown(wait=True, cancel_futures=True)
+        _detect_executor = None
+
+
+def _reserve_foreground_detection() -> None:
+    global _foreground_detection_count
+    _foreground_detection_count += 1
+
+
+def _release_foreground_detection() -> None:
+    global _foreground_detection_count
+    _foreground_detection_count = max(0, _foreground_detection_count - 1)
+
+
+def _start_text_detection(
+    cache_key: str,
+    image: Image.Image,
+    *,
+    title: tuple[str, ...],
+    source: str,
+    tmdb_id: str,
+    vote_count: int | None,
+    source_key: str,
+    foreground: bool = True,
+    foreground_reserved: bool = False,
+) -> "asyncio.Task[bool | None]":
+    """Start or join one OCR scan for an immutable source image."""
+    cached = get_cached_text_detection(cache_key)
+    if cached is not None:
+        if foreground and foreground_reserved:
+            _release_foreground_detection()
+        async def _cached_result() -> bool:
+            return cached
+        return asyncio.create_task(_cached_result())
+
+    existing = _text_detection_inflight.get(cache_key)
+    if existing is not None:
+        if foreground and foreground_reserved:
+            _release_foreground_detection()
+        logger.info(
+            f"Coalescing burned-in text scan for {tmdb_id} "
+            f"(votes={vote_count}, source={source_key})"
+        )
+        return existing
+
+    if foreground and not foreground_reserved:
+        _reserve_foreground_detection()
+
+    async def _scan() -> bool | None:
+        from text_detect import poster_has_burned_in_text
+
+        try:
+            async with _get_detect_semaphore():
+                result = await asyncio.get_running_loop().run_in_executor(
+                    _get_detect_executor(),
+                    lambda: poster_has_burned_in_text(
+                        image,
+                        conf=_cfg.PPOCR_BOX_THRESHOLD,
+                        title=title,
+                        source=source,
+                        debug=True,
+                    ),
+                )
+            if result is not None:
+                set_cached_text_detection(cache_key, result)
+            return result
+        finally:
+            if foreground:
+                _release_foreground_detection()
+
+    logger.info(
+        f"Scanning textless poster {tmdb_id} for burned-in text "
+        f"(votes={vote_count}, source={source_key}, "
+        f"priority={'foreground' if foreground else 'background'})"
+    )
+    task = asyncio.create_task(_scan())
+    _text_detection_inflight[cache_key] = task
+
+    def _cleanup(done: "asyncio.Task[bool | None]") -> None:
+        if _text_detection_inflight.get(cache_key) is done:
+            _text_detection_inflight.pop(cache_key, None)
+        if not done.cancelled():
+            done.exception()
+
+    task.add_done_callback(_cleanup)
+    return task
+
+
+def _queue_background_text_detection(item: _DeferredTextDetection) -> None:
+    """Queue one vote-gated scan without retaining its decoded image."""
+    if get_cached_text_detection(item.cache_key) is not None:
+        return
+    if item.cache_key in _background_detection_keys:
+        return
+    if _background_detection_queue is None:
+        logger.warning(
+            f"Background text-detection queue unavailable for {item.tmdb_id}; "
+            "scan will retry on the next request"
+        )
+        return
+    _background_detection_keys.add(item.cache_key)
+    _background_detection_queue.put_nowait(item)
+    logger.info(
+        f"Queued vote-gated text scan for {item.tmdb_id} "
+        f"(votes={item.vote_count}, pending={_background_detection_queue.qsize()})"
+    )
+
+
+def _load_detection_image(image_cache_key: str) -> Image.Image | None:
+    cached_bytes = get_cached_tmdb_poster(image_cache_key)
+    if not cached_bytes:
+        return None
+    return Image.open(io.BytesIO(cached_bytes)).convert("RGBA")
+
+
+async def _background_text_detection_worker() -> None:
+    """Drain vote-gated scans only while no foreground scan is queued or running."""
+    assert _background_detection_queue is not None
+    while True:
+        item = await _background_detection_queue.get()
+        try:
+            if get_cached_text_detection(item.cache_key) is not None:
+                continue
+            while _foreground_detection_count > 0 or _active_poster_renders > 0:
+                await asyncio.sleep(0.1)
+
+            image = await asyncio.get_running_loop().run_in_executor(
+                None, _load_detection_image, item.image_cache_key
+            )
+            if image is None:
+                logger.warning(
+                    f"Deferred text scan source unavailable for {item.tmdb_id}; "
+                    "scan will retry on the next request"
+                )
+                continue
+
+            # A poster render may have arrived while the image was loading.
+            while _foreground_detection_count > 0 or _active_poster_renders > 0:
+                await asyncio.sleep(0.1)
+
+            await asyncio.shield(_start_text_detection(
+                item.cache_key,
+                image,
+                title=item.title,
+                source=item.source,
+                tmdb_id=item.tmdb_id,
+                vote_count=item.vote_count,
+                source_key=item.source_key,
+                foreground=False,
+            ))
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.warning(
+                f"Deferred text scan failed for {item.tmdb_id}: {exc}"
+            )
+        finally:
+            _background_detection_keys.discard(item.cache_key)
+            _background_detection_queue.task_done()
+
+
 # Per-key cooldown timestamps (event-loop time). Keyed by the API key string so
 # rotation is independent — a rate-limited key stands down while the other serves.
 _mdblist_key_cooldown: dict[str, float] = {}
@@ -215,6 +412,7 @@ from cache import (
     get_cached_quality,
     get_cached_rating,
     get_cached_final_poster,
+    get_cached_tmdb_poster,
     set_cached_final_poster,
     get_cached_text_detection,
     set_cached_text_detection,
@@ -243,7 +441,7 @@ from quality import (
     render_badges_left,
 )
 from ratings import calculate_weighted_score, draw_score_bar, fetch_rating, draw_score_bar_vertical, _draw_solid_pip, draw_frosted_bar, _score_color, _score_color_alt, _score_color_metal
-from tmdb import composite_logo, logo_centre_y, fetch_logo, fetch_poster_metadata, fetch_poster_image, fetch_backdrop_image, fetch_trending_rank, fetch_release_status, svg_logo_supported, _CROP_VERSION
+from tmdb import composite_logo, logo_centre_y, fetch_logo, fetch_poster_metadata, fetch_poster_image, fetch_backdrop_image, fetch_trending_rank, fetch_release_status, svg_logo_supported, tmdb_metadata_cache_key, _CROP_VERSION
 
 # ---------------------------------------------------------------------------
 # Persistent HTTP client
@@ -325,12 +523,7 @@ def _resolve_mdblist_key(query_key: str) -> str | None:
 
 
 def _detection_vote_ok(vote_count: int | None) -> bool:
-    """
-    Text detection only runs on titles we can confirm are low-vote (where TMDB
-    mislabels concentrate).  A NULL/unknown vote_count — e.g. a metadata row
-    cached before the column existed — must NOT pass the gate, otherwise
-    detection would run on every cached title regardless of popularity.
-    """
+    """True when an asset should be scanned during the foreground request."""
     return vote_count is not None and vote_count <= _cfg.TEXTLESS_DETECTION_MAX_VOTES
 
 
@@ -399,6 +592,7 @@ class RequestConfig:
 
     movie_weights: dict | None = None
     tv_weights:    dict | None = None
+    fallback_to_imdb: bool = False
 
     logo_language: str = field(default_factory=lambda: _cfg.DEFAULT_LOGO_LANGUAGE)
     # Logo resolution priority.  "native" = the viewer's chosen logo_language
@@ -619,6 +813,7 @@ def build_request_config(params: dict) -> RequestConfig:
 
     tv_sources = list(_cfg.TV_WEIGHTS.keys())
     cfg.tv_weights = _parse_weights(params.get("tv_weights"), tv_sources)
+    cfg.fallback_to_imdb = _b("fallback_to_imdb", cfg.fallback_to_imdb)
 
     cfg.logo_language        = (params.get("logo_language", cfg.logo_language).strip().lower())
     _lp = params.get("logo_priority")
@@ -1335,6 +1530,7 @@ async def _cache_prune_loop() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _HTTP_CLIENT, _configurator_html
+    global _background_detection_queue, _background_detection_task
     init_db()
     logger.info(f"Cache initialised (composite TTL {_cfg.COMPOSITE_CACHE_TTL}s / "
                 f"{_cfg.COMPOSITE_CACHE_TTL / 86400:.1f}d)")
@@ -1371,30 +1567,45 @@ async def lifespan(app: FastAPI):
             logger.info("No genre background art found — using gradient fallbacks")
     except Exception as exc:
         logger.warning(f"Genre background warm-up skipped: {exc}")
-    # Burned-in-text detection: fetch + load the EAST model in the background so
-    # the first low-vote textless request isn't blocked by the one-time ~96 MB
+    # Burned-in-text detection: fetch + load PP-OCRv5 Mobile in the background so
+    # the first textless request isn't blocked by the one-time ~4.6 MB
     # download.  On by default; skipped when the operator has opted out.
     if _cfg.TEXTLESS_TEXT_DETECTION:
-        async def _warm_east():
+        _background_detection_queue = asyncio.Queue()
+        _background_detection_task = asyncio.create_task(
+            _background_text_detection_worker()
+        )
+
+        async def _warm_text_detector():
             try:
-                from text_detect import warm_model
-                ok = await asyncio.get_running_loop().run_in_executor(None, warm_model)
-                logger.info(f"Burned-in-text detection {'ready' if ok else 'unavailable'}")
+                from text_detect import text_detection_status, warm_model
+                ok = await asyncio.get_running_loop().run_in_executor(_get_detect_executor(), warm_model)
+                log = logger.info if ok else logger.warning
+                log(f"Burned-in-text detection: {text_detection_status()}")
             except Exception as exc:
-                logger.warning(f"EAST warm-up failed: {exc}")
-        asyncio.create_task(_warm_east())
+                logger.warning(f"PP-OCR warm-up failed: {exc}")
+        asyncio.create_task(_warm_text_detector())
 
     prune_task   = asyncio.create_task(_cache_prune_loop())
     digital_task = asyncio.create_task(digital_release_poll_loop(_HTTP_CLIENT))
     yield
     prune_task.cancel()
     digital_task.cancel()
+    if _background_detection_task is not None:
+        _background_detection_task.cancel()
     # Await the cancelled tasks so their finally: blocks finish unwinding
     # before we close the HTTP client they may still be using.
     with suppress(asyncio.CancelledError):
         await prune_task
     with suppress(asyncio.CancelledError):
         await digital_task
+    if _background_detection_task is not None:
+        with suppress(asyncio.CancelledError):
+            await _background_detection_task
+        _background_detection_task = None
+    _background_detection_queue = None
+    _background_detection_keys.clear()
+    _shutdown_detect_executor()
     await _HTTP_CLIENT.aclose()
     logger.info("HTTP client closed")
 
@@ -1844,12 +2055,25 @@ async def get_poster(
         if _cfg.TEXTLESS_TEXT_DETECTION:
             from text_detect import DETECT_RES_SIG
             _detect_sig = (
-                f"|td={_cfg.TEXTLESS_MIN_BOXES}:{_cfg.TEXTLESS_DETECTION_MAX_VOTES}:{DETECT_RES_SIG}"
+                f"|td={_cfg.PPOCR_BOX_THRESHOLD}:{_cfg.TEXTLESS_DETECTION_MAX_VOTES}:{DETECT_RES_SIG}"
             )
         else:
             _detect_sig = ""
+        _poster_selection_sig = (
+            f"|ps={_cfg.TMDB_POSTER_MIN_VOTES}:"
+            f"{_cfg.TMDB_POSTER_MAX_SCORE_DROP:g}"
+        )
+        _rating_policy_sig = (
+            f"|rp={_cfg.RATING_MIN_VOTES}:"
+            f"{int(rcfg.fallback_to_imdb)}"
+        )
         _params_hash = hashlib.md5(
-            ("&".join(f"{k}={v}" for k, v in sorted(raw_params.items())) + _detect_sig).encode()
+            (
+                "&".join(f"{k}={v}" for k, v in sorted(raw_params.items()))
+                + _detect_sig
+                + _poster_selection_sig
+                + _rating_policy_sig
+            ).encode()
         ).hexdigest()[:8]
         final_cache_key = f"{imdb_id}:{type}:{_params_hash}"
         cached_jpeg = None if _force_refresh else get_cached_final_poster(final_cache_key)
@@ -2081,10 +2305,15 @@ async def get_poster(
         raise HTTPException(status_code=503, detail="Service unavailable")
     client = _HTTP_CLIENT
 
+    global _active_poster_renders
+    _active_poster_renders += 1
     try:
         genre_ids, is_textless, logos, release_year, title, poster_path, backdrop_path, tmdb_data = (
             await fetch_poster_metadata(client, tmdb_id, effective_tmdb_key, type, rcfg.logo_language)
         )
+        _text_titles = tuple(dict.fromkeys(
+            value for value in (title, tmdb_data.get("original_title")) if value
+        ))
 
         # Resolve genre string from TMDB genre_ids immediately — this is always
         # available regardless of MDBlist status, so we can use it as a reliable
@@ -2184,12 +2413,18 @@ async def get_poster(
         # The one exception — wait_for_quality — is handled inline after the
         # gather completes so it never blocks rating coalescing.
         _backdrop_rescued = False
+        _detection_deferred = False
+        _vc = tmdb_data.get("vote_count")
+        _vote_detection_ok = _detection_vote_ok(_vc)
         is_no_poster = poster_path is None and not _use_backdrop
         if _use_backdrop:
-            # Option B: even null-language backdrops sometimes carry residual
-            # text — bias the crop away from it when detection is enabled.
+            # Text-aware backdrop cropping also invokes PP-OCR, so apply the
+            # same foreground vote gate used by the final burned-in-text scan.
+            _backdrop_avoid_text = (
+                _cfg.TEXTLESS_TEXT_DETECTION and _vote_detection_ok
+            )
             _image_coro = fetch_backdrop_image(
-                client, tmdb_id, backdrop_path, avoid_text=_cfg.TEXTLESS_TEXT_DETECTION)
+                client, tmdb_id, backdrop_path, avoid_text=_backdrop_avoid_text)
         elif is_no_poster:
             # Prefer the atmospheric genre background (minimal or photoreal set,
             # per the request); fall back to the flat genre-tinted gradient if no
@@ -2208,19 +2443,23 @@ async def get_poster(
                     and _detection_vote_ok(tmdb_data.get("vote_count"))):
                 try:
                     _cand = await fetch_backdrop_image(client, tmdb_id, _tbp, avoid_text=True)
-                    # Memoise per (candidate backdrop, min_boxes, scan resolution)
+                    # Memoise per (candidate backdrop and detector settings)
                     # — same rationale as the suppress path: config-independent.
                     from text_detect import DETECT_RES_SIG
-                    _resc_key = f"bd:{_tbp}:{_CROP_VERSION}|mb={_cfg.TEXTLESS_MIN_BOXES}:{DETECT_RES_SIG}"
+                    _resc_src = f"bd:{_tbp}:{_CROP_VERSION}:ta"
+                    _resc_key = f"{_resc_src}|conf={_cfg.PPOCR_BOX_THRESHOLD}:{DETECT_RES_SIG}"
                     _still_text = get_cached_text_detection(_resc_key)
                     if _still_text is None:
-                        from text_detect import poster_has_burned_in_text
-                        async with _get_detect_semaphore():
-                            _still_text = await asyncio.get_running_loop().run_in_executor(
-                                None,
-                                lambda: poster_has_burned_in_text(_cand, min_boxes=_cfg.TEXTLESS_MIN_BOXES))
-                        set_cached_text_detection(_resc_key, _still_text)
-                    if not _still_text:
+                        _still_text = await asyncio.shield(_start_text_detection(
+                            _resc_key,
+                            _cand,
+                            title=_text_titles,
+                            source="backdrop",
+                            tmdb_id=tmdb_id,
+                            vote_count=_vc,
+                            source_key=_resc_src,
+                        ))
+                    if _still_text is False:
                         _rescued = _cand
                         logger.info(f"Text-aware backdrop crop clean for {tmdb_id} — using it with logo")
                     else:
@@ -2233,6 +2472,78 @@ async def get_poster(
                 _image_coro = _resolved(_rescued)
             else:
                 _image_coro = fetch_poster_image(client, tmdb_id, type, poster_path)
+
+        # Start eligible foreground OCR as soon as the image arrives. Higher-vote
+        # assets are recorded as deferred work instead: the request keeps waiting
+        # for logo/rating/info, but never waits for their textless scan.
+        _detection_task: "asyncio.Task[bool | None] | None" = None
+        _detection_result: bool | None = False
+        _det_src: str | None = None
+        _det_key: str | None = None
+        _scan_selected_image = (
+            _cfg.TEXTLESS_TEXT_DETECTION
+            and is_textless
+            and not is_no_poster
+            and not _backdrop_rescued
+        )
+        if _scan_selected_image:
+            from text_detect import DETECT_RES_SIG
+
+            if _use_backdrop:
+                _crop_variant = "ta" if _backdrop_avoid_text else "plain"
+                _det_src = f"bd:{backdrop_path}:{_CROP_VERSION}:{_crop_variant}"
+                _image_cache_key = (
+                    f"backdrop_{tmdb_id}_{backdrop_path.strip('/')}_{_CROP_VERSION}"
+                    + ("_ta" if _backdrop_avoid_text else "")
+                )
+                _det_source = "backdrop"
+            else:
+                _det_src = f"ps:{poster_path}"
+                _image_cache_key = f"{type}_{tmdb_id}_{poster_path.strip('/')}"
+                _det_source = "poster"
+
+            _det_key = (
+                f"{_det_src}|conf={_cfg.PPOCR_BOX_THRESHOLD}:{DETECT_RES_SIG}"
+            )
+            _detection_result = get_cached_text_detection(_det_key)
+            if _detection_result is None:
+                _base_image_coro = _image_coro
+                if _vote_detection_ok:
+                    _reserve_foreground_detection()
+
+                async def _fetch_image_and_schedule_detection():
+                    nonlocal _detection_task, _detection_deferred
+                    try:
+                        fetched_image = await _base_image_coro
+                    except BaseException:
+                        if _vote_detection_ok:
+                            _release_foreground_detection()
+                        raise
+                    if _vote_detection_ok:
+                        _detection_task = _start_text_detection(
+                            _det_key,
+                            fetched_image,
+                            title=_text_titles,
+                            source=_det_source,
+                            tmdb_id=tmdb_id,
+                            vote_count=_vc,
+                            source_key=_det_src,
+                            foreground_reserved=True,
+                        )
+                    else:
+                        _detection_deferred = True
+                        _queue_background_text_detection(_DeferredTextDetection(
+                            cache_key=_det_key,
+                            image_cache_key=_image_cache_key,
+                            title=_text_titles,
+                            source=_det_source,
+                            tmdb_id=tmdb_id,
+                            vote_count=_vc,
+                            source_key=_det_src,
+                        ))
+                    return fetched_image
+
+                _image_coro = _fetch_image_and_schedule_detection()
 
         (
             image,
@@ -2381,7 +2692,11 @@ async def get_poster(
                     if type in ("tv", "series")
                     else effective_movie_weights
                 )
-                score = calculate_weighted_score(ratings_dict, weights)
+                score = calculate_weighted_score(
+                    ratings_dict,
+                    weights,
+                    fallback_to_imdb=rcfg.fallback_to_imdb,
+                )
             else:
                 score = ratings_dict
 
@@ -2512,47 +2827,42 @@ async def get_poster(
             })
 
         # ------------------------------------------------------------------
-        # Experimental burned-in-text detection (opt-in).  When a poster TMDB
+        # Burned-in-text detection. When a poster TMDB
         # tagged "textless" actually has the title burned in, compositing our
         # own logo/title would double it — so detect that and skip our overlay.
-        # Gated to low-vote titles (where mislabels concentrate); popular titles
-        # are trusted to avoid false positives.  Runs in the thread pool.
+        # Cached results are always used. Uncached assets above the vote gate
+        # are deferred until foreground poster rendering is idle.
         # ------------------------------------------------------------------
         _suppress_overlay = False
-        if (_cfg.TEXTLESS_TEXT_DETECTION and is_textless and not is_no_poster
-                and not _backdrop_rescued):
-            _vc = tmdb_data.get("vote_count")
-            if _detection_vote_ok(_vc):
-                # The scanned image is the backdrop crop (when we fell back to it)
-                # or the TMDB poster — both identified by an immutable image path.
-                # Memoise the result per (asset, min_boxes): the EAST scan depends
-                # only on the image + threshold, never on the URL config, so this
-                # stops a ~200ms re-scan on every config change (composite miss).
-                # Backdrop crops depend on the crop-logic version, so key them
-                # by it; TMDB poster paths are content-addressed (immutable).
-                from text_detect import DETECT_RES_SIG
-                _det_src = (f"bd:{backdrop_path}:{_CROP_VERSION}" if _use_backdrop
-                            else f"ps:{poster_path}")
-                _det_key = f"{_det_src}|mb={_cfg.TEXTLESS_MIN_BOXES}:{DETECT_RES_SIG}"
-                _suppress_overlay = get_cached_text_detection(_det_key)
-                if _suppress_overlay is None:
-                    from text_detect import poster_has_burned_in_text
-                    async with _get_detect_semaphore():
-                        _suppress_overlay = await asyncio.get_running_loop().run_in_executor(
-                            None,
-                            lambda: poster_has_burned_in_text(image, min_boxes=_cfg.TEXTLESS_MIN_BOXES),
-                        )
-                    set_cached_text_detection(_det_key, _suppress_overlay)
-                if _suppress_overlay:
-                    logger.info(
-                        f"Burned-in text detected on 'textless' poster {tmdb_id} "
-                        f"(votes={_vc}) — skipping logo/title overlay"
-                    )
-            elif _vc is None:
-                logger.debug(
-                    f"Text detection skipped for {tmdb_id}: vote_count unknown "
-                    f"(stale metadata cache — refreshes on next TTL miss)"
+        if _scan_selected_image:
+            _suppress_overlay = _detection_result
+            if _suppress_overlay is None and _detection_task is not None:
+                _suppress_overlay = await asyncio.shield(_detection_task)
+
+            if _detection_deferred:
+                logger.info(
+                    f"Foreground text detection skipped for {tmdb_id}: "
+                    f"vote_count={_vc!r} is outside foreground limit "
+                    f"{_cfg.TEXTLESS_DETECTION_MAX_VOTES}; background scan queued"
                 )
+                _suppress_overlay = False
+            elif _suppress_overlay is True:
+                logger.info(
+                    f"Burned-in text detected on textless poster {tmdb_id} "
+                    f"(votes={_vc}); skipping logo/title overlay"
+                )
+            elif _suppress_overlay is False:
+                logger.info(
+                    f"No burned-in text detected on textless poster {tmdb_id} "
+                    f"(votes={_vc})"
+                )
+            else:
+                from text_detect import text_detection_status
+                logger.warning(
+                    f"Burned-in text scan unavailable for {tmdb_id}; "
+                    f"result was not cached ({text_detection_status()})"
+                )
+                _suppress_overlay = False
 
         # Offload CPU-bound PIL compositing + JPEG encoding to the thread pool
         # so the event loop stays free for concurrent requests.
@@ -2584,11 +2894,13 @@ async def get_poster(
         # Persist the finished poster so future requests skip the pipeline.
         # Skipped when:
         #   quality_pending      — badges would be missing; next request caches properly
+        #   _detection_deferred — vote-gated OCR is queued in the background
         #   rating_failed        — MDBlist returned a hard failure; don't lock in N/A score
         #   _rating_backoff_active — a previous failure is still in its cool-down window;
         #                            backoff nullifies effective_mdblist_key so rating_failed
         #                            would evaluate False without this separate flag
-        if final_cache_key is not None and not quality_pending and not rating_failed and not _rating_backoff_active:
+        if (final_cache_key is not None and not quality_pending and not _detection_deferred
+                and not rating_failed and not _rating_backoff_active):
             set_cached_final_poster(final_cache_key, img_bytes)
             logger.info(f"Final poster cached for {final_cache_key}")
 
@@ -2624,7 +2936,9 @@ async def get_poster(
             # Invalidate the (per-language) metadata cache so the next request
             # re-fetches fresh data.
             _endpoint = "tv" if type in ("tv", "series") else "movie"
-            delete_cached_tmdb_metadata(f"{_endpoint}_{tmdb_id}_{rcfg.logo_language}")
+            delete_cached_tmdb_metadata(tmdb_metadata_cache_key(
+                _endpoint, tmdb_id, rcfg.logo_language
+            ))
             logger.warning(
                 f"TMDB image 404 for tmdb_id={tmdb_id} — metadata cache invalidated, "
                 f"will self-heal on next request"
@@ -2638,6 +2952,7 @@ async def get_poster(
         logger.exception(f"Error building poster for tmdb_id={tmdb_id}")
         raise HTTPException(status_code=500, detail="Failed to build poster")
     finally:
+        _active_poster_renders = max(0, _active_poster_renders - 1)
         # Fire the rating event so any coalesced waiters unblock.  Under normal
         # operation this was already set early (after gather); this is the
         # safety net for error paths where we exit before reaching that point.

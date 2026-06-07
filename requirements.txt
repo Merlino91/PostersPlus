@@ -11,6 +11,8 @@ pycairo>=1.25,<2
 # Rasterises SVG title logos (TMDB serves many of its highest-voted logos as SVG).
 # Pulls cairocffi/tinycss2/cssselect2; cairo runtime lib is already in the image.
 cairosvg>=2.7,<3
-# Classic-CV burned-in-text detection for mislabelled "textless" posters.
-# headless variant avoids GUI/X11 deps. Only loaded when TEXTLESS_TEXT_DETECTION=true.
+# Face detection and PP-OCRv5 Mobile burned-in-text detection.
+# RapidOCR declares GUI OpenCV; Docker removes that wheel and keeps headless.
 opencv-python-headless>=4.8,<5
+onnxruntime>=1.17,<2
+rapidocr>=3.8,<4
