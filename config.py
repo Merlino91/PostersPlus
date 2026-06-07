@@ -174,6 +174,13 @@ LOGO_STRETCH_FACTOR        = max(1.0, float(os.environ.get("LOGO_STRETCH_FACTOR"
 # Changing it invalidates cached composites.
 TEXTLESS_TEXT_DETECTION    = _parse_bool_env("TEXTLESS_TEXT_DETECTION", True)
 TEXTLESS_DETECTION_MAX_VOTES = max(0, int(os.environ.get("TEXTLESS_DETECTION_MAX_VOTES", "3000")))
+# Keep a small, deduplicated list of TMDB posters rejected by OCR so operators
+# can review and correct upstream metadata manually.
+TEXTLESS_FAKE_REPORT       = _parse_bool_env("TEXTLESS_FAKE_REPORT", True)
+TEXTLESS_FAKE_REPORT_PATH  = os.environ.get(
+    "TEXTLESS_FAKE_REPORT_PATH",
+    "/app/cache/fake_textless_posters.txt",
+).strip() or "/app/cache/fake_textless_posters.txt"
 # Minimum PP-OCR box confidence. Higher is stricter (fewer false positives,
 # lower recall). Wide title-shaped regions use the PPOCR_WIDE_* fallback.
 PPOCR_BOX_THRESHOLD        = max(0.0, min(

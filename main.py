@@ -177,6 +177,8 @@ class _DeferredTextDetection:
     title: tuple[str, ...]
     source: str
     tmdb_id: str
+    media_type: str
+    image_path: str
     vote_count: int | None
     source_key: str
 
@@ -226,6 +228,8 @@ def _start_text_detection(
     tmdb_id: str,
     vote_count: int | None,
     source_key: str,
+    media_type: str | None = None,
+    image_path: str | None = None,
     foreground: bool = True,
     foreground_reserved: bool = False,
 ) -> "asyncio.Task[bool | None]":
@@ -268,6 +272,14 @@ def _start_text_detection(
                 )
             if result is not None:
                 set_cached_text_detection(cache_key, result)
+            if result is True and source == "poster" and media_type and image_path:
+                from textless_report import report_fake_textless_poster
+                report_fake_textless_poster(
+                    media_type=media_type,
+                    tmdb_id=tmdb_id,
+                    image_path=image_path,
+                    vote_count=vote_count,
+                )
             return result
         finally:
             if foreground:
@@ -350,6 +362,8 @@ async def _background_text_detection_worker() -> None:
                 source=item.source,
                 tmdb_id=item.tmdb_id,
                 vote_count=item.vote_count,
+                media_type=item.media_type,
+                image_path=item.image_path,
                 source_key=item.source_key,
                 foreground=False,
             ))
@@ -2528,6 +2542,8 @@ async def get_poster(
                             tmdb_id=tmdb_id,
                             vote_count=_vc,
                             source_key=_det_src,
+                            media_type=type,
+                            image_path=poster_path,
                             foreground_reserved=True,
                         )
                     else:
@@ -2538,6 +2554,8 @@ async def get_poster(
                             title=_text_titles,
                             source=_det_source,
                             tmdb_id=tmdb_id,
+                            media_type=type,
+                            image_path=poster_path,
                             vote_count=_vc,
                             source_key=_det_src,
                         ))
@@ -2847,6 +2865,14 @@ async def get_poster(
                 )
                 _suppress_overlay = False
             elif _suppress_overlay is True:
+                if not _use_backdrop and poster_path:
+                    from textless_report import report_fake_textless_poster
+                    report_fake_textless_poster(
+                        media_type=type,
+                        tmdb_id=tmdb_id,
+                        image_path=poster_path,
+                        vote_count=_vc,
+                    )
                 logger.info(
                     f"Burned-in text detected on textless poster {tmdb_id} "
                     f"(votes={_vc}); skipping logo/title overlay"
