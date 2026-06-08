@@ -247,7 +247,7 @@ class RequestConfig:
     muted: bool = False
     textless: bool = False
     score_color_mode: int = getattr(_cfg, 'SCORE_COLOR_MODE', 2)
-    sash_badge: bool = False 
+    sash_badge: bool = True 
     sash_badge_x: float = 0.62 
     sash_badge_y: float = 0.04 
 
