@@ -41,9 +41,9 @@ CDN_CACHE_TTL         = _parse_int_env("CDN_CACHE_TTL", 0)
 JPEG_QUALITY          = max(70, min(95, _parse_int_env("JPEG_QUALITY", 85)))
 
 # Feature Defaults 
-SHOW_RATING_DISPLAY_MODE = 1
+SHOW_RATING_DISPLAY_MODE = 4
 SHOW_AWARD_SASH          = True
-BADGE_DISPLAY_MODE       = 4
+BADGE_DISPLAY_MODE       = 0
 
 # Poster Dimensions (500x750)
 POSTER_WIDTH  = 500
@@ -64,8 +64,8 @@ SCORE_GLOW_ALPHA     = 40
 
 # Logo Defaults
 LOGO_MAX_W_RATIO  = 0.84
-LOGO_MAX_H_RATIO  = 0.17
-LOGO_BOTTOM_RATIO = 0.28
+LOGO_MAX_H_RATIO  = 0.25
+LOGO_BOTTOM_RATIO = 0.12
 # NUOVO: Allineato alla UI per usare l'italiano di default
 DEFAULT_LOGO_LANGUAGE = os.environ.get("DEFAULT_LOGO_LANGUAGE", "it")
 
@@ -164,14 +164,14 @@ SASH_PRIORITY: list[str] = [
 ]
 
 # V2 Features Defaults
-FROSTED_GLASS_INTENSITY   = 25
-GRADIENT_TOP_INTENSITY    = 50
-GRADIENT_BOTTOM_INTENSITY = 80
+FROSTED_GLASS_INTENSITY   = 50
+GRADIENT_TOP_INTENSITY    = 30
+GRADIENT_BOTTOM_INTENSITY = 60
 DOM_COLOR_TOP             = False
 DOM_COLOR_BOT             = False
-DOM_COLOR_SASH            = False
-SASH_STYLE                = "ribbon"
-TEXT_FONT_FAMILY          = "Inter"
-TEXT_DROP_SHADOW          = False
+DOM_COLOR_SASH            = True
+SASH_STYLE                = "minimal_pill"
+TEXT_FONT_FAMILY          = "Ubuntu"
+TEXT_DROP_SHADOW          = True
 USE_ORIGINAL_LOGO_COLOR   = False
-MINIMAL_PILL_SCALE        = 1.0
+MINIMAL_PILL_SCALE        = 1.40
