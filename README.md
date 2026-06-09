@@ -31,13 +31,15 @@ Non self hosters can [visit the public instance.](https://postersplus.elfhosted.
 
 - **Award sashes** - Oscar Best Picture, Golden Globe (film and TV, five major categories), Emmy Outstanding Series (Drama, Comedy, Limited), festival winners, notable studios/directors/cast, trending titles, newly streaming (release-date recency plus r/movieleaks tracking), cult classics, true stories, and Metacritic Must-See. Priority order is fully configurable and any sash can be disabled. Optional Badge Style render with adjustable X/Y position.
 
-- **Quality badges** - five display modes: Quality Notch (vertical tier-coloured accent pill), Quality + Age Rating (age numeral tinted by 4K/Remux/HDR tier), Badge Row (PNG icons for 4K, 1080p, Remux, Web, DV, HDR10+, HDR10), Age Rating Only, or hidden. Sourced from either an AIOStreams integration or any Stremio stream addon (Torrentio, Comet, etc.) and fetched in the background on first request.
+- **Quality badges** - six display modes: Quality Notch (vertical tier-coloured accent pill), Quality + Age Rating (age numeral tinted by 4K/Remux/HDR tier), Badge Row (PNG icons for 4K, 1080p, Remux, Web, DV, HDR10+, HDR10), Combined Text Badge (compact "4K REMUX · DV" label), Age Rating Only, or hidden. A minimum quality threshold (`badge_min_score`) can suppress the badge when stream quality falls below a configurable bar. Sourced from either an AIOStreams integration or any Stremio stream addon (Torrentio, Comet, etc.) and fetched in the background on first request.
 
 - **Title logos** - TMDB logos composited over the poster with configurable size and position. Language preference supports requested → original, original → requested, requested → text, and native-if-original → English → original modes before the language-neutral and Metahub fallbacks. This preserves native-language branding for native content while allowing English branding for foreign titles. Optional Textless toggle skips the logo entirely for clients that render the title separately.
 
 - **Art fallback chain** - when a title has no textless poster on TMDB the landscape backdrop is cropped to portrait using face and visual-saliency detection; when no poster art exists at all, an atmospheric genre background (a starfield for Sci-Fi, blood drips for Horror, a dusty sunset for Western, …) is used with the title text and a genre mascot. Backgrounds live in style folders under `static/genre_bg/` — regenerate the minimal set with `python genre_backgrounds.py`, or replace `static/genre_bg/<style>/<Genre>.png` with your own 500×750 PNG. Preview the full set in the configurator (Logo section → **Preview fallback art**) or at `/debug/fallback-gallery`.
 
-- **Web configurator** - browser-based UI to tune every parameter and generate a ready-to-paste URL template. Per-section info modals, URL import (paste any /poster URL to hydrate every control), persistent settings via localStorage, and a mobile-optimised expanded preview.
+- **Web configurator** - browser-based UI to tune every parameter and generate a ready-to-paste URL template. Tabbed layout covering Core, Rating, Logo, Sash, Quality, and Weights. Per-section info modals, URL import (paste any `/poster` URL to hydrate every control), persistent settings, a preset gallery with ready-made styles, light/dark mode toggle, and a mobile-optimised expanded preview.
+
+- **Plex and Jellyfin sync** - companion scripts (`plex_sync.py` / `jellyfin_sync.py`) that read your media library, derive quality tokens from each title's actual file metadata, and push PostersPlus-generated posters back as library covers. Includes an `--inspect` mode for auditing token derivation without writing anything.
 
 - **Composite poster cache** - fully rendered posters are cached by config hash and served directly on repeat requests, with configurable TTL and max-entry cap.
 
@@ -59,7 +61,7 @@ Non self hosters can [visit the public instance.](https://postersplus.elfhosted.
 
 ## Quick Start
 
-> **HTTPS or AIOMetadata's proxy opton is required for production use.**
+> **HTTPS or AIOMetadata's proxy option is required for production use.**
 > If going HTTPS route ensure the access_key env is set to protect your instance
 > Good reverse proxy choices are [Traefik](https://traefik.io/) which has great support from Viren's templates or [Caddy](https://caddyserver.com/) which is very simple.
 > If going for AIOMetadata's proxy you don't expose PostersPlus to the internet. Use http://postersplus:8000 in the URL instead of a domain to have them communicate via Docker's internal network. The proxy route is slightly slower but maximizes security.
@@ -165,6 +167,62 @@ edits TMDB automatically; delete it at any time to start a fresh review list.
 
 ---
 
+## Plex and Jellyfin Sync
+
+`plex_sync.py` and `jellyfin_sync.py` are companion scripts that read your media library, derive quality tokens from each title's own media-file metadata, and push PostersPlus-generated posters back as library covers. This keeps your Plex or Jellyfin art consistent with the same quality-badge logic used by the Stremio-facing poster endpoint — without relying on AIOStreams or a scraper addon for quality data.
+
+### Requirements
+
+```bash
+# Plex
+pip install -r requirements-plex.txt
+
+# Jellyfin  (httpx only — likely already installed)
+pip install -r requirements-jellyfin.txt
+```
+
+### Configuration
+
+Set the following environment variables before running, or edit the `_DEFAULT` constants near the top of each script:
+
+**Plex**
+
+| Variable | Description |
+|---|---|
+| `PLEX_BASE_URL` | Base URL of your Plex server, e.g. `http://192.168.1.50:32400` |
+| `PLEX_TOKEN` | Your Plex auth token (sign in at plex.tv → Account → XML → `X-Plex-Token`) |
+| `POSTERSPLUS_URL` | Full PostersPlus URL template including your preferred query parameters |
+
+**Jellyfin**
+
+| Variable | Description |
+|---|---|
+| `JELLYFIN_BASE_URL` | Base URL of your Jellyfin server, e.g. `http://192.168.1.50:8096` |
+| `JELLYFIN_API_KEY` | API key from Jellyfin Dashboard → Advanced → API Keys |
+| `POSTERSPLUS_URL` | Full PostersPlus URL template including your preferred query parameters |
+
+The `POSTERSPLUS_URL` value should be the full URL template you'd normally give AIOMetadata — copy it straight from the configurator's output box, replacing the `{tmdb_id}`, `{imdb_id}`, and `{type}` placeholders. Both scripts fill these in automatically from library metadata.
+
+### Usage
+
+Run with `--inspect` first. It logs every library title with the quality tokens that would be derived from its media streams, without writing any posters:
+
+```bash
+python plex_sync.py --inspect
+python jellyfin_sync.py --inspect
+```
+
+Once the output looks correct, run without the flag to fetch and push posters:
+
+```bash
+python plex_sync.py
+python jellyfin_sync.py
+```
+
+Both scripts process Movies and TV Shows. TV quality tokens are derived from a representative episode selected by watch progress, air date, and episode count. Titles where no quality can be determined — unmatched files, virtual library entries from stream plugins — produce no quality badge and are skipped without error.
+
+---
+
 ## URL Structure
 
 Posters are served at `/poster` with parameters controlling every aspect of rendering:
@@ -208,7 +266,7 @@ Sashes display contextual metadata about a title - awards, festival recognition,
 | True Story | Based on a true story |
 | Short / Mini / Binge | Short film, miniseries, or bingeable series |
 
-Sash priority order is configurable in the web configurator via drag-and-drop. The Primary Client selector sets recommended edge insets: Stremio TV/Nuvio use `0` for both bar and notch; Stremio Desktop/Web use `0.007` for the bar and `0.004` for the notch. Both sliders remain manually adjustable, and loading a preset preserves them. Existing URLs can override the notch with `sash_badge_inset` and the bar with `bar_bottom_inset`. Individual sashes can be disabled entirely with the ✕ button - disabled sashes are serialised as `-slot_name` in the URL (e.g. `&sash_priority=wins,cast,-trending`).
+Sash priority order is configurable in the web configurator via drag-and-drop. The Primary Client selector sets recommended edge insets: Stremio TV, Nuvio, Plex, and Jellyfin use `0` for both bar and notch; Stremio Desktop/Web use `0.007` for the bar and `0.004` for the notch. Both sliders remain manually adjustable, and loading a preset preserves them. Existing URLs can override the notch with `sash_badge_inset` and the bar with `bar_bottom_inset`. Individual sashes can be disabled entirely with the ✕ button - disabled sashes are serialised as `-slot_name` in the URL (e.g. `&sash_priority=wins,cast,-trending`).
 
 ### Customising Directors, Studios, and Cast
 

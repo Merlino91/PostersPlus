@@ -487,7 +487,7 @@ async def _background_quality_fetch(
         _quality_bg_inflight.discard(imdb_id)
 
 # Local imports
-from age_badge import draw_quality_age_badge, draw_tier_bar
+from age_badge import draw_quality_age_badge, draw_tier_bar, _score_points
 from awards import sample_frosted_notch_rgb, sample_frosted_sash_rgb
 from ratings import sample_frosted_bar_rgb
 from awards import FETCH_FAILED, _RateLimited, draw_award_badge, draw_award_sash, parse_mdblist_awards, _STAR_WIN_AWARDS
@@ -687,10 +687,12 @@ class RequestConfig:
     logo_max_h_ratio:  float = field(default_factory=lambda: _cfg.LOGO_MAX_H_RATIO)
     logo_bottom_ratio: float = field(default_factory=lambda: _cfg.LOGO_BOTTOM_RATIO)
 
-    badge_height:    int   = field(default_factory=lambda: _cfg.BADGE_HEIGHT)
-    badge_gap:       int   = field(default_factory=lambda: _cfg.BADGE_GAP)
-    badge_anchor_x:  float = field(default_factory=lambda: _cfg.BADGE_ANCHOR_X_RATIO)
-    badge_anchor_y:  float = field(default_factory=lambda: _cfg.BADGE_ANCHOR_Y_RATIO)
+    badge_height:            int   = field(default_factory=lambda: _cfg.BADGE_HEIGHT)
+    badge_gap:               int   = field(default_factory=lambda: _cfg.BADGE_GAP)
+    badge_anchor_x:          float = field(default_factory=lambda: _cfg.BADGE_ANCHOR_X_RATIO)
+    badge_anchor_y:          float = field(default_factory=lambda: _cfg.BADGE_ANCHOR_Y_RATIO)
+    badge_min_score:          int  = 2
+    combined_badge_stacked:   bool = False
 
     movie_weights: dict | None = None
     tv_weights:    dict | None = None
@@ -864,7 +866,7 @@ def build_request_config(params: dict) -> RequestConfig:
     cfg.wait_for_quality        = _b("wait_for_quality",        cfg.wait_for_quality)
     cfg.greyscale_no_quality    = _b("greyscale_no_quality",    cfg.greyscale_no_quality)
     cfg.score_color_mode        = _i("score_color_mode",       cfg.score_color_mode,       0,   2)
-    cfg.badge_display_mode      = _i("badge_display_mode",     cfg.badge_display_mode,     0,   4)
+    cfg.badge_display_mode      = _i("badge_display_mode",     cfg.badge_display_mode,     0,   5)
     cfg.rating_display_mode     = _i("rating_display_mode",    cfg.rating_display_mode,    0,   4)
 
     if "show_quality_badges" in params and "badge_display_mode" not in params:
@@ -913,10 +915,14 @@ def build_request_config(params: dict) -> RequestConfig:
 
     # badge_height in pixels — generous enough to cover any reasonable customisation
     # but well below the size that would cost real memory on resize.
-    cfg.badge_height   = _i("badge_height",   cfg.badge_height,   1,   200)
-    cfg.badge_gap      = _i("badge_gap",      cfg.badge_gap,      0,   100)
-    cfg.badge_anchor_x = _f("badge_anchor_x", cfg.badge_anchor_x, 0.0, 1.0)
-    cfg.badge_anchor_y = _f("badge_anchor_y", cfg.badge_anchor_y, 0.0, 1.0)
+    cfg.badge_height             = _i("badge_height",             cfg.badge_height,             1,   200)
+    cfg.badge_gap                = _i("badge_gap",                cfg.badge_gap,                0,   100)
+    cfg.badge_anchor_x           = _f("badge_anchor_x",           cfg.badge_anchor_x,           0.0, 1.0)
+    cfg.badge_anchor_y           = _f("badge_anchor_y",           cfg.badge_anchor_y,           0.0, 1.0)
+    cfg.badge_min_score      = _i("badge_min_score",
+                                  _i("combined_badge_min_score", cfg.badge_min_score, 2, 6),
+                                  2, 6)
+    cfg.combined_badge_stacked   = _b("combined_badge_stacked",   cfg.combined_badge_stacked)
 
     all_sources = list(_cfg.MOVIE_WEIGHTS.keys())
     cfg.movie_weights = _parse_weights(params.get("movie_weights"), all_sources)
@@ -1089,6 +1095,107 @@ def _make_fallback_canvas(genre_ids: list[int] | None = None) -> Image.Image:
     return Image.fromarray(arr, "RGBA")
 
 
+def _draw_combined_text_badge(
+    image: Image.Image,
+    tokens: list[str],
+    *,
+    x: int,
+    y: int,
+    font_size: int,
+    min_score: int = 2,
+    stacked: bool = False,
+) -> None:
+    """Minimalist quality badge: Resolution [sep] Visual Tag
+
+    Horizontal layout: "4K  |  HDR"  — vertical pip coloured by source.
+    Stacked layout:    "4K / HDR"    — horizontal rule coloured by source,
+                       stacked like a division formula (for tight notch space).
+
+    The separator colour encodes the source — gold for Remux, silver for Web.
+    Nothing is drawn if resolution or source tokens are absent, or if the
+    combined quality score is below *min_score*.
+    """
+    token_set = set(tokens)
+
+    if tokens and _score_points(tokens) < min_score:
+        return
+
+    if "4K" in token_set:
+        res = "4K"
+    elif "1080P" in token_set:
+        res = "HD"
+    else:
+        return
+
+    if "REMUX" in token_set:
+        sep_color = (255, 210,  60)   # gold
+    elif "WEBDL" in token_set:
+        sep_color = (192, 192, 200)   # silver
+    else:
+        return
+
+    if "DV" in token_set:
+        fmt = "DV"
+    elif "HDR10+" in token_set:
+        fmt = "HDR+"
+    elif "HDR10" in token_set:
+        fmt = "HDR"
+    else:
+        fmt = "SDR"
+
+    try:
+        font = ImageFont.truetype(os.path.join(_FONTS_DIR, "Inter-Bold.ttf"), font_size)
+    except IOError:
+        font = ImageFont.load_default()
+
+    draw = ImageDraw.Draw(image)
+    ink  = (235, 235, 235, 255)
+
+    if stacked:
+        # Use textbbox so spacing is based on actual rendered glyph bounds,
+        # not the full em-square (which includes invisible descender space and
+        # would pin the line visually against the resolution text).
+        b_res   = draw.textbbox((0, 0), res, font=font)
+        b_fmt   = draw.textbbox((0, 0), fmt, font=font)
+        w_res   = b_res[2] - b_res[0]
+        w_fmt   = b_fmt[2] - b_fmt[0]
+        h_res   = b_res[3] - b_res[1]   # actual glyph height, no dead space
+        total_w = max(w_res, w_fmt)
+        line_h  = max(2, font_size // 12)
+        v_gap   = max(4, font_size // 5)
+
+        # Resolution — draw so its visual top sits at y
+        res_x = x + (total_w - w_res) // 2 - b_res[0]
+        res_y = y - b_res[1]
+        draw.text((res_x, res_y), res, font=font, fill=ink)
+
+        # Horizontal rule — v_gap below the actual glyph bottom
+        ly = y + h_res + v_gap
+        draw.rounded_rectangle(
+            [x, ly, x + total_w, ly + line_h],
+            radius=line_h // 2,
+            fill=sep_color,
+        )
+
+        # Visual tag — v_gap below the rule, aligned to its own visual top
+        fmt_x = x + (total_w - w_fmt) // 2 - b_fmt[0]
+        fmt_y = ly + line_h + v_gap - b_fmt[1]
+        draw.text((fmt_x, fmt_y), fmt, font=font, fill=ink)
+
+    else:
+        pip_gap = int(font_size * 0.55)
+        pip_w   = max(3, int(font_size * 0.15))
+        pip_h   = int(font_size * 1.3)
+        pip_cy  = y + round(font_size * 0.60)
+
+        cx = x
+        draw.text((cx, y), res, font=font, fill=ink)
+        cx += round(draw.textlength(res, font=font)) + pip_gap
+        _draw_solid_pip(image, x=cx, y_center=pip_cy, width=pip_w, height=pip_h, color=sep_color)
+        cx += pip_w + pip_gap
+        draw.text((cx, y), fmt, font=font, fill=ink)
+
+
 def build_poster(
     image: Image.Image,
     score: int | str,
@@ -1179,10 +1286,17 @@ def build_poster(
     tokens = quality_tokens or []
 
     if mode == 1:
+        # If quality is below the threshold, strip the quality tokens so the
+        # badge renders silver/default rather than a misleadingly coloured tier.
+        _tokens_1 = (
+            tokens
+            if (not tokens or _score_points(tokens) >= cfg.badge_min_score)
+            else []
+        )
         draw_quality_age_badge(
             image,
             age_rating,
-            tokens,
+            _tokens_1,
             anchor_x_ratio=cfg.badge_anchor_x,
             anchor_y_ratio=cfg.badge_anchor_y,
             badge_height=cfg.badge_height,
@@ -1202,19 +1316,20 @@ def build_poster(
 
     elif mode == 4:
         # Accent bar — small vertical pill in tier colour, no text
-        draw_tier_bar(
-            image,
-            tokens,
-            anchor_x_ratio=cfg.badge_anchor_x,
-            anchor_y_ratio=cfg.badge_anchor_y,
-            bar_height=cfg.badge_height,
-        )
+        if not tokens or _score_points(tokens) >= cfg.badge_min_score:
+            draw_tier_bar(
+                image,
+                tokens,
+                anchor_x_ratio=cfg.badge_anchor_x,
+                anchor_y_ratio=cfg.badge_anchor_y,
+                bar_height=cfg.badge_height,
+            )
 
     elif mode == 2:
         allowed_tokens  = {"4K", "1080P", "REMUX", "WEBDL", "DV", "HDR10+", "HDR10"}
         filtered_tokens = [t for t in tokens if t in allowed_tokens]
 
-        if filtered_tokens:
+        if filtered_tokens and _score_points(tokens) >= cfg.badge_min_score:
             bx = int(width  * cfg.badge_anchor_x)
             by = int(height * cfg.badge_anchor_y)
 
@@ -1229,6 +1344,16 @@ def build_poster(
                 badge_height=cfg.badge_height,
                 badge_gap=cfg.badge_gap,
             )
+
+    elif mode == 5:
+        _draw_combined_text_badge(
+            image, tokens,
+            x=int(width  * cfg.badge_anchor_x),
+            y=int(height * cfg.badge_anchor_y),
+            font_size=cfg.badge_height,
+            min_score=cfg.badge_min_score,
+            stacked=cfg.combined_badge_stacked,
+        )
 
     # --- Logo / fallback title ---
     if logo:
@@ -2453,7 +2578,7 @@ async def get_poster(
     )
     _quality_cooldown_active = _has_quality_source and _quality_backoff_remaining() > 0
     quality_needs_fetch = (
-        rcfg.badge_display_mode in (1, 2, 4)
+        rcfg.badge_display_mode in (1, 2, 4, 5)
         and not quality
         and cached_tokens is None
         and _has_quality_source

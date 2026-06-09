@@ -28,7 +28,7 @@ class ClientInsetProfileTests(unittest.TestCase):
         html = Path("configurator.html").read_text(encoding="utf-8")
 
         self.assertIn(
-            '<option value="stremio_tv_nuvio" selected>Stremio TV, Nuvio</option>', html
+            '<option value="stremio_tv_nuvio" selected>Stremio TV, Nuvio, Plex, Jellyfin</option>', html
         )
         self.assertIn(
             '<option value="stremio_desktop_web">Stremio Desktop/Web</option>',

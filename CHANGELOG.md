@@ -42,8 +42,11 @@ the maintenance fixes published in the v1.0.x releases.
 - Added greyscale treatments for Cinema and Production releases.
 - Added options to keep release artwork in color when stream quality is known,
   or use greyscale when no quality is available.
-- Added five quality display choices covering the quality notch, quality with
-  age rating, badge row, age rating only, and hidden output.
+- Added six quality display choices covering the quality notch, quality with
+  age rating, badge row, combined text badge, age rating only, and hidden output.
+- Added a minimum quality threshold (`badge_min_score`) to all quality display
+  modes. When set, the badge is suppressed for streams whose quality score falls
+  below the configured value; no-data states are always rendered regardless.
 - Added age-rating badges and tracking.
 - Improved score bars, badge alignment, spacing, gradients, metadata placement,
   and long-title handling across layouts.
@@ -132,9 +135,37 @@ the maintenance fixes published in the v1.0.x releases.
 - Added expanded preview and crop simulation.
 - Added controls for original artwork, poster language behavior, logo sizing,
   sash styles, Frosted Bar, age ratings, release colors, and the IMDb fallback.
+- Added a light/dark mode toggle to the header. Preference persists in the
+  browser across sessions.
 - Improved responsive and mobile layouts.
 - Improved generated URL handling when the server is accessed over a LAN.
 - Added a composite-cache toggle for testing and troubleshooting.
+- Updated default values: top vignette defaults to Medium (was High),
+  minimalist rating horizontal position defaults to 0.065 (was 0.05), match
+  notch color for Frosted Bar modes is enabled by default, diagonal sash height
+  defaults to 0.135 (was 0.12), diagonal sash corner distance defaults to 1.20
+  (was 1.15), minimum quality threshold defaults to score 5 for Badge Row /
+  Quality Notch / Combined Text Badge modes and score 2 for Quality Age Rating
+  mode, and IMDb fallback is enabled by default.
+- Updated preset gallery: all presets now include the IMDb fallback setting.
+- Updated Primary Client selector label to list Plex and Jellyfin alongside
+  Stremio TV and Nuvio, reflecting the shared flush-edge inset profile.
+
+### Plex and Jellyfin Sync
+
+- Added `plex_sync.py`, a companion script that reads a Plex library, derives
+  quality tokens from each title's actual media file metadata, and pushes
+  PostersPlus-generated posters back as library covers.
+- Added `jellyfin_sync.py`, a companion script with the same workflow for
+  Jellyfin libraries, using the Jellyfin REST API directly without a
+  third-party SDK.
+- Both scripts detect resolution, HDR format, audio codec, and release type
+  (Remux, WEB-DL) from file paths and stream display titles.
+- Both scripts include an `--inspect` mode that logs derived quality tokens for
+  every library title without writing any posters, making it easy to audit
+  token derivation against known titles before a full sync.
+- TV show quality is derived from a representative episode selected by watch
+  progress, air date, and episode count.
 
 ### Localization
 
@@ -174,6 +205,9 @@ the maintenance fixes published in the v1.0.x releases.
 - Fixed sash and quality visibility interactions.
 - Fixed configurator spacing, slider, dropdown, preview, and mobile layout
   issues.
+- Fixed backdrop crop centering on false-positive face detections, where a
+  large low-confidence background blob could outrank a smaller, genuinely
+  detected face on bounding-box size alone.
 - Fixed Docker workflow races that could publish an older image as `latest`.
 
 ### Upgrade Notes
@@ -219,6 +253,8 @@ BAKE_PPOCR_MODEL=true
 - Existing v1.0 poster URLs remain supported.
 - Legacy sash and quality parameters continue to map to their current
   equivalents.
+- The `combined_badge_min_score` URL parameter is accepted as a fallback for
+  `badge_min_score` so existing Combined Text Badge URLs continue to work.
 - Compact mode, which appeared during v1.1 development, was replaced by Frosted
   Bar before release.
 - Cache schema migrations run automatically.

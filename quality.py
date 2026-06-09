@@ -439,6 +439,132 @@ def get_resized_badge(token: str, height: int) -> Image.Image | None:
 
 
 # ---------------------------------------------------------------------------
+# Alpha-correct resize helper
+# ---------------------------------------------------------------------------
+
+def _resize_premultiplied(img: Image.Image, size: tuple[int, int]) -> Image.Image:
+    """Resize an RGBA image with premultiplied-alpha compositing and edge sharpening.
+
+    Pillow's LANCZOS filter averages pixels without accounting for alpha, so
+    fully-transparent edge pixels bleed their RGB values into the result,
+    producing coloured fringes on anti-aliased edges.  Premultiplying before
+    the resize and un-premultiplying after eliminates this artefact.
+
+    A mild unsharp mask is applied after resize to recover crispness lost
+    during heavy downscaling (the combined badges go from ~112 → 40-60 px).
+    The sharpening is applied only to the visible (non-transparent) region so
+    it doesn't introduce ringing at the alpha boundary.
+    """
+    import numpy as np
+    from PIL import ImageFilter
+    arr = np.array(img, dtype=np.float32)          # H×W×4, values 0–255
+    alpha = arr[..., 3:4] / 255.0                  # normalised alpha, H×W×1
+    arr[..., :3] *= alpha                           # premultiply RGB
+    pre = Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8), "RGBA")
+    pre = pre.resize(size, Image.LANCZOS)
+    arr2 = np.array(pre, dtype=np.float32)
+    alpha2 = arr2[..., 3:4] / 255.0
+    nonzero = alpha2[..., 0] > 0
+    arr2[nonzero, :3] /= alpha2[nonzero]           # un-premultiply where visible
+    result = Image.fromarray(np.clip(arr2, 0, 255).astype(np.uint8), "RGBA")
+
+    # Sharpen only the RGB channels; leave alpha intact to avoid edge ringing.
+    r, g, b, a = result.split()
+    rgb = Image.merge("RGB", (r, g, b))
+    rgb = rgb.filter(ImageFilter.UnsharpMask(radius=0.6, percent=120, threshold=2))
+    sr, sg, sb = rgb.split()
+    return Image.merge("RGBA", (sr, sg, sb, a))
+
+
+# ---------------------------------------------------------------------------
+# Combined badge (badges/combined/) — display mode 5
+# ---------------------------------------------------------------------------
+
+# Cache keyed by (res_key, src_key, vis_key, height).
+_COMBINED_CACHE: dict[tuple[str, str, str, int], Image.Image | None] = {}
+
+
+def get_combined_badge(tokens: list[str], height: int) -> Image.Image | None:
+    """Return a single pre-composed badge from badges/combined/ for the given
+    quality token list.
+
+    Resolution (4K / 1080P) and source (REMUX / WEBDL) must both be present;
+    if either is missing the function returns None and nothing is drawn.
+    The visual tag (DV / HDR) is optional and defaults to 'sdr'.
+    """
+    token_set = set(tokens)
+
+    # Resolution
+    if "4K" in token_set:
+        res = "4k"
+    elif "1080P" in token_set:
+        res = "hd"
+    else:
+        return None
+
+    # Source
+    if "REMUX" in token_set:
+        src = "remux"
+    elif "WEBDL" in token_set:
+        src = "web"
+    else:
+        return None
+
+    # Visual tag — absent means SDR
+    if "DV" in token_set:
+        vis = "dv"
+    elif "HDR10+" in token_set or "HDR10" in token_set:
+        vis = "hdr"
+    else:
+        vis = "sdr"
+
+    cache_key = (res, src, vis, height)
+    if cache_key in _COMBINED_CACHE:
+        return _COMBINED_CACHE[cache_key]
+
+    stem = os.path.join(BADGE_DIR, "combined", f"{res}_{src}_{vis}")
+    img: Image.Image | None = None
+
+    svg_path = stem + ".svg"
+    png_path = stem + ".png"
+
+    if os.path.exists(svg_path):
+        # Rasterise the SVG at 2× the target height then downscale with
+        # premultiplied LANCZOS.  Oversampling lets Cairo anti-alias curves
+        # and thin strokes properly before the final downscale, removing the
+        # jagged border edges that appear when rendering directly at small sizes.
+        try:
+            import cairosvg, io
+            oversample = height * 2
+            png_bytes = cairosvg.svg2png(url=svg_path, output_height=oversample)
+            raw = Image.open(io.BytesIO(png_bytes)).convert("RGBA")
+            w_raw, h_raw = raw.size
+            new_w = max(1, round(w_raw * height / h_raw))
+            img = _resize_premultiplied(raw, (new_w, height))
+        except Exception as exc:
+            logger.error(f"Combined badge SVG render failed ({svg_path}): {exc}")
+
+    elif os.path.exists(png_path):
+        # Fall back to PNG with premultiplied resize + sharpening.
+        try:
+            raw = Image.open(png_path).convert("RGBA")
+            bbox = raw.getbbox()
+            if bbox:
+                raw = raw.crop(bbox)
+            w, h = raw.size
+            new_w = max(1, round(w * height / h))
+            img = _resize_premultiplied(raw, (new_w, height))
+        except Exception as exc:
+            logger.error(f"Combined badge PNG load failed ({png_path}): {exc}")
+
+    else:
+        logger.warning(f"Combined badge not found: {stem}.(svg|png)")
+
+    _COMBINED_CACHE[cache_key] = img
+    return img
+
+
+# ---------------------------------------------------------------------------
 # Fallback font (loaded once at module level)
 # ---------------------------------------------------------------------------
 
