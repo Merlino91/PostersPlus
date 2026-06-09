@@ -429,15 +429,15 @@
             <div class="field">
               <label class="field-label">Max Height Ratio</label>
               <div class="range-row">
-                <input type="range" id="cfg-logo-h" min="0.05" max="0.40" step="0.01" value="0.17" oninput="updateRange(this,'rng-lh'); build(); queuePreviewReload()">
-                <span class="range-val" id="rng-lh">0.17</span>
+                <input type="range" id="cfg-logo-h" min="0.05" max="0.40" step="0.01" value="0.25" oninput="updateRange(this,'rng-lh'); build(); queuePreviewReload()">
+                <span class="range-val" id="rng-lh">0.25</span>
               </div>
             </div>
             <div class="field">
               <label class="field-label">Vertical Distance from Bottom</label>
               <div class="range-row">
-                <input type="range" id="cfg-logo-bottom" min="0.05" max="0.60" step="0.01" value="0.28" oninput="updateRange(this,'rng-lb'); build(); queuePreviewReload()">
-                <span class="range-val" id="rng-lb">0.28</span>
+                <input type="range" id="cfg-logo-bottom" min="0.05" max="0.60" step="0.01" value="0.12" oninput="updateRange(this,'rng-lb'); build(); queuePreviewReload()">
+                <span class="range-val" id="rng-lb">0.12</span>
               </div>
             </div>
           </div>
@@ -449,8 +449,8 @@
             <div class="field">
               <label class="field-label">Top Gradient Intensity</label>
               <div class="range-row">
-                <input type="range" id="cfg-grad-top" min="0" max="100" step="1" value="50" oninput="updateRange(this,'rng-grad-top'); build(); queuePreviewReload()">
-                <span class="range-val" id="rng-grad-top">50</span>
+                <input type="range" id="cfg-grad-top" min="0" max="100" step="1" value="30" oninput="updateRange(this,'rng-grad-top'); build(); queuePreviewReload()">
+                <span class="range-val" id="rng-grad-top">30</span>
               </div>
               <div class="toggle-row" style="border:none; padding-top:4px;">
                 <span class="field-hint">Use Dominant Color</span>
@@ -460,8 +460,8 @@
             <div class="field" style="margin-top:14px;">
               <label class="field-label">Bottom Gradient Intensity</label>
               <div class="range-row">
-                <input type="range" id="cfg-grad-bot" min="0" max="100" step="1" value="80" oninput="updateRange(this,'rng-grad-bot'); build(); queuePreviewReload()">
-                <span class="range-val" id="rng-grad-bot">80</span>
+                <input type="range" id="cfg-grad-bot" min="0" max="100" step="1" value="60" oninput="updateRange(this,'rng-grad-bot'); build(); queuePreviewReload()">
+                <span class="range-val" id="rng-grad-bot">60</span>
               </div>
               <div class="toggle-row" style="border:none; padding-top:4px;">
                 <span class="field-hint">Use Dominant Color</span>
@@ -471,8 +471,8 @@
             <div class="field" style="margin-top:14px;">
               <label class="field-label">Frosted Glass Intensity (Blur & Glassmorphism)</label>
               <div class="range-row">
-                <input type="range" id="cfg-glass-int" min="0" max="250" step="1" value="25" oninput="updateRange(this,'rng-glass'); build(); queuePreviewReload()">
-                <span class="range-val" id="rng-glass">25</span>
+                <input type="range" id="cfg-glass-int" min="0" max="250" step="1" value="50" oninput="updateRange(this,'rng-glass'); build(); queuePreviewReload()">
+                <span class="range-val" id="rng-glass">50</span>
               </div>
             </div>
           </div>
@@ -485,17 +485,17 @@
               <label class="field-label">Display Mode</label>
               <select id="cfg-rating-mode" onchange="updateRatingFields(); build(); queuePreviewReload()">
                   <option value="0">Hidden</option>
-                  <option value="1" selected>Score Bar</option>
+                  <option value="1">Score Bar</option>
                   <option value="2">Clean</option>
                   <option value="3">Minimalist</option>
-                  <option value="4">Minimal ITA</option>
+                  <option value="4" selected>Minimal ITA</option>
               </select>
             </div>
             <div class="field" id="rating-font-wrap">
               <label class="field-label">Font Family</label>
               <select id="cfg-font-family" onchange="build(); queuePreviewReload()">
                   <option value="Inter">Inter</option>
-                  <option value="Ubuntu">Ubuntu</option>
+                  <option value="Ubuntu" selected>Ubuntu</option>
                   <option value="Roboto">Roboto</option>
                   <option value="Montserrat">Montserrat</option>
                   <option value="BebasNeue">Bebas Neue</option>
@@ -645,8 +645,8 @@
             <div class="field">
               <label class="field-label">Display Mode</label>
               <select id="cfg-badge-display-mode" onchange="build(); queuePreviewReload()">
-                <option value="0">Hidden</option>
-                <option value="4" selected>Quality Notch</option>
+                <option value="0" selected>Hidden</option>
+                <option value="4">Quality Notch</option>
                 <option value="2">Quality Badge Row</option>
                 <option value="1">Quality Age Rating</option>
                 <option value="3">Age Rating Only</option>
@@ -1203,20 +1203,20 @@ function buildBaseParams({ usePlaceholders = false } = {}) {
 
   const setIf = (key, val, def) => { if (String(val) !== String(def)) params.set(key, val); };
 
-  setIf('rating_display_mode', ni('cfg-rating-mode'), 1);
-  setIf('gradient_top_intensity', vEl('cfg-grad-top'), 50);
-  setIf('gradient_bottom_intensity', vEl('cfg-grad-bot'), 80);
-  setIf('frosted_glass_intensity', vEl('cfg-glass-int'), 25);
+  setIf('rating_display_mode', ni('cfg-rating-mode'), 4);
+  setIf('gradient_top_intensity', vEl('cfg-grad-top'), 30);
+  setIf('gradient_bottom_intensity', vEl('cfg-grad-bot'), 60);
+  setIf('frosted_glass_intensity', vEl('cfg-glass-int'), 50);
   
   setIf('dom_color_top', c('tog-dom-top') ? 'true' : 'false', 'false');
   setIf('dom_color_bot', c('tog-dom-bot') ? 'true' : 'false', 'false');
-  setIf('dom_color_sash', c('tog-dom-sash') ? 'true' : 'false', 'false');
+  setIf('dom_color_sash', c('tog-dom-sash') ? 'true' : 'false', 'true');
 
   setIf('use_original_logo_color', c('tog-logo-color') ? 'true' : 'false', 'false');
-  setIf('text_drop_shadow', c('tog-text-shadow') ? 'true' : 'false', 'false');
-  setIf('text_font_family', vEl('cfg-font-family'), 'Inter');
-  setIf('sash_style', vEl('cfg-sash-style'), 'ribbon');
-  setIf('minimal_pill_scale', n('cfg-pill-scale').toFixed(2), '1.00');
+  setIf('text_drop_shadow', c('tog-text-shadow') ? 'true' : 'false', 'true');
+  setIf('text_font_family', vEl('cfg-font-family'), 'Ubuntu');
+  setIf('sash_style', vEl('cfg-sash-style'), 'minimal_pill');
+  setIf('minimal_pill_scale', n('cfg-pill-scale').toFixed(2), '1.40');
 
   if (ni('cfg-rating-mode') !== 0) {
     setIf('score_color_mode', ni('cfg-score-color-mode'), 2);
@@ -1249,13 +1249,13 @@ function buildBaseParams({ usePlaceholders = false } = {}) {
   setIf('textless', c('tog-textless') ? 'true' : 'false', 'false');
   setIf('logo_language', logoLanguage, 'it');
   setIf('logo_max_w_ratio', n('cfg-logo-w').toFixed(2), '0.84');
-  setIf('logo_max_h_ratio', n('cfg-logo-h').toFixed(2), '0.17');
-  setIf('logo_bottom_ratio', n('cfg-logo-bottom').toFixed(2), '0.28');
+  setIf('logo_max_h_ratio', n('cfg-logo-h').toFixed(2), '0.25');
+  setIf('logo_bottom_ratio', n('cfg-logo-bottom').toFixed(2), '0.12');
 
   setIf('show_award_sash', c('tog-award-sash') ? 'true' : 'false', 'true');
   if (c('tog-award-sash')) {
     const isBadge = (vEl('cfg-sash-style') !== 'ribbon');
-    setIf('sash_badge', isBadge ? 'true' : 'false', 'false');
+    setIf('sash_badge', isBadge ? 'true' : 'false', 'true');
     if (isBadge) {
       setIf('sash_badge_x', n('cfg-sash-badge-x').toFixed(2), '0.62');
       setIf('sash_badge_y', n('cfg-sash-badge-y').toFixed(2), '0.04');
