@@ -1,8 +1,6 @@
 # Changelog
 
-## v1.1.0 - Unreleased
-
-Status: available on the `dev` branch for extended testing.
+## v1.1.0 - 2026-06-09
 
 This release is compared with the original `v1.0.0` release. It also includes
 the maintenance fixes published in the v1.0.x releases.
