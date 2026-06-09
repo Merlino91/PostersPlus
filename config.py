@@ -144,8 +144,9 @@ SCORE_NORMALISERS = {
 # NUOVO: Ampliata la priorità dei Sash con tag dinamici sulle release
 SASH_PRIORITY: list[str] = [
     "next_episode",  # Es: "Prossimo Ep: 24 Ott" (Molto utile averlo in cima)
-    "finale",        # Es: "Stagione Finale"
-    "upcoming",      # Es: "Prossime Uscite"
+    "new_release",
+    "upcoming",
+    "canceled",
     "wins",
     "gg_wins",
     "festival",
@@ -154,13 +155,13 @@ SASH_PRIORITY: list[str] = [
     "studio",
     "director",
     "cast",
+    "structural",
     "trending",
     "cult",
     "foreign",
-    "new_release",
     "metacritic",
     "true_story",
-    "structural",
+
 ]
 
 # V2 Features Defaults
