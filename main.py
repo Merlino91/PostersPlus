@@ -671,7 +671,28 @@ async def get_poster(
                 imdb_id = val
             elif val.isdigit(): 
                 tmdb_id = val
-
+# --- 4.5. PONTE IMDB -> TMDB (Bypass per Watchly / RPDB) ---
+    # Se un servizio come Watchly ha inviato solo l'IMDB ID (senza TMDB), ce lo cerchiamo da soli!
+    if not tmdb_id and imdb_id:
+        effective_tmdb_key = _resolve_tmdb_key(tmdb_key)
+        if effective_tmdb_key and _HTTP_CLIENT:
+            try:
+                find_resp = await _HTTP_CLIENT.get(
+                    f"https://api.themoviedb.org/3/find/{imdb_id}",
+                    params={"api_key": effective_tmdb_key, "external_source": "imdb_id"}
+                )
+                if find_resp.status_code == 200:
+                    find_data = find_resp.json()
+                    # Capisce in automatico se si tratta di film o serie TV
+                    if find_data.get("movie_results"):
+                        tmdb_id = str(find_data["movie_results"][0]["id"])
+                        type = "movie"
+                    elif find_data.get("tv_results"):
+                        tmdb_id = str(find_data["tv_results"][0]["id"])
+                        type = "tv"
+            except Exception as e:
+                logger.error(f"Failed to resolve IMDB ID {imdb_id} to TMDB ID: {e}")
+    
     # 5. Verifica e validazione finale
     if not tmdb_id:
         # Se non c'è tmdb_id o la mappatura anime è fallita, abortiamo la richiesta
