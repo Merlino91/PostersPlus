@@ -671,6 +671,7 @@ async def get_poster(
                 imdb_id = val
             elif val.isdigit(): 
                 tmdb_id = val
+                
 # --- 4.5. PONTE IMDB -> TMDB (Bypass per Watchly / RPDB) ---
     # Se un servizio come Watchly ha inviato solo l'IMDB ID (senza TMDB), ce lo cerchiamo da soli!
     if not tmdb_id and imdb_id:
@@ -683,12 +684,20 @@ async def get_poster(
                 )
                 if find_resp.status_code == 200:
                     find_data = find_resp.json()
-                    # Capisce in automatico se si tratta di film o serie TV
+                    # Capisce in automatico se si tratta di film, serie TV, episodio o stagione
                     if find_data.get("movie_results"):
                         tmdb_id = str(find_data["movie_results"][0]["id"])
                         type = "movie"
                     elif find_data.get("tv_results"):
                         tmdb_id = str(find_data["tv_results"][0]["id"])
+                        type = "tv"
+                    elif find_data.get("tv_episode_results"):
+                        # Se è un episodio, estraiamo l'ID della serie madre (show_id)
+                        tmdb_id = str(find_data["tv_episode_results"][0]["show_id"])
+                        type = "tv"
+                    elif find_data.get("tv_season_results"):
+                        # Se è una stagione, estraiamo l'ID della serie madre (show_id)
+                        tmdb_id = str(find_data["tv_season_results"][0]["show_id"])
                         type = "tv"
             except Exception as e:
                 logger.error(f"Failed to resolve IMDB ID {imdb_id} to TMDB ID: {e}")
