@@ -464,8 +464,6 @@ def extract_discovery_meta(
     meta.is_tv = is_tv
 
     if not is_tv:
-
-    if not is_tv:
         runtime = tmdb_data.get("runtime") or 0
         meta.is_short_film = 0 < runtime < 40
     else:
