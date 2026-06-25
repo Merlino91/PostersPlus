@@ -283,6 +283,9 @@ _SASH_TYPES: dict[str, str] = {
     "true_story":      "info",      # teal
     "structural":      "info",      # teal
     "release_status":  "alert",     # red — Physical / Streaming / Cinema / Production
+    "next_episode":    "next_episode",  
+    "canceled":        "nom",           
+    "upcoming":        "trending",  
 }
 
 NEW_RELEASE_DAYS = 14
@@ -345,6 +348,12 @@ class DiscoveryMeta:
     # Movies: "Physical" | "Streaming" | "Cinema" | "Production"
     # TV:     "Returning" | "Ended" | "Cancelled" | "Production"
     release_status: str | None = None
+    
+    # --- Custom tags ---
+    status: str | None = None
+    next_episode_to_air: str | None = None
+    release_date: str | None = None
+    is_tv: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -382,6 +391,9 @@ def extract_discovery_meta(
         award_noms=award_noms,
         trending_rank=trending_rank,
         original_language=tmdb_data.get("original_language"),
+        status=tmdb_data.get("status"),
+        next_episode_to_air=tmdb_data.get("next_episode_to_air"),
+        release_date=release_date,
     )
 
     # Build keyword name set once — reused for festival detection and the
@@ -449,6 +461,9 @@ def extract_discovery_meta(
 
     # --- Structural ---
     is_tv = media_type in ("tv", "series")
+    meta.is_tv = is_tv
+
+    if not is_tv:
 
     if not is_tv:
         runtime = tmdb_data.get("runtime") or 0
@@ -492,9 +507,48 @@ def pick_sash(
             return result, sash_type
     return None
 
+MONTHS_IT = ["Gen", "Feb", "Mar", "Apr", "Mag", "Giu", "Lug", "Ago", "Set", "Ott", "Nov", "Dic"]
+
+def _format_date_it(date_str: str) -> str:
+    try:
+        d = datetime.strptime(date_str, "%Y-%m-%d").date()
+        art = "l'" if d.day in (1, 8, 11) else "il "
+        return f"{art}{d.day} {MONTHS_IT[d.month - 1]}"
+    except ValueError: 
+        return date_str
+
+def _is_future(date_str: str) -> bool:
+    try: 
+        return datetime.strptime(date_str, "%Y-%m-%d").date() > date.today()
+    except ValueError: 
+        return False
 
 def _evaluate_slot(slot: str, meta: DiscoveryMeta) -> str | None:
     """Return a label string if this slot has a match, else None."""
+
+    if slot == "next_episode":
+        if meta.next_episode_to_air and _is_future(meta.next_episode_to_air):
+            return f"Prossimo Ep: {_format_date_it(meta.next_episode_to_air)}"
+        return None
+        
+    if slot == "upcoming":
+        if meta.next_episode_to_air and _is_future(meta.next_episode_to_air):
+            return f"Nuovo Ep. {_format_date_it(meta.next_episode_to_air)}"
+            
+        if meta.status in ("In Production", "Planned", "Post Production") or (meta.release_date and _is_future(meta.release_date)):
+            if meta.release_date and _is_future(meta.release_date):
+                try:
+                    d = datetime.strptime(meta.release_date, "%Y-%m-%d").date()
+                    return f"Prossimamente a {MONTHS_IT[d.month - 1]}"
+                except ValueError:
+                    return "Prossimamente"
+            return "Prossimamente"
+        return None
+        
+    if slot == "canceled":
+        if meta.status == "Canceled":
+            return "Serie Cancellata"
+        return None
 
     if slot == "wins":
         # Oscar Best Picture wins and Emmy Outstanding wins only.
@@ -550,11 +604,8 @@ def _evaluate_slot(slot: str, meta: DiscoveryMeta) -> str | None:
         return f"#{meta.trending_rank} Today" if meta.trending_rank else None
 
     if slot in ("new_release", "digital_release"):
-        # Merged: fires on release-date recency OR r/movieleaks confirmation.
-        # "digital_release" is kept as a legacy alias so old sash_priority params
-        # still work — both slots check the same combined condition.
-        if meta.is_new_release or meta.is_digital_release:
-            return "New"
+        if meta.is_new_release or meta.is_digital_release: 
+            return "Nuovi Episodi" if meta.is_tv else "Nuova Uscita"
         return None
 
     if slot == "metacritic":
@@ -574,7 +625,7 @@ def _evaluate_slot(slot: str, meta: DiscoveryMeta) -> str | None:
         return None
 
     if slot == "release_status":
-        return meta.release_status  # already a display string or None
+        return None  # Disabilitato per evitare i tag "In corso", "Stagione finale", ecc.
 
     return None
 
@@ -584,6 +635,9 @@ def _evaluate_slot(slot: str, meta: DiscoveryMeta) -> str | None:
 # ---------------------------------------------------------------------------
 
 ALL_PRIORITY_SLOTS: list[str] = [
+    "next_episode",
+    "upcoming",
+    "canceled",
     "wins",
     "gg_wins",
     "festival",
