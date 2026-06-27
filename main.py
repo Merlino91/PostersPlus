@@ -1279,7 +1279,7 @@ def build_poster(
         eased_top = ((1 - t_top) * top_max_alpha).astype(np.uint8)
         top_array = np.broadcast_to(eased_top[:, np.newaxis], (top_height, width)).copy()
         top_overlay = Image.fromarray(top_array, mode="L")
-        top_tinted = Image.new("RGBA", (width, top_height), (*top_color[:3], 0))
+        top_tinted = Image.new("RGBA", (width, top_height), (int(top_color[0]), int(top_color[1]), int(top_color[2]), 0))
         top_tinted.putalpha(top_overlay)
         image.paste(top_tinted, (0, 0), mask=top_tinted)
 
@@ -1307,7 +1307,7 @@ def build_poster(
         bottom_max_alpha = int((cfg.gradient_bottom_intensity / 100) * 255)
         t_bot = np.linspace(0, 1, bottom_height, dtype=np.float32)
         eased_bot = ((1 - (1 - t_bot) ** 1.2) * bottom_max_alpha).astype(np.uint8)
-        bottom_tinted = Image.new("RGBA", (width, bottom_height), (*bot_color[:3], 0))
+        bottom_tinted = Image.new("RGBA", (width, bottom_height), (int(bot_color[0]), int(bot_color[1]), int(bot_color[2]), 0))
         bottom_tinted.putalpha(Image.fromarray(np.broadcast_to(eased_bot[:, np.newaxis], (bottom_height, width)).copy(), mode="L"))
         image.paste(bottom_tinted, (0, bottom_start), mask=bottom_tinted)
 
