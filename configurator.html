@@ -1860,24 +1860,65 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
               <div class="field-hint"><a href="#" onclick="openFallbackGallery(); return false;">Displayed if no poster can be found.</a>.</div>
             </div>
             <div class="field cfg-sep">
-              <label class="field-label">Top Vignette</label>
-              <select id="cfg-top-gradient" onchange="build(); queuePreviewReload()">
-                <option value="off">Off</option>
-                <option value="low">Low</option>
-                <option value="medium" selected>Medium</option>
-                <option value="high">High</option>
-              </select>
-              <div class="field-hint">The power of the darkening applied to the top.</div>
+              <label class="field-label">Top Gradient Intensity</label>
+              <div class="range-row">
+                <input type="range" id="cfg-grad-top" min="0" max="100" step="1" value="30" oninput="updateRange(this,'rng-grad-top'); build(); queuePreviewReload()">
+                <span class="range-val" id="rng-grad-top">30</span>
+              </div>
+              <div style="margin-top:8px;">
+                  <label class="field-label" style="font-size:10px; opacity:0.8;">Top Color Source</label>
+                  <select id="cfg-grad-top-color" onchange="build(); queuePreviewReload()">
+                    <option value="black" selected>Black (Default)</option>
+                    <option value="local">Local Color (Sky/Top)</option>
+                    <option value="global">Global Dominant Color</option>
+                  </select>
+              </div>
             </div>
-            <div class="field">
-              <label class="field-label">Bottom Vignette</label>
-              <select id="cfg-bottom-gradient" onchange="build(); queuePreviewReload()">
-                <option value="off">Off</option>
-                <option value="low">Low</option>
-                <option value="medium">Medium</option>
-                <option value="high" selected>High</option>
-              </select>
-              <div class="field-hint">Lowering may hurt rating and logo legibility.</div>
+
+            <div class="field cfg-sep">
+              <label class="field-label">Bottom Gradient Intensity</label>
+              <div class="range-row">
+                <input type="range" id="cfg-grad-bot" min="0" max="100" step="1" value="60" oninput="updateRange(this,'rng-grad-bot'); build(); queuePreviewReload()">
+                <span class="range-val" id="rng-grad-bot">60</span>
+              </div>
+              <div style="margin-top:8px;">
+                  <label class="field-label" style="font-size:10px; opacity:0.8;">Bottom Color Source</label>
+                  <select id="cfg-grad-bot-color" onchange="build(); queuePreviewReload()">
+                    <option value="black" selected>Black (Default)</option>
+                    <option value="local">Local Color (Ground/Bot)</option>
+                    <option value="global">Global Dominant Color</option>
+                  </select>
+              </div>
+            </div>
+
+            <div class="field cfg-sep">
+              <label class="field-label">Frosted Glass Intensity (Blur)</label>
+              <div class="range-row">
+                <input type="range" id="cfg-glass-int" min="0" max="250" step="1" value="50" oninput="updateRange(this,'rng-glass'); build(); queuePreviewReload()">
+                <span class="range-val" id="rng-glass">50</span>
+              </div>
+            </div>
+            
+            <div class="field cfg-sep" style="margin-bottom:0;">
+                <label class="field-label">UI Enhancement (Your Custom Settings)</label>
+                <div class="toggle-row">
+                  <div>
+                    <div class="toggle-label">Use Global Color for Notch & Bar</div>
+                  </div>
+                  <label class="toggle-switch">
+                    <input type="checkbox" id="tog-global-ui" onchange="build(); queuePreviewReload()">
+                    <div class="toggle-track"><div class="toggle-thumb"></div></div>
+                  </label>
+                </div>
+                <div class="toggle-row">
+                  <div>
+                    <div class="toggle-label">Notch Drop Shadow</div>
+                  </div>
+                  <label class="toggle-switch">
+                    <input type="checkbox" id="tog-text-shadow" onchange="build(); queuePreviewReload()">
+                    <div class="toggle-track"><div class="toggle-thumb"></div></div>
+                  </label>
+                </div>
             </div>
           </div>
         </div>
@@ -2602,6 +2643,9 @@ function onPrimaryClientChange({ rebuild = true } = {}) {
 const TMDB_IMG = 'https://image.tmdb.org/t/p/w92';
 
 const SASH_SLOTS = [
+  { id:'next_episode', label:'Prossimo Episodio (Data)',        color:'#5aaaff' },
+  { id:'upcoming',   label:'Nuovi Episodi / Uscita',            color:'#5aaaff' },
+  { id:'canceled',   label:'Serie Cancellata',                  color:'#e05555' },
   { id:'wins',       label:'Best Picture / Major Emmy Win',     color:'#c9a84c' },
   { id:'gg_wins',    label:'Golden Globe Win',                  color:'#c9a84c' },
   { id:'festival',   label:'Festival Winner',                   color:'#c9a84c' },
@@ -2613,7 +2657,7 @@ const SASH_SLOTS = [
   { id:'trending',   label:'TMDB Trending Top 40',              color:'#5aaaff' },
   { id:'cult',       label:'Cult Classic',                      color:'#5aaaff' },
   { id:'foreign',    label:'Foreign Language',                  color:'#3ab0a8' },
-  { id:'new_release', label:'Newly Streaming (New)',                              color:'#e05555' },
+  { id:'new_release', label:'Newly Streaming (New)',            color:'#e05555' },
   { id:'metacritic', label:'Metacritic Must-See',               color:'#9a9a9a' },
   { id:'true_story', label:'True Story',                        color:'#3ab0a8' },
   { id:'structural',     label:'Short / Mini / Binge',              color:'#3ab0a8' },
@@ -3463,8 +3507,18 @@ function buildBaseParams({ usePlaceholders = false, domainOverride = null } = {}
   if (accKey)         params.set('access_key',  accKey);
   if (userTmdbKey)    params.set('tmdb_key',     usePlaceholders ? '{tmdb_key}'    : userTmdbKey);
   if (userMdblistKey) params.set('mdblist_key',  usePlaceholders ? '{mdblist_key}' : userMdblistKey);
-  params.set('top_gradient',    vEl('cfg-top-gradient')    || 'high');
-  params.set('bottom_gradient', vEl('cfg-bottom-gradient') || 'high');
+  // --- TUE VARIABILI CUSTOM ---
+  params.set('gradient_top_intensity',    n('cfg-grad-top').toFixed(0));
+  params.set('gradient_bottom_intensity', n('cfg-grad-bot').toFixed(0));
+  params.set('frosted_glass_intensity',   n('cfg-glass-int').toFixed(0));
+  
+  params.set('grad_color_top', vEl('cfg-grad-top-color') || 'black');
+  params.set('grad_color_bot', vEl('cfg-grad-bot-color') || 'black');
+  
+  params.set('use_global_ui_color', c('tog-global-ui') ? 'true' : 'false');
+  params.set('text_drop_shadow',    c('tog-text-shadow') ? 'true' : 'false');
+  // ----------------------------
+  
   params.set('fallback_to_imdb', c('tog-fallback-imdb') ? 'true' : 'false');
 
   // ── Rating / Genre Label ───────────────────────────────────────────────────
@@ -4044,17 +4098,13 @@ function importUrl(urlStr, { silent = false, settingsOnly = false, preserveClien
            (p.get('logo_native_fallback') === 'false') ? 'native_text' : 'native_original');
   }
   if (p.has('fallback_bg_style')) _setEl('cfg-fallback-bg-style', p.get('fallback_bg_style'));
-  if (p.has('top_gradient')) {
-    // Accept legacy boolean values from pre-v1.0.4 URLs
-    let _tg = (p.get('top_gradient') || '').toLowerCase();
-    if (_tg === 'true'  || _tg === '1' || _tg === 'yes') _tg = 'high';
-    if (_tg === 'false' || _tg === '0' || _tg === 'no')  _tg = 'off';
-    if (['off','low','medium','high'].includes(_tg)) _setEl('cfg-top-gradient', _tg);
-  }
-  if (p.has('bottom_gradient')) {
-    const _bg = (p.get('bottom_gradient') || '').toLowerCase();
-    if (['off','low','medium','high'].includes(_bg)) _setEl('cfg-bottom-gradient', _bg);
-  }
+  if (p.has('gradient_top_intensity'))    _setEl('cfg-grad-top',       p.get('gradient_top_intensity'));
+  if (p.has('gradient_bottom_intensity')) _setEl('cfg-grad-bot',       p.get('gradient_bottom_intensity'));
+  if (p.has('frosted_glass_intensity'))   _setEl('cfg-glass-int',      p.get('frosted_glass_intensity'));
+  if (p.has('grad_color_top'))            _setEl('cfg-grad-top-color', p.get('grad_color_top'));
+  if (p.has('grad_color_bot'))            _setEl('cfg-grad-bot-color', p.get('grad_color_bot'));
+  if (p.has('use_global_ui_color'))       _setEl('tog-global-ui',      p.get('use_global_ui_color'));
+  if (p.has('text_drop_shadow'))          _setEl('tog-text-shadow',    p.get('text_drop_shadow'));
   if (p.has('fallback_to_imdb')) _setEl('tog-fallback-imdb', p.get('fallback_to_imdb'));
 
   // ── Sash ────────────────────────────────────────────────────────────────
