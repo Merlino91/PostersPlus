@@ -739,6 +739,15 @@ class RequestConfig:
     wait_for_quality: bool = False  # block response until quality is fetched (for poster-warm workflows)
     greyscale_no_quality: bool = False  # greyscale art when no quality found (needs wait_for_quality)
 
+    # --- TUE VARIABILI CUSTOM ---
+    frosted_glass_intensity: int = 50
+    gradient_top_intensity: int = 30
+    gradient_bottom_intensity: int = 60
+    grad_color_top: str = "black"  
+    grad_color_bot: str = "black"  
+    use_global_ui_color: bool = False
+    text_drop_shadow: bool = False
+
 
 def _parse_bool(val: str | None, default: bool) -> bool:
     if val is None:
@@ -825,24 +834,21 @@ def build_request_config(params: dict) -> RequestConfig:
     cfg.muted                   = _b("muted",                  cfg.muted)
     cfg.score_out_of_10         = _b("score_out_of_10",        cfg.score_out_of_10)
     cfg.textless                = _b("textless",               cfg.textless)
-    # top_gradient accepts off / low / medium / high.  Legacy boolean values
-    # (true / false) from pre-v1.0.4 URLs map to high / off respectively so
-    # cached configurator links keep working.
-    _tg_raw = (params.get("top_gradient") or "").strip().lower()
-    if _tg_raw in _TOP_GRADIENT_LEVELS:
-        cfg.top_gradient = _tg_raw
-    elif _tg_raw in ("true", "1", "yes"):
-        cfg.top_gradient = "high"
-    elif _tg_raw in ("false", "0", "no"):
-        cfg.top_gradient = "off"
-    # else: leave RequestConfig default ("high")
+    
+    # --- TUA LOGICA PARSER ---
+    cfg.frosted_glass_intensity = _i("frosted_glass_intensity", cfg.frosted_glass_intensity, 0, 250)
+    cfg.gradient_top_intensity = _i("gradient_top_intensity", cfg.gradient_top_intensity, 0, 100)
+    cfg.gradient_bottom_intensity = _i("gradient_bottom_intensity", cfg.gradient_bottom_intensity, 0, 100)
+    
+    _gct = params.get("grad_color_top", "black").strip().lower()
+    cfg.grad_color_top = _gct if _gct in ("black", "local", "global") else "black"
+    
+    _gcb = params.get("grad_color_bot", "black").strip().lower()
+    cfg.grad_color_bot = _gcb if _gcb in ("black", "local", "global") else "black"
 
-    # bottom_gradient — same four-level enum as top.  Brand-new param so no
-    # legacy boolean form to honour; unknown values fall through to the
-    # RequestConfig default ("high") which matches the legacy behaviour.
-    _bg_raw = (params.get("bottom_gradient") or "").strip().lower()
-    if _bg_raw in _BOTTOM_GRADIENT_LEVELS:
-        cfg.bottom_gradient = _bg_raw
+    cfg.use_global_ui_color = _b("use_global_ui_color", cfg.use_global_ui_color)
+    cfg.text_drop_shadow = _b("text_drop_shadow", cfg.text_drop_shadow)
+
     cfg.sash_badge              = _b("sash_badge",              cfg.sash_badge)
     # sash_mode supersedes the legacy sash_badge bool; fall back to it for old
     # URLs/presets (sash_badge=true → notch, false → diagonal sash).
@@ -1241,44 +1247,68 @@ def build_poster(
     else:
         genre_label = _GENRE_LABEL_OVERRIDES.get(genre, genre)
 
-    # --- TOP GRADIENT (vectorised) ---
-    # Darkens the top of the poster so the age-rating numeral and quality
-    # badges stay legible over bright art.  Strength is one of four presets
-    # (off / low / medium / high) — see _TOP_GRADIENT_LEVELS for the
-    # (height_ratio, max_alpha) tuple each level uses.  Unknown level is
-    # treated as "high" rather than skipped so a typo in a URL doesn't
-    # silently disable the vignette.
-    _tg_preset = _TOP_GRADIENT_LEVELS.get(cfg.top_gradient, _TOP_GRADIENT_LEVELS["high"])
-    if _tg_preset is not None:
-        top_height_ratio, top_max_alpha = _tg_preset
-        top_height = int(height * top_height_ratio)
+# === ESTRAZIONE COLORI PREVENTIVA ===
+    def _get_dominant_color(img: Image.Image) -> tuple[int, int, int]:
+        small_img = img.copy()
+        small_img.thumbnail((50, 50))
+        colors = small_img.convert("RGB").getcolors(2500)
+        if not colors: return (100, 100, 100)
+        colors.sort(key=lambda t: t[0], reverse=True)
+        for count, color in colors:
+            luminanza = 0.299 * color[0] + 0.587 * color[1] + 0.114 * color[2]
+            if 40 < luminanza < 215: return color
+        return colors[0][1]
+
+    global_dom_color = _get_dominant_color(image)
+    local_top_color = sample_frosted_sash_rgb(image)
+    local_bot_color = sample_frosted_bar_rgb(image, getattr(cfg, 'bar_height_ratio', 0.080), getattr(cfg, 'bar_bottom_inset', 0.0))
+
+    if cfg.grad_color_top == "global": top_color = global_dom_color
+    elif cfg.grad_color_top == "local": top_color = local_top_color
+    else: top_color = (0, 0, 0)
+
+    if cfg.grad_color_bot == "global": bot_color = global_dom_color
+    elif cfg.grad_color_bot == "local": bot_color = local_bot_color
+    else: bot_color = (0, 0, 0)
+
+    # --- DISEGNO TOP GRADIENT ---
+    if cfg.gradient_top_intensity > 0:
+        top_height = int(height * 0.25)
+        top_max_alpha = int((cfg.gradient_top_intensity / 100) * 255)
         t_top = np.linspace(0, 1, top_height, dtype=np.float32)
         eased_top = ((1 - t_top) * top_max_alpha).astype(np.uint8)
         top_array = np.broadcast_to(eased_top[:, np.newaxis], (top_height, width)).copy()
         top_overlay = Image.fromarray(top_array, mode="L")
-        top_tinted = Image.new("RGBA", (width, top_height), (0, 0, 0, 0))
+        top_tinted = Image.new("RGBA", (width, top_height), (*top_color[:3], 0))
         top_tinted.putalpha(top_overlay)
         image.paste(top_tinted, (0, 0), mask=top_tinted)
 
-    # --- BOTTOM GRADIENT (vectorised) ---
-    # Strength is one of four presets (off / low / medium / high) — see
-    # _BOTTOM_GRADIENT_LEVELS for the (height_ratio, max_alpha) tuple each
-    # level uses.  The previous auto-softening for Minimalist / Compact modes
-    # is dropped now that the user can pick the level themselves; if you'd
-    # like the lighter fade those modes used to get for free, pick "medium".
-    # Unknown level falls back to "high" so a typo can't accidentally turn
-    # the fade off entirely (which would break label legibility).
-    _bg_preset = _BOTTOM_GRADIENT_LEVELS.get(cfg.bottom_gradient, _BOTTOM_GRADIENT_LEVELS["high"])
-    if _bg_preset is not None:
-        bottom_height_ratio, bottom_max_alpha = _bg_preset
-        bottom_height = int(height * bottom_height_ratio)
-        bottom_start  = height - bottom_height
-        t_bot         = np.linspace(0, 1, bottom_height, dtype=np.float32)
-        eased_bot     = ((1 - (1 - t_bot) ** _BOTTOM_GRADIENT_CURVE) * bottom_max_alpha).astype(np.uint8)
-        bottom_array  = np.broadcast_to(eased_bot[:, np.newaxis], (bottom_height, width)).copy()
-        bottom_overlay = Image.fromarray(bottom_array, mode="L")
-        bottom_tinted  = Image.new("RGBA", (width, bottom_height), (0, 0, 0, 0))
-        bottom_tinted.putalpha(bottom_overlay)
+    # --- DISEGNO BOTTOM GRADIENT & GLASSMORPHISM ---
+    bottom_height = int(height * 0.45) 
+    bottom_start = height - bottom_height
+
+    if getattr(cfg, 'frosted_glass_intensity', 0) > 0:
+        from PIL import ImageFilter, ImageEnhance
+        radius = cfg.frosted_glass_intensity / 10.0
+        bottom_crop = image.crop((0, bottom_start, width, height))
+        blurred_bottom = bottom_crop.filter(ImageFilter.GaussianBlur(radius=radius))
+        blurred_bottom = ImageEnhance.Color(blurred_bottom).enhance(1.4)
+        blurred_bottom = ImageEnhance.Contrast(blurred_bottom).enhance(1.15)
+        noise = np.random.normal(0, 5, (bottom_height, width, 3)).astype(np.float32)
+        blurred_arr = np.array(blurred_bottom).astype(np.float32)
+        blurred_arr[:,:,:3] += noise
+        blurred_arr = np.clip(blurred_arr, 0, 255).astype(np.uint8)
+        t_blur = np.linspace(0, 1, bottom_height, dtype=np.float32)
+        eased_blur = ((t_blur ** 1.5) * 255).astype(np.uint8)
+        blur_mask = Image.fromarray(np.broadcast_to(eased_blur[:, np.newaxis], (bottom_height, width)).copy(), mode="L")
+        image.paste(Image.fromarray(blurred_arr, "RGBA"), (0, bottom_start), mask=blur_mask)
+
+    if cfg.gradient_bottom_intensity > 0:
+        bottom_max_alpha = int((cfg.gradient_bottom_intensity / 100) * 255)
+        t_bot = np.linspace(0, 1, bottom_height, dtype=np.float32)
+        eased_bot = ((1 - (1 - t_bot) ** 1.2) * bottom_max_alpha).astype(np.uint8)
+        bottom_tinted = Image.new("RGBA", (width, bottom_height), (*bot_color[:3], 0))
+        bottom_tinted.putalpha(Image.fromarray(np.broadcast_to(eased_bot[:, np.newaxis], (bottom_height, width)).copy(), mode="L"))
         image.paste(bottom_tinted, (0, bottom_start), mask=bottom_tinted)
 
     # --- Badge / quality overlay ---
@@ -1492,7 +1522,10 @@ def build_poster(
     _sash_shown    = cfg.sash_mode != "hidden" and sash_result is not None
     _notch_frosted = _sash_shown and cfg.sash_mode == "notch" and cfg.sash_badge_style == "frosted"
     _sash_poster   = _sash_shown and cfg.sash_mode == "sash" and cfg.sash_poster_color
-    if (
+    
+    if getattr(cfg, 'use_global_ui_color', False):
+        _shared_tint = global_dom_color
+    elif (
         cfg.bar_match_notch
         and cfg.rating_display_mode == 4
         and cfg.bar_style in ("frosted", "rating_frosted")
@@ -1719,6 +1752,15 @@ def build_poster(
         _is_star  = sash_type == "win" and label in _STAR_WIN_AWARDS
         _label_tr = translate_sash(label, cfg.logo_language)
         if cfg.sash_mode == "notch":
+            if getattr(cfg, 'text_drop_shadow', False):
+                from PIL import ImageFilter
+                shadow_layer = Image.new("RGBA", image.size, (0,0,0,0))
+                shadow_layer = draw_award_badge(shadow_layer, _label_tr, sash_type=sash_type, size_ratio_w=cfg.sash_badge_size_w, size_ratio_h=cfg.sash_badge_size_h, notch_style="black", notch_inset=cfg.sash_badge_inset, font_size_ratio=cfg.sash_badge_font_ratio, frost_opacity=1.0, tint_rgb=(0,0,0), star=_is_star)
+                shadow_layer = shadow_layer.filter(ImageFilter.GaussianBlur(5))
+                shifted_shadow = Image.new("RGBA", image.size, (0,0,0,0))
+                shifted_shadow.paste(shadow_layer, (0, 4))
+                image = Image.alpha_composite(image.convert("RGBA"), shifted_shadow)
+
             image = draw_award_badge(image, _label_tr, sash_type=sash_type,
                                      size_ratio_w=cfg.sash_badge_size_w,
                                      size_ratio_h=cfg.sash_badge_size_h,
