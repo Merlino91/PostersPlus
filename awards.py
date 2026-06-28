@@ -1452,6 +1452,57 @@ def draw_award_badge(
     # Text is geometrically centred; client-specific placement is handled by inset.
     text_cy_ss = bh / 2
 
+    # === TUA MAGIA: NUOVO STILE "MINIMAL PILL" ===
+    if notch_style == "minimal_pill":
+        # 1. Carica il tuo font storico (Ubuntu-Bold) invece di quello di sistema
+        try:
+            ubuntu_font = ImageFont.truetype(os.path.join(_fonts_dir, "Ubuntu-Bold.ttf"), font_size_ss)
+        except IOError:
+            ubuntu_font = font
+
+        # Ricalcola la larghezza del testo con il nuovo font
+        _tmp_d  = ImageDraw.Draw(Image.new("L", (1, 1)))
+        _tbbox  = _tmp_d.textbbox((0, 0), label, font=ubuntu_font)
+        text_w_ss = _tbbox[2] - _tbbox[0]
+        badge_w = max(min_badge_w, min(max_badge_w, text_w_ss // SS + _h_pad))
+        bw = badge_w * SS
+
+        # 2. Ottieni il colore vivido (Usa il colore globale se attivo, altrimenti estrae localmente senza sbiadire)
+        if tint_rgb is not None:
+            bg_r, bg_g, bg_b = tint_rgb
+        else:
+            thumb = image.crop((bx, max(0, by_composite), bx + badge_w, max(0, by_composite) + badge_h)).resize((8, 8), Image.LANCZOS).convert("RGB")
+            arr_thumb = np.array(thumb, dtype=np.float32)
+            bg_r, bg_g, bg_b = arr_thumb[:, :, 0].mean(), arr_thumb[:, :, 1].mean(), arr_thumb[:, :, 2].mean()
+
+        bg_r, bg_g, bg_b = int(bg_r), int(bg_g), int(bg_b)
+
+        # 3. Disegna la Pillola (Tutti gli angoli completamente arrotondati, raggio = metà altezza)
+        badge_ss = Image.new("RGBA", (bw, bh), (0, 0, 0, 0))
+        rr_mask_ss = Image.new("L", (bw, bh), 0)
+        pill_radius = bh // 2
+        ImageDraw.Draw(rr_mask_ss).rounded_rectangle([(0, 0), (bw - 1, bh - 1)], radius=pill_radius, fill=255)
+        
+        body = Image.new("RGBA", (bw, bh), (bg_r, bg_g, bg_b, 240))
+        body.putalpha(rr_mask_ss)
+        badge_ss = body
+
+        # 4. Testo intelligente basato sulla luminosità (Bianco o Nero)
+        lum = 0.299 * bg_r + 0.587 * bg_g + 0.114 * bg_b
+        text_color = (250, 250, 250, 255) if lum < 140 else (15, 15, 15, 245)
+
+        txt_layer = Image.new("RGBA", (bw, bh), (0, 0, 0, 0))
+        td = ImageDraw.Draw(txt_layer)
+        tx, ty = _text_center(td, label, ubuntu_font, bw / 2, text_cy_ss)
+        td.text((tx, ty), label, font=ubuntu_font, fill=text_color)
+        badge_ss = Image.alpha_composite(badge_ss, txt_layer)
+
+        badge_final = badge_ss.resize((badge_w, badge_h), Image.LANCZOS)
+        result = image.copy()
+        result.alpha_composite(badge_final, (bx, by_composite))
+        return result
+    # ===============================================
+
     if notch_style == "frosted":
         # ── Frosted: blurred poster crop tinted toward the region's dominant colour ──
         # Crop from the actual composite position so the blur matches what's visible
