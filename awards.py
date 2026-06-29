@@ -1467,35 +1467,31 @@ def draw_award_badge(
         badge_w = max(min_badge_w, min(max_badge_w, text_w_ss // SS + _h_pad))
         bw = badge_w * SS
 
-        # 2. Ottieni il colore vivido (Usa il colore globale se attivo, altrimenti estrae localmente senza sbiadire)
+        # 2. ESTRAZIONE COLORE (Con la TUA logica intelligente)
         if tint_rgb is not None:
-            # Global color: usa direttamente il colore puro (come richiesto)
             bg_r, bg_g, bg_b = int(tint_rgb[0]), int(tint_rgb[1]), int(tint_rgb[2])
         else:
-            # Local color: esegue la STESSA IDENTICA logica di sbiadimento del Frosted originale
+            # Ritagliamo l'area locale dietro la pillola
             crop_y = max(0, by_composite)
             region = image.crop((bx, crop_y, bx + badge_w, crop_y + badge_h))
             
-            # Sfoca preventivamente l'area per uniformare il colore (come fa UmbraProjects)
-            blur_r = max(4, int(badge_h * 0.35))
-            blurred = region.filter(ImageFilter.GaussianBlur(radius=blur_r))
+            # Usiamo il tuo stesso estrattore per trovare il colore dominante, scartando i grigi/neri
+            small_region = region.copy()
+            small_region.thumbnail((50, 50))
+            colors = small_region.convert("RGB").getcolors(2500)
             
-            # Campiona e fa la media
-            thumb = blurred.resize((8, 8), Image.LANCZOS).convert("RGB")
-            arr_thumb = np.array(thumb, dtype=np.float32)
-            dr, dg, db = arr_thumb[:, :, 0].mean(), arr_thumb[:, :, 1].mean(), arr_thumb[:, :, 2].mean()
-
-            # Applica la formula di sbiadimento, boost e mix 60/40 originale
-            import colorsys as _cs
-            _h, _s, _v = _cs.rgb_to_hsv(dr / 255, dg / 255, db / 255)
-            _v_boost = _v * 0.4 + 0.60          
-            _s_boost = min(1.0, _s * 1.2)       
-            tr, tg, tb = _cs.hsv_to_rgb(_h, _s_boost, _v_boost)
-            
-            # Usiamo il colore ravvivato PURO, eliminando il mix col 40% di bianco
-            bg_r = int(tr * 255)
-            bg_g = int(tg * 255)
-            bg_b = int(tb * 255)
+            bg_r, bg_g, bg_b = 100, 100, 100  # Fallback
+            if colors:
+                colors.sort(key=lambda t: t[0], reverse=True)
+                for count, color in colors:
+                    lum = 0.299 * color[0] + 0.587 * color[1] + 0.114 * color[2]
+                    # Filtra via le ombre nere e i bagliori bianchi
+                    if 40 < lum < 215:
+                        bg_r, bg_g, bg_b = color
+                        break
+                else:
+                    # Se tutti i colori sono scuri o chiari, prendi il più presente in assoluto
+                    bg_r, bg_g, bg_b = colors[0][1]
 
         # 3. Disegna la Pillola con angoli personalizzati
         # pill_radius = bh // 4 rende gli angoli molto più spigolosi rispetto a // 2
