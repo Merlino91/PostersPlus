@@ -1469,19 +1469,24 @@ def draw_award_badge(
 
         # 2. Ottieni il colore vivido (Usa il colore globale se attivo, altrimenti estrae localmente senza sbiadire)
         if tint_rgb is not None:
-            bg_r, bg_g, bg_b = tint_rgb
+            # Colore forzato (es. Global Dominant)
+            bg_r, bg_g, bg_b = int(tint_rgb[0]), int(tint_rgb[1]), int(tint_rgb[2])
         else:
-            thumb = image.crop((bx, max(0, by_composite), bx + badge_w, max(0, by_composite) + badge_h)).resize((8, 8), Image.LANCZOS).convert("RGB")
-            arr_thumb = np.array(thumb, dtype=np.float32)
-            bg_r, bg_g, bg_b = arr_thumb[:, :, 0].mean(), arr_thumb[:, :, 1].mean(), arr_thumb[:, :, 2].mean()
+            # Fallback al colore estratto in alto (local_top_color) invece di grigio
+            bg_r, bg_g, bg_b = int(local_top_color[0]), int(local_top_color[1]), int(local_top_color[2])
 
         bg_r, bg_g, bg_b = int(bg_r), int(bg_g), int(bg_b)
 
-        # 3. Disegna la Pillola (Tutti gli angoli completamente arrotondati, raggio = metà altezza)
+        # 3. Disegna la Pillola (Angoli superiori piatti, angoli inferiori arrotondati)
         badge_ss = Image.new("RGBA", (bw, bh), (0, 0, 0, 0))
         rr_mask_ss = Image.new("L", (bw, bh), 0)
         pill_radius = bh // 2
-        ImageDraw.Draw(rr_mask_ss).rounded_rectangle([(0, 0), (bw - 1, bh - 1)], radius=pill_radius, fill=255)
+        # Disegna un rettangolo che copre la parte alta e un rettangolo arrotondato per la parte bassa
+        draw_mask = ImageDraw.Draw(rr_mask_ss)
+        draw_mask.rectangle([(0, 0), (bw - 1, bh - pill_radius)], fill=255)
+        draw_mask.rounded_rectangle([(0, 0), (bw - 1, bh - 1)], radius=pill_radius, fill=255, corners=(False, False, True, True))
+        badge_ss = Image.new("RGBA", (bw, bh), (bg_r, bg_g, bg_b, 240))
+        badge_ss.putalpha(rr_mask_ss)
         
         body = Image.new("RGBA", (bw, bh), (bg_r, bg_g, bg_b, 240))
         body.putalpha(rr_mask_ss)
