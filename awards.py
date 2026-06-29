@@ -1477,7 +1477,6 @@ def draw_award_badge(
             region = image.crop((bx, crop_y, bx + badge_w, crop_y + badge_h))
             
             # Sfoca preventivamente l'area per uniformare il colore (come fa UmbraProjects)
-            from PIL import ImageFilter
             blur_r = max(4, int(badge_h * 0.35))
             blurred = region.filter(ImageFilter.GaussianBlur(radius=blur_r))
             
