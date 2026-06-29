@@ -1469,20 +1469,33 @@ def draw_award_badge(
 
         # 2. Ottieni il colore vivido (Usa il colore globale se attivo, altrimenti estrae localmente senza sbiadire)
         if tint_rgb is not None:
+            # Global color: usa direttamente il colore puro (come richiesto)
             bg_r, bg_g, bg_b = int(tint_rgb[0]), int(tint_rgb[1]), int(tint_rgb[2])
         else:
-            # Estraiamo direttamente i pixel e ne facciamo la media
+            # Local color: esegue la STESSA IDENTICA logica di sbiadimento del Frosted originale
             crop_y = max(0, by_composite)
             region = image.crop((bx, crop_y, bx + badge_w, crop_y + badge_h))
-            # Convertiamo in RGB per eliminare sfumature trasparenti indesiderate
-            thumb = region.resize((8, 8), Image.LANCZOS).convert("RGB")
-            arr_thumb = np.array(thumb, dtype=np.float32)
             
-            # Calcoliamo la media su tutti i pixel dell'area campionata
-            # Senza applicare boost di luminosità o mix col bianco
-            bg_r = int(arr_thumb[:, :, 0].mean())
-            bg_g = int(arr_thumb[:, :, 1].mean())
-            bg_b = int(arr_thumb[:, :, 2].mean())
+            # Sfoca preventivamente l'area per uniformare il colore (come fa UmbraProjects)
+            from PIL import ImageFilter
+            blur_r = max(4, int(badge_h * 0.35))
+            blurred = region.filter(ImageFilter.GaussianBlur(radius=blur_r))
+            
+            # Campiona e fa la media
+            thumb = blurred.resize((8, 8), Image.LANCZOS).convert("RGB")
+            arr_thumb = np.array(thumb, dtype=np.float32)
+            dr, dg, db = arr_thumb[:, :, 0].mean(), arr_thumb[:, :, 1].mean(), arr_thumb[:, :, 2].mean()
+
+            # Applica la formula di sbiadimento, boost e mix 60/40 originale
+            import colorsys as _cs
+            _h, _s, _v = _cs.rgb_to_hsv(dr / 255, dg / 255, db / 255)
+            _v_boost = _v * 0.4 + 0.60          
+            _s_boost = min(1.0, _s * 1.2)       
+            tr, tg, tb = _cs.hsv_to_rgb(_h, _s_boost, _v_boost)
+            
+            bg_r = int(tr * 255 * 0.6 + 255 * 0.4)
+            bg_g = int(tg * 255 * 0.6 + 255 * 0.4)
+            bg_b = int(tb * 255 * 0.6 + 255 * 0.4)
 
         # 3. Disegna la Pillola con angoli personalizzati
         # pill_radius = bh // 4 rende gli angoli molto più spigolosi rispetto a // 2
