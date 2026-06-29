@@ -1469,25 +1469,28 @@ def draw_award_badge(
 
         # 2. Ottieni il colore vivido (Usa il colore globale se attivo, altrimenti estrae localmente senza sbiadire)
         if tint_rgb is not None:
-            # Colore forzato (es. Global Dominant)
             bg_r, bg_g, bg_b = int(tint_rgb[0]), int(tint_rgb[1]), int(tint_rgb[2])
         else:
-            # Campiona l'area come fa lo stile frosted originale
-            thumb = image.crop((bx, max(0, by_composite), bx + badge_w, max(0, by_composite) + badge_h)).resize((8, 8), Image.LANCZOS).convert("RGB")
+            # Estraiamo l'area come fa lo stile frosted
+            crop_y = max(0, by_composite)
+            region = image.crop((bx, crop_y, bx + badge_w, crop_y + badge_h))
+            thumb = region.resize((8, 8), Image.LANCZOS).convert("RGB")
             arr_thumb = np.array(thumb, dtype=np.float32)
-            # Media dei pixel campionati (nessun sbiadimento applicato!)
-            bg_r, bg_g, bg_b = int(arr_thumb[:, :, 0].mean()), int(arr_thumb[:, :, 1].mean()), int(arr_thumb[:, :, 2].mean())
+            bg_r = int(arr_thumb[:, :, 0].mean())
+            bg_g = int(arr_thumb[:, :, 1].mean())
+            bg_b = int(arr_thumb[:, :, 2].mean())
 
-        # 3. Disegna la Pillola (Angoli superiori piatti, angoli inferiori arrotondati)
+        # 3. Disegna la Pillola con angoli personalizzati
+        # pill_radius = bh // 4 rende gli angoli molto più spigolosi rispetto a // 2
         badge_ss = Image.new("RGBA", (bw, bh), (0, 0, 0, 0))
         rr_mask_ss = Image.new("L", (bw, bh), 0)
-        pill_radius = bh // 2
-        # Disegna un rettangolo che copre la parte alta e un rettangolo arrotondato per la parte bassa
+        pill_radius = bh // 4  
+        
         draw_mask = ImageDraw.Draw(rr_mask_ss)
+        # Rettangolo sopra (piatto)
         draw_mask.rectangle([(0, 0), (bw - 1, bh - pill_radius)], fill=255)
+        # Rettangolo arrotondato sotto (più spigoloso con raggio bh//4)
         draw_mask.rounded_rectangle([(0, 0), (bw - 1, bh - 1)], radius=pill_radius, fill=255, corners=(False, False, True, True))
-        badge_ss = Image.new("RGBA", (bw, bh), (bg_r, bg_g, bg_b, 240))
-        badge_ss.putalpha(rr_mask_ss)
         
         body = Image.new("RGBA", (bw, bh), (bg_r, bg_g, bg_b, 240))
         body.putalpha(rr_mask_ss)
