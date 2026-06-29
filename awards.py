@@ -1471,11 +1471,15 @@ def draw_award_badge(
         if tint_rgb is not None:
             bg_r, bg_g, bg_b = int(tint_rgb[0]), int(tint_rgb[1]), int(tint_rgb[2])
         else:
-            # Estraiamo l'area come fa lo stile frosted
+            # Estraiamo direttamente i pixel e ne facciamo la media
             crop_y = max(0, by_composite)
             region = image.crop((bx, crop_y, bx + badge_w, crop_y + badge_h))
+            # Convertiamo in RGB per eliminare sfumature trasparenti indesiderate
             thumb = region.resize((8, 8), Image.LANCZOS).convert("RGB")
             arr_thumb = np.array(thumb, dtype=np.float32)
+            
+            # Calcoliamo la media su tutti i pixel dell'area campionata
+            # Senza applicare boost di luminosità o mix col bianco
             bg_r = int(arr_thumb[:, :, 0].mean())
             bg_g = int(arr_thumb[:, :, 1].mean())
             bg_b = int(arr_thumb[:, :, 2].mean())
