@@ -1472,10 +1472,11 @@ def draw_award_badge(
             # Colore forzato (es. Global Dominant)
             bg_r, bg_g, bg_b = int(tint_rgb[0]), int(tint_rgb[1]), int(tint_rgb[2])
         else:
-            # Fallback al colore estratto in alto (local_top_color) invece di grigio
-            bg_r, bg_g, bg_b = int(local_top_color[0]), int(local_top_color[1]), int(local_top_color[2])
-
-        bg_r, bg_g, bg_b = int(bg_r), int(bg_g), int(bg_b)
+            # Campiona l'area come fa lo stile frosted originale
+            thumb = image.crop((bx, max(0, by_composite), bx + badge_w, max(0, by_composite) + badge_h)).resize((8, 8), Image.LANCZOS).convert("RGB")
+            arr_thumb = np.array(thumb, dtype=np.float32)
+            # Media dei pixel campionati (nessun sbiadimento applicato!)
+            bg_r, bg_g, bg_b = int(arr_thumb[:, :, 0].mean()), int(arr_thumb[:, :, 1].mean()), int(arr_thumb[:, :, 2].mean())
 
         # 3. Disegna la Pillola (Angoli superiori piatti, angoli inferiori arrotondati)
         badge_ss = Image.new("RGBA", (bw, bh), (0, 0, 0, 0))
