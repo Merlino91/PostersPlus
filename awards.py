@@ -1492,9 +1492,10 @@ def draw_award_badge(
             _s_boost = min(1.0, _s * 1.2)       
             tr, tg, tb = _cs.hsv_to_rgb(_h, _s_boost, _v_boost)
             
-            bg_r = int(tr * 255 * 0.6 + 255 * 0.4)
-            bg_g = int(tg * 255 * 0.6 + 255 * 0.4)
-            bg_b = int(tb * 255 * 0.6 + 255 * 0.4)
+            # Usiamo il colore ravvivato PURO, eliminando il mix col 40% di bianco
+            bg_r = int(tr * 255)
+            bg_g = int(tg * 255)
+            bg_b = int(tb * 255)
 
         # 3. Disegna la Pillola con angoli personalizzati
         # pill_radius = bh // 4 rende gli angoli molto più spigolosi rispetto a // 2
