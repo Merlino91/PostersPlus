@@ -1862,7 +1862,7 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
             <div class="field cfg-sep">
               <label class="field-label">Top Gradient Intensity</label>
               <div class="range-row">
-                <input type="range" id="cfg-grad-top" min="0" max="100" step="1" value="30" oninput="updateRange(this,'rng-grad-top')" onchange="build(); queuePreviewReload()">
+                <input type="range" id="cfg-grad-top" min="0" max="100" step="1" value="30" oninput="updateRange(this,'rng-grad-top'); build(); queuePreviewReload()">
                 <span class="range-val" id="rng-grad-top">30</span>
               </div>
               <div style="margin-top:8px;">
@@ -2960,8 +2960,7 @@ function buildWeightSection(containerId, sources, defaults) {
         <span class="weight-name">${SOURCE_LABELS[src] || src.toUpperCase()}</span>
         <input type="range" min="0" max="1" step="0.01" value="${def}"
           data-src="${src}" data-container="${containerId}"
-          oninput="updateWeightRange(this,'rv-${containerId}-${src}'); updateWeightSum('${containerId}')"
-          onchange="build(); queuePreviewReload()"
+          oninput="updateWeightRange(this,'rv-${containerId}-${src}'); updateWeightSum('${containerId}'); build(); queuePreviewReload()"
           style="flex:1;">
         <span class="range-val" id="rv-${containerId}-${src}">${Math.round(def * 100)}%</span>
       </div>`;
