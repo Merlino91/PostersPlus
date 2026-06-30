@@ -1277,36 +1277,11 @@ def build_poster(
             smart_top_color = top_colors[0][1]
 
     local_top_color = sample_frosted_sash_rgb(image)
-    
-    # --- ESTRAZIONE SMART PER IL GRADIENTE INFERIORE ---
-    small_bot = image.crop((0, height - int(height*0.3), width, height))
-    small_bot.thumbnail((50, 50))
-    bot_colors = small_bot.convert("RGB").getcolors(25000)
-    smart_bot_color = (10, 10, 10)
-    if bot_colors:
-        import colorsys
-        def color_score(c_count, c_rgb):
-            h, s, v = colorsys.rgb_to_hsv(c_rgb[0]/255.0, c_rgb[1]/255.0, c_rgb[2]/255.0)
-            # Scarta i colori troppo scuri, troppo chiari o troppo desaturati (grigi)
-            if v < 0.15 or v > 0.95 or s < 0.15: return -1 
-            return s * v * (c_count ** 0.5) 
-            
-        valid_colors = [(count, rgb) for count, rgb in bot_colors if color_score(count, rgb) > 0]
-        if valid_colors:
-            valid_colors.sort(key=lambda t: color_score(t[0], t[1]), reverse=True)
-            smart_bot_color = valid_colors[0][1]
-        else:
-            smart_bot_color = sample_frosted_bar_rgb(image, getattr(cfg, 'bar_height_ratio', 0.080), getattr(cfg, 'bar_bottom_inset', 0.0))
-    else:
-        smart_bot_color = sample_frosted_bar_rgb(image, getattr(cfg, 'bar_height_ratio', 0.080), getattr(cfg, 'bar_bottom_inset', 0.0))
+    local_bot_color = sample_frosted_bar_rgb(image, getattr(cfg, 'bar_height_ratio', 0.080), getattr(cfg, 'bar_bottom_inset', 0.0))
 
     if cfg.grad_color_top == "global": top_color = global_dom_color
     elif cfg.grad_color_top == "local": top_color = local_top_color
     else: top_color = (0, 0, 0)
-
-    if cfg.grad_color_bot == "global": bot_color = global_dom_color
-    elif cfg.grad_color_bot == "local": bot_color = smart_bot_color
-    else: bot_color = (0, 0, 0)
 
     if cfg.grad_color_bot == "global": bot_color = global_dom_color
     elif cfg.grad_color_bot == "local": bot_color = local_bot_color
