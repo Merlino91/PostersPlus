@@ -1300,7 +1300,7 @@ def build_poster(
         image.paste(top_tinted, (0, 0), mask=top_tinted)
 
     # --- DISEGNO BOTTOM GRADIENT & EFFETTO VETRO SFUMATO ACCENTUATO STILE BTTTR.CC ---
-    bottom_height = int(height * 0.45) 
+    bottom_height = int(height * 0.55) 
     bottom_start = height - bottom_height
 
     if getattr(cfg, 'frosted_glass_intensity', 0) > 0:
@@ -1311,7 +1311,7 @@ def build_poster(
         
         # 1. SFOCATURA EFFETTO VETRO ACCENTUATA
         # Aumentiamo il raggio per rendere il vetro decisamente più opaco e visibile
-        box_radius = max(2, int(cfg.frosted_glass_intensity / 12))
+        box_radius = max(2, int(cfg.frosted_glass_intensity / 25))
         glass_layer = bottom_crop.filter(ImageFilter.BoxBlur(radius=box_radius))
         
         # Accentuiamo i bordi rifratti per dare consistenza al vetro satinato
@@ -1330,7 +1330,7 @@ def build_poster(
         # 3. MASCHERA MODIFICATA (Parte da più in alto)
         t_blur = np.linspace(0, 1, bottom_height, dtype=np.float32)
         # Portando l'esponente a 1.8, il gradiente si estende più verso l'alto ed è più corposo
-        eased_blur = (np.power(t_blur, 1.8) * 255).astype(np.uint8)
+        eased_blur = (np.power(t_blur, 3) * 255).astype(np.uint8)
         blur_mask = Image.fromarray(np.broadcast_to(eased_blur[:, np.newaxis], (bottom_height, width)).copy(), mode="L")
         
         # Applichiamo lo strato traslucido
