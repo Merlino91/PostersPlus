@@ -1300,7 +1300,7 @@ def build_poster(
         image.paste(top_tinted, (0, 0), mask=top_tinted)
 
     # --- DISEGNO BOTTOM GRADIENT & EFFETTO VETRO SFUMATO ACCENTUATO STILE BTTTR.CC ---
-    bottom_height = int(height * 0.55) 
+    bottom_height = int(height * 0.60) 
     bottom_start = height - bottom_height
 
     if getattr(cfg, 'frosted_glass_intensity', 0) > 0:
@@ -1311,7 +1311,7 @@ def build_poster(
         
         # 1. SFOCATURA EFFETTO VETRO ACCENTUATA
         # Aumentiamo il raggio per rendere il vetro decisamente più opaco e visibile
-        box_radius = max(2, int(cfg.frosted_glass_intensity / 25))
+        box_radius = max(2, int(cfg.frosted_glass_intensity / 16))
         glass_layer = bottom_crop.filter(ImageFilter.BoxBlur(radius=box_radius))
         
         # Accentuiamo i bordi rifratti per dare consistenza al vetro satinato
