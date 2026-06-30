@@ -1260,6 +1260,22 @@ def build_poster(
         return colors[0][1]
 
     global_dom_color = _get_dominant_color(image)
+    
+    # --- TUA ESTRAZIONE SMART (PRIMA CHE I GRADIENTI SPORCHINO L'IMMAGINE) ---
+    small_top = image.crop((width - int(width*0.4), 0, width, int(height*0.2)))
+    small_top.thumbnail((50, 50))
+    top_colors = small_top.convert("RGB").getcolors(25000)
+    smart_top_color = (100, 100, 100)
+    if top_colors:
+        top_colors.sort(key=lambda t: t[0], reverse=True)
+        for count, color in top_colors:
+            lum = 0.299 * color[0] + 0.587 * color[1] + 0.114 * color[2]
+            if 15 < lum < 215:
+                smart_top_color = color
+                break
+        else:
+            smart_top_color = top_colors[0][1]
+
     local_top_color = sample_frosted_sash_rgb(image)
     local_bot_color = sample_frosted_bar_rgb(image, getattr(cfg, 'bar_height_ratio', 0.080), getattr(cfg, 'bar_bottom_inset', 0.0))
 
