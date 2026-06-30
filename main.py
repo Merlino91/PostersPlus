@@ -1277,11 +1277,36 @@ def build_poster(
             smart_top_color = top_colors[0][1]
 
     local_top_color = sample_frosted_sash_rgb(image)
-    local_bot_color = sample_frosted_bar_rgb(image, getattr(cfg, 'bar_height_ratio', 0.080), getattr(cfg, 'bar_bottom_inset', 0.0))
+    
+    # --- ESTRAZIONE SMART PER IL GRADIENTE INFERIORE ---
+    small_bot = image.crop((0, height - int(height*0.3), width, height))
+    small_bot.thumbnail((50, 50))
+    bot_colors = small_bot.convert("RGB").getcolors(25000)
+    smart_bot_color = (10, 10, 10)
+    if bot_colors:
+        import colorsys
+        def color_score(c_count, c_rgb):
+            h, s, v = colorsys.rgb_to_hsv(c_rgb[0]/255.0, c_rgb[1]/255.0, c_rgb[2]/255.0)
+            # Scarta i colori troppo scuri, troppo chiari o troppo desaturati (grigi)
+            if v < 0.15 or v > 0.95 or s < 0.15: return -1 
+            return s * v * (c_count ** 0.5) 
+            
+        valid_colors = [(count, rgb) for count, rgb in bot_colors if color_score(count, rgb) > 0]
+        if valid_colors:
+            valid_colors.sort(key=lambda t: color_score(t[0], t[1]), reverse=True)
+            smart_bot_color = valid_colors[0][1]
+        else:
+            smart_bot_color = sample_frosted_bar_rgb(image, getattr(cfg, 'bar_height_ratio', 0.080), getattr(cfg, 'bar_bottom_inset', 0.0))
+    else:
+        smart_bot_color = sample_frosted_bar_rgb(image, getattr(cfg, 'bar_height_ratio', 0.080), getattr(cfg, 'bar_bottom_inset', 0.0))
 
     if cfg.grad_color_top == "global": top_color = global_dom_color
     elif cfg.grad_color_top == "local": top_color = local_top_color
     else: top_color = (0, 0, 0)
+
+    if cfg.grad_color_bot == "global": bot_color = global_dom_color
+    elif cfg.grad_color_bot == "local": bot_color = smart_bot_color
+    else: bot_color = (0, 0, 0)
 
     if cfg.grad_color_bot == "global": bot_color = global_dom_color
     elif cfg.grad_color_bot == "local": bot_color = local_bot_color
@@ -1299,50 +1324,60 @@ def build_poster(
         top_tinted.putalpha(top_overlay)
         image.paste(top_tinted, (0, 0), mask=top_tinted)
 
-    # --- DISEGNO BOTTOM GRADIENT & EFFETTO VETRO SFUMATO ACCENTUATO STILE BTTTR.CC ---
+    # --- DISEGNO BOTTOM GRADIENT & EFFETTO VETRO SFUMATO 2.0 ---
     bottom_height = int(height * 0.60) 
     bottom_start = height - bottom_height
 
     if getattr(cfg, 'frosted_glass_intensity', 0) > 0:
         from PIL import ImageFilter, ImageEnhance
         
-        # Ritagliamo la porzione inferiore originale
         bottom_crop = image.crop((0, bottom_start, width, height))
         
-        # 1. SFOCATURA EFFETTO VETRO ACCENTUATA
-        # Aumentiamo il raggio per rendere il vetro decisamente più opaco e visibile
-        box_radius = max(2, int(cfg.frosted_glass_intensity / 16))
-        glass_layer = bottom_crop.filter(ImageFilter.BoxBlur(radius=box_radius))
+        # 1. SFOCATURA ITERATIVA (Vero effetto lente smerigliata)
+        box_radius = max(1, int(cfg.frosted_glass_intensity / 20))
+        glass_layer = bottom_crop
+        # Passaggio multiplo di BoxBlur simula meglio la diffusione della luce
+        for _ in range(3):
+            glass_layer = glass_layer.filter(ImageFilter.BoxBlur(radius=box_radius))
         
-        # Accentuiamo i bordi rifratti per dare consistenza al vetro satinato
-        glass_layer = glass_layer.filter(ImageFilter.UnsharpMask(radius=4, percent=175, threshold=2))
+        # Accentuiamo i bordi rifratti
+        glass_layer = glass_layer.filter(ImageFilter.UnsharpMask(radius=3, percent=150, threshold=3))
         
-        # 2. BOOST DI VIVIDEZZA E CONTRASTO
-        glass_layer = ImageEnhance.Color(glass_layer).enhance(1.6)
-        glass_layer = ImageEnhance.Contrast(glass_layer).enhance(1.15)
+        # 2. BOOST DI VIVIDEZZA
+        glass_layer = ImageEnhance.Color(glass_layer).enhance(1.4)
         
-        # Micro-grana anti-banding fotorealistica
-        noise = np.random.normal(0, 3, (bottom_height, width, 3)).astype(np.float32)
-        glass_arr = np.array(glass_layer).astype(np.float32)
-        glass_arr[:,:,:3] = np.clip(glass_arr[:,:,:3] + noise, 0, 255)
+        # Micro-grana organica anti-banding
+        noise = np.random.normal(0, 2, (bottom_height, width, 3)).astype(np.float32)
+        glass_arr = np.array(glass_layer.convert("RGB")).astype(np.float32)
+        glass_arr = np.clip(glass_arr + noise, 0, 255)
         glass_layer = Image.fromarray(glass_arr.astype(np.uint8), "RGBA")
         
-        # 3. MASCHERA MODIFICATA (Parte da più in alto)
+        # 3. MASCHERA ESPONENZIALE CORRETTA (1.8)
         t_blur = np.linspace(0, 1, bottom_height, dtype=np.float32)
-        # Portando l'esponente a 1.8, il gradiente si estende più verso l'alto ed è più corposo
-        eased_blur = (np.power(t_blur, 3) * 255).astype(np.uint8)
+        eased_blur = (np.power(t_blur, 1.8) * 255).astype(np.uint8)
         blur_mask = Image.fromarray(np.broadcast_to(eased_blur[:, np.newaxis], (bottom_height, width)).copy(), mode="L")
         
-        # Applichiamo lo strato traslucido
         image.paste(glass_layer, (0, bottom_start), mask=blur_mask)
 
     if cfg.gradient_bottom_intensity > 0:
+        from PIL import ImageChops
         bottom_max_alpha = int((cfg.gradient_bottom_intensity / 100) * 255)
         t_bot = np.linspace(0, 1, bottom_height, dtype=np.float32)
-        eased_bot = ((1 - (1 - t_bot) ** 1.2) * bottom_max_alpha).astype(np.uint8)
-        bottom_tinted = Image.new("RGBA", (width, bottom_height), (int(bot_color[0]), int(bot_color[1]), int(bot_color[2]), 0))
-        bottom_tinted.putalpha(Image.fromarray(np.broadcast_to(eased_bot[:, np.newaxis], (bottom_height, width)).copy(), mode="L"))
-        image.paste(bottom_tinted, (0, bottom_start), mask=bottom_tinted)
+        
+        # Curva quadratica decisa
+        eased_bot = ((t_bot ** 2.0) * bottom_max_alpha).astype(np.uint8) 
+        gradient_mask = Image.fromarray(np.broadcast_to(eased_bot[:, np.newaxis], (bottom_height, width)).copy(), mode="L")
+        
+        # Creiamo un livello colore per la moltiplicazione (Multiply Blend)
+        color_layer = Image.new("RGB", (width, bottom_height), (int(bot_color[0]), int(bot_color[1]), int(bot_color[2])))
+        bottom_crop_orig = image.crop((0, bottom_start, width, height)).convert("RGB")
+        
+        # Moltiplichiamo i colori per scurire la base in modo profondo e vivido
+        multiplied = ImageChops.multiply(bottom_crop_orig, color_layer)
+        multiplied = multiplied.convert("RGBA")
+        
+        # Riapplichiamo l'originale sovrascrivendo solo con la maschera di sfumatura
+        image.paste(multiplied, (0, bottom_start), mask=gradient_mask)
 
     # --- Badge / quality overlay ---
     mode   = cfg.badge_display_mode
