@@ -1348,8 +1348,10 @@ def build_poster(
         
         # Micro-grana organica anti-banding
         noise = np.random.normal(0, 2, (bottom_height, width, 3)).astype(np.float32)
-        glass_arr = np.array(glass_layer.convert("RGB")).astype(np.float32)
-        glass_arr = np.clip(glass_arr + noise, 0, 255)
+        # BUG FIX: manteniamo i 4 canali RGBA (senza convertire in RGB)
+        glass_arr = np.array(glass_layer).astype(np.float32)
+        # Aggiungiamo il rumore solo ai primi 3 canali (RGB), lasciando intatto l'Alpha
+        glass_arr[:,:,:3] = np.clip(glass_arr[:,:,:3] + noise, 0, 255)
         glass_layer = Image.fromarray(glass_arr.astype(np.uint8), "RGBA")
         
         # 3. MASCHERA ESPONENZIALE CORRETTA (1.8)
@@ -1368,7 +1370,7 @@ def build_poster(
         eased_bot = ((t_bot ** 2.0) * bottom_max_alpha).astype(np.uint8) 
         gradient_mask = Image.fromarray(np.broadcast_to(eased_bot[:, np.newaxis], (bottom_height, width)).copy(), mode="L")
         
-        # Creiamo un livello colore per la moltiplicazione (Multiply Blend)
+        # Creiamo un livello colore per la moltiplicazione usando bot_color già esistente
         color_layer = Image.new("RGB", (width, bottom_height), (int(bot_color[0]), int(bot_color[1]), int(bot_color[2])))
         bottom_crop_orig = image.crop((0, bottom_start, width, height)).convert("RGB")
         
