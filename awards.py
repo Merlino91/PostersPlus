@@ -1467,31 +1467,11 @@ def draw_award_badge(
         badge_w = max(min_badge_w, min(max_badge_w, text_w_ss // SS + _h_pad))
         bw = badge_w * SS
 
-        # 2. ESTRAZIONE COLORE (Con la TUA logica intelligente)
+        # 2. ASSEGNAZIONE COLORE (Il colore puro arriva da main.py prima dei gradienti!)
         if tint_rgb is not None:
             bg_r, bg_g, bg_b = int(tint_rgb[0]), int(tint_rgb[1]), int(tint_rgb[2])
         else:
-            # Ritagliamo l'area locale dietro la pillola
-            crop_y = max(0, by_composite)
-            region = image.crop((bx, crop_y, bx + badge_w, crop_y + badge_h))
-            
-            # Usiamo il tuo stesso estrattore per trovare il colore dominante, scartando i grigi/neri
-            small_region = region.copy()
-            small_region.thumbnail((50, 50))
-            colors = small_region.convert("RGB").getcolors(2500)
-            
-            bg_r, bg_g, bg_b = 100, 100, 100  # Fallback
-            if colors:
-                colors.sort(key=lambda t: t[0], reverse=True)
-                for count, color in colors:
-                    lum = 0.299 * color[0] + 0.587 * color[1] + 0.114 * color[2]
-                    # Filtra via le ombre nere e i bagliori bianchi
-                    if 40 < lum < 215:
-                        bg_r, bg_g, bg_b = color
-                        break
-                else:
-                    # Se tutti i colori sono scuri o chiari, prendi il più presente in assoluto
-                    bg_r, bg_g, bg_b = colors[0][1]
+            bg_r, bg_g, bg_b = 50, 150, 250  # Fallback di sicurezza (non si attiverà mai)
 
         # 3. Disegna la Pillola con angoli personalizzati
         # pill_radius = bh // 4 rende gli angoli molto più spigolosi rispetto a // 2
