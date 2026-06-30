@@ -1299,7 +1299,7 @@ def build_poster(
         top_tinted.putalpha(top_overlay)
         image.paste(top_tinted, (0, 0), mask=top_tinted)
 
-    # --- DISEGNO BOTTOM GRADIENT & EFFETTO VETRO SFUMATO STILE BTTTR.CC ---
+    # --- DISEGNO BOTTOM GRADIENT & EFFETTO VETRO SFUMATO ACCENTUATO STILE BTTTR.CC ---
     bottom_height = int(height * 0.45) 
     bottom_start = height - bottom_height
 
@@ -1309,28 +1309,28 @@ def build_poster(
         # Ritagliamo la porzione inferiore originale
         bottom_crop = image.crop((0, bottom_start, width, height))
         
-        # 1. SFOCATURA CONTROLLATA (Mantiene i contorni leggibili invece di scioglierli)
-        # Usiamo BoxBlur leggero per simulare la rifrazione del vetro opaco reale
-        box_radius = max(1, int(cfg.frosted_glass_intensity / 25))
+        # 1. SFOCATURA EFFETTO VETRO ACCENTUATA
+        # Aumentiamo il raggio per rendere il vetro decisamente più opaco e visibile
+        box_radius = max(2, int(cfg.frosted_glass_intensity / 12))
         glass_layer = bottom_crop.filter(ImageFilter.BoxBlur(radius=box_radius))
         
-        # Accentuiamo i contorni rimasti con UnsharpMask per l'effetto vetro satinato
-        glass_layer = glass_layer.filter(ImageFilter.UnsharpMask(radius=3, percent=150, threshold=3))
+        # Accentuiamo i bordi rifratti per dare consistenza al vetro satinato
+        glass_layer = glass_layer.filter(ImageFilter.UnsharpMask(radius=4, percent=175, threshold=2))
         
-        # 2. BOOST DI VIVIDEZZA (Prendiamo i colori e li rendiamo intensi e densi)
+        # 2. BOOST DI VIVIDEZZA E CONTRASTO
         glass_layer = ImageEnhance.Color(glass_layer).enhance(1.6)
-        glass_layer = ImageEnhance.Contrast(glass_layer).enhance(1.1)
+        glass_layer = ImageEnhance.Contrast(glass_layer).enhance(1.15)
         
-        # Micro-grana fotorealistica per spezzare le bande di colore digitali
+        # Micro-grana anti-banding fotorealistica
         noise = np.random.normal(0, 3, (bottom_height, width, 3)).astype(np.float32)
         glass_arr = np.array(glass_layer).astype(np.float32)
         glass_arr[:,:,:3] = np.clip(glass_arr[:,:,:3] + noise, 0, 255)
         glass_layer = Image.fromarray(glass_arr.astype(np.uint8), "RGBA")
         
-        # 3. MASCHERA ESPONENZIALE (Effetto corto e progressivo che sparisce a 1/3)
+        # 3. MASCHERA MODIFICATA (Parte da più in alto)
         t_blur = np.linspace(0, 1, bottom_height, dtype=np.float32)
-        # Elevando a potenza 3.0 la sfumatura rimane invisibile in alto ed esplode solo in basso
-        eased_blur = (np.power(t_blur, 3.0) * 255).astype(np.uint8)
+        # Portando l'esponente a 1.8, il gradiente si estende più verso l'alto ed è più corposo
+        eased_blur = (np.power(t_blur, 1.8) * 255).astype(np.uint8)
         blur_mask = Image.fromarray(np.broadcast_to(eased_blur[:, np.newaxis], (bottom_height, width)).copy(), mode="L")
         
         # Applichiamo lo strato traslucido
