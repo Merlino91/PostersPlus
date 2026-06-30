@@ -1541,6 +1541,9 @@ def build_poster(
     
     if getattr(cfg, 'use_global_ui_color', False):
         _shared_tint = global_dom_color
+    elif getattr(cfg, 'sash_badge_style', '') == "minimal_pill":
+        # Se usi la Pillola e il Global è spento, usa il colore estratto in alto pulito!
+        _shared_tint = smart_top_color
     elif (
         cfg.bar_match_notch
         and cfg.rating_display_mode == 4
