@@ -1862,7 +1862,7 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
             <div class="field cfg-sep">
               <label class="field-label">Top Gradient Intensity</label>
               <div class="range-row">
-                <input type="range" id="cfg-grad-top" min="0" max="100" step="1" value="30" oninput="document.getElementById('rng-grad-top').innerText = this.value; build(); queuePreviewReload()">
+                <input type="range" id="cfg-grad-top" min="0" max="100" step="1" value="30" oninput="updateRange(this,'rng-grad-top'); build(); queuePreviewReload()">
                 <span class="range-val" id="rng-grad-top">30</span>
               </div>
               <div style="margin-top:8px;">
@@ -1878,7 +1878,7 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
             <div class="field cfg-sep">
               <label class="field-label">Bottom Gradient Intensity</label>
               <div class="range-row">
-                <input type="range" id="cfg-grad-bot" min="0" max="100" step="1" value="60" oninput="document.getElementById('rng-grad-bot').innerText = this.value; build(); queuePreviewReload()">
+                <input type="range" id="cfg-grad-bot" min="0" max="100" step="1" value="60" oninput="updateRange(this,'rng-grad-bot'); build(); queuePreviewReload()">
                 <span class="range-val" id="rng-grad-bot">60</span>
               </div>
               <div style="margin-top:8px;">
@@ -1894,11 +1894,10 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
             <div class="field cfg-sep">
               <label class="field-label">Frosted Glass Intensity (Blur)</label>
               <div class="range-row">
-                <input type="range" id="cfg-glass-int" min="0" max="250" step="1" value="50" oninput="document.getElementById('rng-glass').innerText = this.value; build(); queuePreviewReload()">
+                <input type="range" id="cfg-glass-int" min="0" max="250" step="1" value="50" oninput="updateRange(this,'rng-glass'); build(); queuePreviewReload()">
                 <span class="range-val" id="rng-glass">50</span>
               </div>
-            </div>
-            
+            </div>            
             <div class="field cfg-sep" style="margin-bottom:0;">
                 <label class="field-label">UI Enhancement (Your Custom Settings)</label>
                 <div class="toggle-row">
@@ -2766,7 +2765,8 @@ function showTab(tab) {
 function updateRange(el, outId) {
   const v = parseFloat(el.value);
   const dec = el.step.includes('.') ? el.step.split('.')[1].length : 0;
-  document.getElementById(outId).textContent = v.toFixed(Math.max(dec, 2));
+  // TUA MODIFICA: Ora rispetta i numeri interi senza forzare i due zeri finali (.00)
+  document.getElementById(outId).textContent = v.toFixed(dec);
   const min = parseFloat(el.min), max = parseFloat(el.max);
   const pct = ((v - min) / (max - min) * 100).toFixed(1) + '%';
   el.style.setProperty('--pct', pct);
