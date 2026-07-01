@@ -1300,7 +1300,7 @@ def build_poster(
         image.paste(top_tinted, (0, 0), mask=top_tinted)
 
     # --- DISEGNO BOTTOM GRADIENT & EFFETTO VETRO SFUMATO 2.0 ---
-    bottom_height = int(height * 0.60) 
+    bottom_height = int(height * 0.70) 
     bottom_start = height - bottom_height
 
     if getattr(cfg, 'frosted_glass_intensity', 0) > 0:
@@ -1347,9 +1347,9 @@ def build_poster(
         # per creare un "falso nero" pigmentato ed elegantissimo. Se ha scelto Black, resta (0,0,0).
         if bot_color != (0, 0, 0):
             dark_tint_color = (
-                int(bot_color[0] * 0.25),
-                int(bot_color[1] * 0.25),
-                int(bot_color[2] * 0.25)
+                int(bot_color[0] * 0.35),
+                int(bot_color[1] * 0.35),
+                int(bot_color[2] * 0.35)
             )
         else:
             dark_tint_color = (0, 0, 0)
