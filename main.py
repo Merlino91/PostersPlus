@@ -1347,9 +1347,9 @@ def build_poster(
         # per creare un "falso nero" pigmentato ed elegantissimo. Se ha scelto Black, resta (0,0,0).
         if bot_color != (0, 0, 0):
             dark_tint_color = (
-                int(bot_color[0] * 0.18),
-                int(bot_color[1] * 0.18),
-                int(bot_color[2] * 0.18)
+                int(bot_color[0] * 0.25),
+                int(bot_color[1] * 0.25),
+                int(bot_color[2] * 0.25)
             )
         else:
             dark_tint_color = (0, 0, 0)
