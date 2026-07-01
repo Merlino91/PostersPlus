@@ -1336,13 +1336,26 @@ def build_poster(
         
         image.paste(glass_layer, (0, bottom_start), mask=blur_mask)
 
+    # 2. Gradiente Inferiore con conversione graduale dei neri assoluti
     if cfg.gradient_bottom_intensity > 0:
         bottom_max_alpha = int((cfg.gradient_bottom_intensity / 100) * 255)
         t_bot = np.linspace(0, 1, bottom_height, dtype=np.float32)
-        eased_bot = ((1 - (1 - t_bot) ** 1.2) * bottom_max_alpha).astype(np.uint8)
-        bottom_tinted = Image.new("RGBA", (width, bottom_height), (int(bot_color[0]), int(bot_color[1]), int(bot_color[2]), 0))
-        bottom_tinted.putalpha(Image.fromarray(np.broadcast_to(eased_bot[:, np.newaxis], (bottom_height, width)).copy(), mode="L"))
-        image.paste(bottom_tinted, (0, bottom_start), mask=bottom_tinted)
+        eased_bot = ((t_bot ** 1.2) * bottom_max_alpha).astype(np.uint8)
+        gradient_mask = Image.fromarray(np.broadcast_to(eased_bot[:, np.newaxis], (bottom_height, width)).copy(), mode="L")
+        
+        # Se l'utente ha scelto un colore (Local o Global), abbassiamo la sua luminosità al 18%
+        # per creare un "falso nero" pigmentato ed elegantissimo. Se ha scelto Black, resta (0,0,0).
+        if bot_color != (0, 0, 0):
+            dark_tint_color = (
+                int(bot_color[0] * 0.18),
+                int(bot_color[1] * 0.18),
+                int(bot_color[2] * 0.18)
+            )
+        else:
+            dark_tint_color = (0, 0, 0)
+            
+        tint_layer = Image.new("RGBA", (width, bottom_height), (*dark_tint_color, 255))
+        image.paste(tint_layer, (0, bottom_start), mask=gradient_mask)
 
     # --- Badge / quality overlay ---
     mode   = cfg.badge_display_mode
