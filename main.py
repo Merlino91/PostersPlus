@@ -1150,7 +1150,7 @@ def _draw_combined_text_badge(
         fmt = "SDR"
 
     try:
-        font = ImageFont.truetype(os.path.join(_FONTS_DIR, "Inter-Bold.ttf"), font_size)
+        font = ImageFont.truetype(os.path.join(_FONTS_DIR, "Ubuntu-Bold.ttf"), font_size)
     except IOError:
         font = ImageFont.load_default()
 
@@ -1629,7 +1629,7 @@ def build_poster(
             rating_cy = height * cfg.accent_bar_y_offset
 
             try:
-                font_meta = ImageFont.truetype(os.path.join(_FONTS_DIR, "Inter-Bold.ttf"), font_size)
+                font_meta = ImageFont.truetype(os.path.join(_FONTS_DIR, "Ubuntu-Bold.ttf"), font_size)
             except IOError:
                 font_meta = ImageFont.load_default()
 
@@ -1664,7 +1664,7 @@ def build_poster(
             rating_cy = height * cfg.numeric_score_y_offset
 
             try:
-                font_meta = ImageFont.truetype(os.path.join(_FONTS_DIR, "Inter-Bold.ttf"), font_size)
+                font_meta = ImageFont.truetype(os.path.join(_FONTS_DIR, "Ubuntu-Bold.ttf"), font_size)
             except IOError:
                 font_meta = ImageFont.load_default()
 
@@ -1680,7 +1680,7 @@ def build_poster(
             font_size = int(width * cfg.minimalist_mode_font_size_ratio)
 
             try:
-                font_meta = ImageFont.truetype(os.path.join(_FONTS_DIR, "Inter-Bold.ttf"), font_size)
+                font_meta = ImageFont.truetype(os.path.join(_FONTS_DIR, "Ubuntu-Bold.ttf"), font_size)
             except IOError:
                 font_meta = ImageFont.load_default()
 
