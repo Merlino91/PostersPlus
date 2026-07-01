@@ -1337,28 +1337,12 @@ def build_poster(
         image.paste(glass_layer, (0, bottom_start), mask=blur_mask)
 
     if cfg.gradient_bottom_intensity > 0:
-        from PIL import ImageChops
-        
-        # 1. Definiamo l'intensità
         bottom_max_alpha = int((cfg.gradient_bottom_intensity / 100) * 255)
         t_bot = np.linspace(0, 1, bottom_height, dtype=np.float32)
-        
-        # 2. Creiamo una maschera di gradiente più "aggressiva" sulla base
-        eased_bot = ((t_bot ** 1.5) * bottom_max_alpha).astype(np.uint8) 
-        gradient_mask = Image.fromarray(np.broadcast_to(eased_bot[:, np.newaxis], (bottom_height, width)).copy(), mode="L")
-        
-        # 3. Creiamo un livello colore VIVACE (usiamo bot_color estratto)
-        # Se bot_color è nero, forziamo un colore neutro di sicurezza per evitare l'effetto "buco nero"
-        active_bot_color = bot_color if sum(bot_color) > 30 else (100, 100, 100)
-        color_layer = Image.new("RGB", (width, bottom_height), active_bot_color)
-        
-        # 4. Usiamo "Overlay" invece di "Multiply" per mantenere la saturazione e la vivacità
-        bottom_crop_orig = image.crop((0, bottom_start, width, height)).convert("RGB")
-        vivid_gradient = ImageChops.overlay(bottom_crop_orig, color_layer)
-        
-        # 5. Riapplichiamo l'originale con la maschera, mantenendo però la luminosità dei colori
-        # Usiamo Composite per fondere il risultato vivace con l'immagine originale
-        image.paste(vivid_gradient.convert("RGBA"), (0, bottom_start), mask=gradient_mask)
+        eased_bot = ((1 - (1 - t_bot) ** 1.2) * bottom_max_alpha).astype(np.uint8)
+        bottom_tinted = Image.new("RGBA", (width, bottom_height), (int(bot_color[0]), int(bot_color[1]), int(bot_color[2]), 0))
+        bottom_tinted.putalpha(Image.fromarray(np.broadcast_to(eased_bot[:, np.newaxis], (bottom_height, width)).copy(), mode="L"))
+        image.paste(bottom_tinted, (0, bottom_start), mask=bottom_tinted)
 
     # --- Badge / quality overlay ---
     mode   = cfg.badge_display_mode
