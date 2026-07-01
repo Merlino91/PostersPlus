@@ -445,7 +445,7 @@ def draw_frosted_bar(
     # ── Font ─────────────────────────────────────────────────────────────────
     font_size = max(10, int(bar_h * font_size_ratio))
     font_path = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)), "fonts", "Inter-Bold.ttf"
+        os.path.dirname(os.path.abspath(__file__)), "fonts", "Ubuntu-Bold.ttf"
     )
     try:
         font = ImageFont.truetype(font_path, font_size)
