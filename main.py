@@ -1249,14 +1249,31 @@ def build_poster(
 
 # === ESTRAZIONE COLORI PREVENTIVA ===
     def _get_dominant_color(img: Image.Image) -> tuple[int, int, int]:
+        import colorsys
         small_img = img.copy()
         small_img.thumbnail((50, 50))
         colors = small_img.convert("RGB").getcolors(2500)
         if not colors: return (100, 100, 100)
+        
+        # Ordiniamo i colori per frequenza (quelli più presenti nella locandina)
         colors.sort(key=lambda t: t[0], reverse=True)
+        
         for count, color in colors:
-            luminanza = 0.299 * color[0] + 0.587 * color[1] + 0.114 * color[2]
-            if 40 < luminanza < 215: return color
+            # Convertiamo in HSV per analizzare la purezza del colore
+            r, g, b = color[0] / 255.0, color[1] / 255.0, color[2] / 255.0
+            h, s, v = colorsys.rgb_to_hsv(r, g, b)
+            
+            # FILTRI SULLO SCARTO:
+            # s < 0.18: scarta i grigi (colori troppo spenti o neutri)
+            # v < 0.15: scarta i neri o colori estremamente scuri
+            # v > 0.92: scarta i bianchi o riflessi di luce pura
+            if s < 0.18 or v < 0.15 or v > 0.92:
+                continue
+                
+            return color
+            
+        # Fallback se la locandina è totalmente in bianco e nero/grigia: 
+        # restituisce il colore più frequente invece del grigio fisso
         return colors[0][1]
 
     global_dom_color = _get_dominant_color(image)
