@@ -1630,8 +1630,10 @@ def build_poster(
 
             try:
                 font_meta = ImageFont.truetype(os.path.join(_FONTS_DIR, "Ubuntu-Bold.ttf"), font_size)
+                font_icon = ImageFont.truetype(os.path.join(_FONTS_DIR, "Font Awesome-7-Brands.otf"), font_size)
             except IOError:
                 font_meta = ImageFont.load_default()
+                font_icon = ImageFont.load_default()
 
             tx, ty = _text_center(draw, label, font_meta, width / 2, rating_cy)  # type: ignore
             draw.text(
@@ -1660,29 +1662,44 @@ def build_poster(
                 _score_text = "10" if score >= 100 else f"{score / 10:.1f}"
             else:
                 _score_text = str(score)
-            label = f"{genre_label} ★ {_score_text}"
+            
             rating_cy = height * cfg.numeric_score_y_offset
 
             try:
                 font_meta = ImageFont.truetype(os.path.join(_FONTS_DIR, "Ubuntu-Bold.ttf"), font_size)
+                font_icon = ImageFont.truetype(os.path.join(_FONTS_DIR, "Font Awesome-7-Brands.otf"), font_size)
             except IOError:
                 font_meta = ImageFont.load_default()
+                font_icon = ImageFont.load_default()
 
-            tx, ty = _text_center(draw, label, font_meta, width / 2, rating_cy)  # type: ignore
-            draw.text(
-                (tx, ty - int(font_size * 0.10)),
-                label,
-                font=font_meta,
-                fill=(200, 200, 200, 255),
-            )
+            imdb_logo = "\uf2d8"
+            
+            # Calcoliamo le lunghezze dei singoli pezzi per centrare l'intero blocco
+            len_genre = draw.textlength(f"{genre_label}  ", font=font_meta) 
+            len_icon = draw.textlength(f"{imdb_logo} ", font=font_icon)     
+            len_score = draw.textlength(_score_text, font=font_meta)
+            
+            total_width = len_genre + len_icon + len_score
+            ox = (width - total_width) // 2
+            
+            # Calcoliamo la Y centrata
+            _, ty = _text_center(draw, genre_label, font_meta, width / 2, rating_cy)
+            adjusted_oy = ty - int(font_size * 0.10)
+            
+            # Disegniamo in sequenza spostando la X
+            draw.text((ox, adjusted_oy), f"{genre_label}  ", font=font_meta, fill=(200, 200, 200, 255))
+            draw.text((ox + len_genre, adjusted_oy), imdb_logo, font=font_icon, fill=(200, 200, 200, 255))
+            draw.text((ox + len_genre + len_icon, adjusted_oy), _score_text, font=font_meta, fill=(200, 200, 200, 255))
 
         elif cfg.rating_display_mode == 3:
             font_size = int(width * cfg.minimalist_mode_font_size_ratio)
 
             try:
                 font_meta = ImageFont.truetype(os.path.join(_FONTS_DIR, "Ubuntu-Bold.ttf"), font_size)
+                font_icon = ImageFont.truetype(os.path.join(_FONTS_DIR, "Font Awesome-7-Brands.otf"), font_size)
             except IOError:
                 font_meta = ImageFont.load_default()
+                font_icon = ImageFont.load_default()
 
             y = round(height * cfg.minimalist_mode_font_y_offset)
             right_edge = width - int(width * cfg.minimalist_mode_font_x_offset)
@@ -1697,28 +1714,28 @@ def build_poster(
             # Mode 1 ("Rating"): genre ★ score
             # Mode 2 ("Year + Rating"): genre [pip] year ★ score
             _has_score = score not in ("N/A", None)
-            parts = [(genre_label, None)]   # (text, separator_before)
+            parts = [(genre_label, None)]   
             if cfg.minimalist_append_mode == 0:
                 if release_year:
                     parts.append((str(release_year), "rpip"))
             elif cfg.minimalist_append_mode == 1:
                 if _has_score:
                     parts.append((str(score), "star"))
-            else:  # 2 — Year + Rating
+            else:  
                 if release_year:
                     parts.append((str(release_year), "pip"))
                 if _has_score:
                     parts.append((str(score), "star"))
 
+            imdb_logo = "\uf2d8"
             pip_gap = int(font_size * 0.55)
             pip_w   = max(4, int(font_size * 0.18))
             pip_h   = int(font_size * 1.4)
             pip_cy  = round(y + font_size * 0.60)
-            star_w  = draw.textlength("★", font=font_meta)
+            star_w  = draw.textlength(imdb_logo, font=font_icon)
 
-            # Lay out right-to-left: each segment, with its separator to its left.
             cursor = right_edge
-            ops    = []   # (kind, x[, text]); kind in text|pip|rpip|star
+            ops    = []   
             for i in range(len(parts) - 1, -1, -1):
                 seg, sep = parts[i]
                 seg_x = cursor - draw.textlength(seg, font=font_meta)
@@ -1736,7 +1753,7 @@ def build_poster(
                 if kind == "text":
                     draw.text((ox, y), op[2], font=font_meta, fill=_ink)
                 elif kind == "star":
-                    draw.text((ox, y), "★", font=font_meta, fill=_ink)
+                    draw.text((ox, y), imdb_logo, font=font_icon, fill=_ink)
                 elif kind == "rpip":
                     draw_score_bar_vertical(image, score, x=ox, y_center=pip_cy,
                                             height=pip_h, width=pip_w,
@@ -1759,9 +1776,9 @@ def build_poster(
             _year_str  = str(release_year) if release_year else ""
             _bar_sash, _ = sash_result if sash_result else (None, None)
             if cfg.bar_append == "rating_year":
-                _parts = [_year_str, genre_label or "", f"★ {_score_str}" if _score_str else ""]
+                _parts = [_year_str, genre_label or "", f"IMDb {_score_str}" if _score_str else ""]
             elif cfg.bar_append == "rating":
-                _parts = [genre_label or "", f"★ {_score_str}" if _score_str else ""]
+                _parts = [genre_label or "", f"IMDb {_score_str}" if _score_str else ""]
             elif cfg.bar_append == "year":
                 _parts = [_year_str, genre_label or ""]
             else:  # "sash"
