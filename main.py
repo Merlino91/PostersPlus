@@ -1717,7 +1717,8 @@ def build_poster(
 
             try:
                 font_meta = ImageFont.truetype(os.path.join(_FONTS_DIR, "Ubuntu-Bold.ttf"), font_size)
-                font_icon = ImageFont.truetype(os.path.join(_FONTS_DIR, "Font Awesome-7-Brands.otf"), font_size)
+                # Per il Minimalist carichiamo Inter-Bold invece di Font Awesome per avere la stella nitida
+                font_icon = ImageFont.truetype(os.path.join(_FONTS_DIR, "Inter-Bold.ttf"), font_size)
             except IOError:
                 font_meta = ImageFont.load_default()
                 font_icon = ImageFont.load_default()
@@ -1728,7 +1729,6 @@ def build_poster(
 
             _has_score = score not in ("N/A", None)
             
-            # Formattiamo il punteggio in formato decimale (es. 8.4) se la spunta è attiva
             if _has_score:
                 if cfg.score_out_of_10 and isinstance(score, (int, float)):
                     _score_text = "10" if score >= 100 else f"{score / 10:.1f}"
@@ -1750,12 +1750,13 @@ def build_poster(
                 if _has_score:
                     parts.append((_score_text, "star"))
 
-            imdb_logo = "\uf2d8"
+            # Ripristiniamo il carattere della stella per Inter-Bold
+            star_glyph = "★"
             pip_gap = int(font_size * 0.55)
             pip_w   = max(4, int(font_size * 0.18))
             pip_h   = int(font_size * 1.4)
             pip_cy  = round(y + font_size * 0.60)
-            star_w  = draw.textlength(imdb_logo, font=font_icon)
+            star_w  = draw.textlength(star_glyph, font=font_icon)
 
             cursor = right_edge
             ops    = []   
@@ -1776,7 +1777,8 @@ def build_poster(
                 if kind == "text":
                     draw.text((ox, y), op[2], font=font_meta, fill=_ink)
                 elif kind == "star":
-                    draw.text((ox, y), imdb_logo, font=font_icon, fill=_ink)
+                    # Disegna la stella nativa usando il font Inter-Bold
+                    draw.text((ox, y), star_glyph, font=font_icon, fill=_ink)
                 elif kind == "rpip":
                     draw_score_bar_vertical(image, score, x=ox, y_center=pip_cy,
                                             height=pip_h, width=pip_w,
