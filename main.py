@@ -1726,27 +1726,29 @@ def build_poster(
             right_edge = width - int(width * cfg.minimalist_mode_font_x_offset)
             _ink = (235, 235, 235, 255)
 
-            # Segments, each tagged with the SEPARATOR that precedes it:
-            #   "pip"  — silver vertical pip (before the year)
-            #   "star" — ★ glyph (before the rating/score)
-            #   "rpip" — pip COLOURED by score (mode 0 only: the rating shown
-            #            purely by colour, no number)
-            # Mode 0 ("Year"): genre [rating-pip] year
-            # Mode 1 ("Rating"): genre ★ score
-            # Mode 2 ("Year + Rating"): genre [pip] year ★ score
             _has_score = score not in ("N/A", None)
+            
+            # Formattiamo il punteggio in formato decimale (es. 8.4) se la spunta è attiva
+            if _has_score:
+                if cfg.score_out_of_10 and isinstance(score, (int, float)):
+                    _score_text = "10" if score >= 100 else f"{score / 10:.1f}"
+                else:
+                    _score_text = str(score)
+            else:
+                _score_text = "N/A"
+
             parts = [(genre_label, None)]   
             if cfg.minimalist_append_mode == 0:
                 if release_year:
                     parts.append((str(release_year), "rpip"))
             elif cfg.minimalist_append_mode == 1:
                 if _has_score:
-                    parts.append((str(score), "star"))
+                    parts.append((_score_text, "star"))
             else:  
                 if release_year:
                     parts.append((str(release_year), "pip"))
                 if _has_score:
-                    parts.append((str(score), "star"))
+                    parts.append((_score_text, "star"))
 
             imdb_logo = "\uf2d8"
             pip_gap = int(font_size * 0.55)
