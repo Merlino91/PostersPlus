@@ -3230,7 +3230,6 @@ async def get_poster(
             is_true_story_override=is_true_story,
             is_metacritic_override=is_metacritic,
             is_digital_release_override=is_digital_release(imdb_id),
-            release_status_override=_release_status,
         )
 
         # ------------------------------------------------------------------
