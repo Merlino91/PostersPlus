@@ -1247,7 +1247,7 @@ def build_poster(
     else:
         genre_label = _GENRE_LABEL_OVERRIDES.get(genre, genre)
 
-# === ESTRAZIONE COLORI PREVENTIVA ===
+# === ESTRAZIONE COLORI PREVENTIVA (Ordinamento per Saturazione/Vividezza) ===
     def _get_dominant_color(img: Image.Image) -> tuple[int, int, int]:
         import colorsys
         small_img = img.copy()
@@ -1255,28 +1255,32 @@ def build_poster(
         colors = small_img.convert("RGB").getcolors(2500)
         if not colors: return (100, 100, 100)
         
-        # Ordiniamo i colori per frequenza (quelli più presenti nella locandina)
-        colors.sort(key=lambda t: t[0], reverse=True)
-        
-        for count, color in colors:
-            # Convertiamo in HSV per analizzare la purezza del colore
-            r, g, b = color[0] / 255.0, color[1] / 255.0, color[2] / 255.0
+        # Funzione interna per calcolare quanto un colore è "vivido"
+        def color_vividness_score(c_count, c_rgb):
+            r, g, b = c_rgb[0] / 255.0, c_rgb[1] / 255.0, c_rgb[2] / 255.0
             h, s, v = colorsys.rgb_to_hsv(r, g, b)
             
-            # FILTRI SULLO SCARTO:
-            # s < 0.18: scarta i grigi (colori troppo spenti o neutri)
-            # v < 0.15: scarta i neri o colori estremamente scuri
-            # v > 0.92: scarta i bianchi o riflessi di luce pura
-            if s < 0.18 or v < 0.15 or v > 0.92:
-                continue
+            # Filtro di sicurezza: scarta neri, bianchi e grigi assoluti
+            if s < 0.15 or v < 0.15 or v > 0.92: 
+                return -1 
                 
-            return color
+            # Il punteggio premia la saturazione (s) e la brillantezza (v).
+            # Moltiplichiamo leggermente per la rarità (c_count) solo per evitare pixel microscopici isolati.
+            return s * v * (c_count ** 0.2)
+
+        # ORDINAMENTO SMART: ordina i colori dal più VIVIDO al più spento
+        colors.sort(key=lambda t: color_vividness_score(t[0], t[1]), reverse=True)
+        
+        # Se l'ordinamento ha trovato un colore valido (punteggio > 0), prende il primo (il più vivido)
+        if color_vividness_score(colors[0][0], colors[0][1]) > 0:
+            return colors[0][1]
             
-        # Fallback se la locandina è totalmente in bianco e nero/grigia: 
-        # restituisce il colore più frequente invece del grigio fisso
+        # Fallback: se la locandina è totalmente grigia/bianco e nero, torna al colore più frequente
+        colors.sort(key=lambda t: t[0], reverse=True)
         return colors[0][1]
 
     global_dom_color = _get_dominant_color(image)
+    
     
     # --- TUA ESTRAZIONE SMART (PRIMA CHE I GRADIENTI SPORCHINO L'IMMAGINE) ---
     small_top = image.crop((width - int(width*0.4), 0, width, int(height*0.2)))
