@@ -66,7 +66,7 @@ import os
 from dataclasses import dataclass, field
 from datetime import date, datetime
 
-from config import SASH_PRIORITY as DEFAULT_SASH_PRIORITY  # single source of truth
+from config import SASH_PRIORITY as DEFAULT_SASH_PRIORITY
 
 logger = logging.getLogger(__name__)
 
@@ -74,13 +74,6 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Curated lists
 # ---------------------------------------------------------------------------
-
-
-# Keys are the exact TMDB credit name to match against.
-# Values are the display string shown in the sash.
-# To customise the label without changing the match, set a different value:
-#   "Studio Ghibli": "Ghibli"   →  sash shows "By Ghibli"
-#   "Studio Ghibli": "Studio Ghibli"  →  sash shows "By Studio Ghibli"
 
 NOTABLE_STUDIOS: dict[str, str] = {
     "A24":                    "A24 Films",
@@ -94,10 +87,6 @@ NOTABLE_STUDIOS: dict[str, str] = {
     "HBO":                    "HBO Original",
     "Laika Entertainment":    "Laika",
 }
-
-# Keys are the exact TMDB credit name to match against.
-# Values are the display string shown in the sash.
-# Example: "Christopher Nolan": "Nolan"  →  sash shows "By Nolan"
 
 NOTABLE_DIRECTORS: dict[str, str] = {
     "Christopher Nolan":   "C. Nolan",
@@ -140,12 +129,6 @@ NOTABLE_DIRECTORS: dict[str, str] = {
     "James Cameron":       "J. Cameron",
     "Peter Jackson":       "P. Jackson",
 }
-
-
-# Keys are the exact TMDB credit name to match against.
-# Values are the display string shown in the sash.
-# Keep values short — the sash is narrow. First name + last name usually fits;
-# drop first names or use initials where needed.
 
 NOTABLE_CAST: dict[str, str] = {
     "Cate Blanchett":    "Cate Blanchett",
@@ -205,19 +188,14 @@ NOTABLE_CAST: dict[str, str] = {
     "Josh O'Connor":          "Josh O'Connor",
 }
 
-# Within the "structural" bucket, checked in this fixed order
 _STRUCTURAL_CHECKS = ["short_film", "mini_series", "binge_ready"]
 
 _STRUCTURAL_LABELS: dict[str, str] = {
-    "short_film":  "Short Film",
-    "mini_series": "Mini Series",
-    "binge_ready": "Binge Ready",
+    "short_film":  "Cortometraggio",
+    "mini_series": "Mini Serie",
+    "binge_ready": "Da Fare Maratona",
 }
 
-# MDblist keyword name → sash display label.
-# Checked in order; first match wins within the festival slot.
-# Add new festivals here — keyword pattern is typically festival-<name>-winner.
-# Ordered roughly by prestige (up for debate)
 FESTIVAL_KEYWORDS: dict[str, str] = { 
     "festival-cannes-winner":      "Palme d'Or",
     "festival-venice-winner":      "Golden Lion",
@@ -231,70 +209,44 @@ FESTIVAL_KEYWORDS: dict[str, str] = {
     "festival-tribeca-winner":     "Tribeca AA",
 }
 
-# ISO 639-1 language code → display label shown on the sash.
-# English is intentionally absent — foreign slot only fires for non-English.
-# Add languages here; unlisted non-English languages fall back to
-# "Foreign Language Film" to ensure the slot always has a label.
 LANGUAGE_LABELS: dict[str, str] = {
-    "fr": "French",
-    "de": "German",
-    "es": "Spanish",
-    "it": "Italian",
-    "pt": "Portuguese",
-    "ja": "Japanese",
-    "ko": "Korean",
-    "zh": "Chinese",
-    "da": "Danish",
-    "sv": "Swedish",
-    "no": "Norwegian",
-    "fi": "Finnish",
-    "nl": "Dutch",
-    "pl": "Polish",
-    "ru": "Russian",
-    "tr": "Turkish",
-    "ar": "Arabic",
-    "hi": "Hindi",
-    "fa": "Persian",
-    "ro": "Romanian",
-    "hu": "Hungarian",
-    "cs": "Czech",
-    "he": "Hebrew",
-    "el": "Greek",
+    "fr": "French", "de": "German", "es": "Spanish", "it": "Italian", "pt": "Portuguese",
+    "ja": "Japanese", "ko": "Korean", "zh": "Chinese", "da": "Danish", "sv": "Swedish",
+    "no": "Norwegian", "fi": "Finnish", "nl": "Dutch", "pl": "Polish", "ru": "Russian",
+    "tr": "Turkish", "ar": "Arabic", "hi": "Hindi", "fa": "Persian", "ro": "Romanian",
+    "hu": "Hungarian", "cs": "Czech", "he": "Hebrew", "el": "Greek",
 }
 
-# Sash type (controls colour) for each priority slot
+# Tag personalizzati uniti alle novita' di UmbraProjects
 _SASH_TYPES: dict[str, str] = {
-    "wins":            "win",       # gold — Oscar Best Picture + Emmy Outstanding wins
-    "gg_wins":         "win",       # gold — Golden Globe wins (separate slot)
-    "pic_noms":        "nom",       # silver — Best Picture nom + Major Emmy nom (film vs TV, never coexist)
-    "gg_noms":         "nom",       # silver — Golden Globe nomination
-    "emmy_noms":       "nom",       # silver — legacy alias for pic_noms
-    "noms":            "nom",       # silver — legacy catch-all for any nomination
-    "festival":        "win",       # gold — major festival win is prestige-equivalent to Oscar
-    "studio":          "prestige",  # purple — production credit
-    "director":        "prestige",  # purple — production credit
-    "cast":            "cast",      # green — talent credit
-    "trending":        "trending",  # blue
-    "cult":            "trending",  # blue — popularity signal, closest to trending without a new colour
-    "foreign":         "info",      # teal — informational / discovery
-    "new_release":     "alert",     # red — newly streaming (release date or r/movieleaks)
-    "digital_release": "alert",     # red — legacy alias for new_release
-    "metacritic":      "nom",       # silver — critical award, fits with noms not production
-    "true_story":      "info",      # teal
-    "structural":      "info",      # teal
-    "release_status":  "alert",     # red — Physical / Streaming / Cinema / Production
     "next_episode":    "next_episode",  
     "canceled":        "nom",           
     "upcoming":        "trending",  
+    "wins":            "win",       
+    "gg_wins":         "win",       
+    "pic_noms":        "nom",       
+    "gg_noms":         "nom",       
+    "emmy_noms":       "nom",       
+    "noms":            "nom",       
+    "festival":        "win",       
+    "studio":          "prestige",  
+    "director":        "prestige",  
+    "cast":            "cast",      
+    "trending":        "trending",  
+    "cult":            "trending",  
+    "foreign":         "info",      
+    "new_release":     "info",      
+    "digital_release": "info",      
+    "metacritic":      "nom",       
+    "true_story":      "info",      
+    "structural":      "info",      
+    "release_status":  "alert",     
 }
 
 NEW_RELEASE_DAYS = 14
 
-
 def _is_recent(release_date: str | None) -> bool:
-    """Return True if *release_date* (YYYY-MM-DD) is within NEW_RELEASE_DAYS of today."""
-    if not release_date:
-        return False
+    if not release_date: return False
     try:
         rd = datetime.strptime(release_date, "%Y-%m-%d").date()
         return (date.today() - rd).days <= NEW_RELEASE_DAYS
@@ -308,51 +260,29 @@ def _is_recent(release_date: str | None) -> bool:
 
 @dataclass
 class DiscoveryMeta:
-    """All discoverable facts about a title, computed once and cached."""
-
-    # Awards (from MDblist keywords + Emmy ID set)
-    award_wins: list[str] = field(default_factory=list)   # "Best Picture", "Emmy Winner"
-    award_noms: list[str] = field(default_factory=list)   # "Best Picture Nom", "Emmy Nominee"
-
-    # Prestige signals (from TMDB credits / production_companies)
-    matched_studios:   list[str] = field(default_factory=list)
+    award_wins: list[str] = field(default_factory=list)
+    award_noms: list[str] = field(default_factory=list)
+    matched_studios: list[str] = field(default_factory=list)
     matched_directors: list[str] = field(default_factory=list)
-    matched_cast:      list[str] = field(default_factory=list)
-
-    # Festival winner (from MDblist keywords)
-    festival_label: str | None = None   # e.g. "Palme d'Or Winner"
-
-    # Structural facts (computed from TMDB metadata)
-    is_short_film:  bool = False   # movie, runtime < 40 min
-    is_mini_series: bool = False   # TV, 1 season, ≤ 8 episodes
-    is_binge_ready: bool = False   # TV, ≥ 3 seasons, prestige episode count
-
-    # Language (from TMDB metadata)
-    original_language: str | None = None   # ISO 639-1 code, e.g. "ko", "fr"
-
-    # Social proof
+    matched_cast: list[str] = field(default_factory=list)
+    festival_label: str | None = None
+    is_short_film: bool = False
+    is_mini_series: bool = False
+    is_binge_ready: bool = False
+    original_language: str | None = None
     trending_rank: int | None = None
-
-    # New release (MDblist digital-release / premiere date within the last 2 weeks)
     is_new_release: bool = False
-
-    # Keyword-based discovery signals (from MDblist keywords)
-    is_cult:              bool = False   # cult-classic or cult-film
-    is_true_story:        bool = False   # based-on-true-story
-    is_metacritic_must_see: bool = False  # metacritic-must-see
-
-    # Digital release (from r/movieleaks poller — movies only)
+    is_cult: bool = False
+    is_true_story: bool = False
+    is_metacritic_must_see: bool = False
     is_digital_release: bool = False
-
-    # Release status — populated on demand when "release_status" is in sash_priority.
-    # Movies: "Physical" | "Streaming" | "Cinema" | "Production"
-    # TV:     "Returning" | "Ended" | "Cancelled" | "Production"
     release_status: str | None = None
     
-    # --- Custom tags ---
+    # Campi customizzati
     status: str | None = None
     next_episode_to_air: str | None = None
     release_date: str | None = None
+    num_seasons: int = 0
     is_tv: bool = False
 
 
@@ -361,44 +291,46 @@ class DiscoveryMeta:
 # ---------------------------------------------------------------------------
 
 def extract_discovery_meta(
-    tmdb_data: dict, media_type: str, award_wins: list[str], award_noms: list[str], trending_rank: int | None,
-    *, release_date: str | None = None, keywords: list[dict] | None = None, festival_label_override: str | None = None,
-    is_cult_override: bool | None = None, is_true_story_override: bool | None = None, is_metacritic_override: bool | None = None,
-    is_digital_release_override: bool | None = None, release_status_override: str | None = None, # <-- Accetta il parametro da main.py
-    notable_studios: dict[str, str] | None = None,
-    notable_directors: dict[str, str] | None = None, notable_cast: dict[str, str] | None = None,
-    festival_keywords: dict[str, str] | None = None, language_labels: dict[str, str] | None = None,
+    tmdb_data: dict,
+    media_type: str,
+    award_wins: list[str],
+    award_noms: list[str],
+    trending_rank: int | None,
+    *,
+    release_date: str | None = None,
+    keywords: list[dict] | None = None,
+    festival_label_override:  str | None  = None,
+    is_cult_override:         bool | None = None,
+    is_true_story_override:   bool | None = None,
+    is_metacritic_override:   bool | None = None,
+    is_digital_release_override: bool | None = None,
+    release_status_override: str | None = None,
+    notable_studios:   dict[str, str] | None = None,
+    notable_directors: dict[str, str] | None = None,
+    notable_cast:      dict[str, str] | None = None,
+    festival_keywords: dict[str, str] | None = None,
+    language_labels:   dict[str, str] | None = None,
 ) -> DiscoveryMeta:
-    studios = notable_studios or NOTABLE_STUDIOS
-    directors = notable_directors or NOTABLE_DIRECTORS
-    cast_list = notable_cast or NOTABLE_CAST
-    fest_keywords = festival_keywords or FESTIVAL_KEYWORDS
-
-    # Estrae in modo sicuro la data se next_episode_to_air è un dizionario di TMDB
-    next_ep_data = tmdb_data.get("next_episode_to_air")
-    next_ep_date = None
-    if isinstance(next_ep_data, dict):
-        next_ep_date = next_ep_data.get("air_date")
-    elif isinstance(next_ep_data, str):
-        next_ep_date = next_ep_data
-
-    # Gestisce correttamente l'override dello status calcolato in main.py
-    current_status = release_status_override if release_status_override is not None else tmdb_data.get("status")
+    studios        = notable_studios   or NOTABLE_STUDIOS
+    directors      = notable_directors or NOTABLE_DIRECTORS
+    cast_list      = notable_cast      or NOTABLE_CAST
+    fest_keywords  = festival_keywords or FESTIVAL_KEYWORDS
 
     meta = DiscoveryMeta(
-        award_wins=award_wins, award_noms=award_noms, trending_rank=trending_rank,
-        original_language=tmdb_data.get("original_language"), status=current_status,
-        next_episode_to_air=next_ep_date, release_date=release_date
+        award_wins=award_wins,
+        award_noms=award_noms,
+        trending_rank=trending_rank,
+        original_language=tmdb_data.get("original_language"),
+        status=tmdb_data.get("status"),
+        next_episode_to_air=tmdb_data.get("next_episode_to_air"),
+        release_date=release_date
     )
-    # Build keyword name set once — reused for festival detection and the
-    # new keyword-based signals (cult, true-story, metacritic).
+
     keyword_names: set[str] = (
         {(kw.get("name") or "").lower().strip() for kw in keywords}
         if keywords else set()
     )
 
-    # --- Festival winners ---
-    # Prefer a pre-resolved label (from cache) to avoid re-scanning keywords.
     if festival_label_override is not None:
         meta.festival_label = festival_label_override
     elif keyword_names:
@@ -407,9 +339,6 @@ def extract_discovery_meta(
                 meta.festival_label = label
                 break
 
-    # --- Keyword-based discovery signals ---
-    # Each signal uses an override (from cache) when available; otherwise
-    # falls back to live keyword scanning on a fresh MDblist fetch.
     if is_cult_override is not None:
         meta.is_cult = is_cult_override
     elif keyword_names:
@@ -431,13 +360,11 @@ def extract_discovery_meta(
     if release_status_override is not None:
         meta.release_status = release_status_override
 
-    # --- Studios ---
     for company in tmdb_data.get("production_companies", []):
         name = company.get("name", "")
         if name in studios:
             meta.matched_studios.append(studios[name])
 
-    # --- Credits ---
     credits = tmdb_data.get("credits", {})
 
     for crew_member in credits.get("crew", []):
@@ -453,7 +380,6 @@ def extract_discovery_meta(
         if name in cast_list:
             meta.matched_cast.append(cast_list[name])
 
-    # --- Structural ---
     is_tv = media_type in ("tv", "series")
     meta.is_tv = is_tv
 
@@ -463,17 +389,19 @@ def extract_discovery_meta(
     else:
         num_seasons  = tmdb_data.get("number_of_seasons")  or 0
         num_episodes = tmdb_data.get("number_of_episodes") or 0
+        
+        meta.num_seasons = num_seasons
 
         meta.is_mini_series = (
             num_seasons == 1
             and 0 < num_episodes <= 8
+            and meta.status == "Ended"
         )
 
         if num_seasons >= 3 and num_episodes > 0:
             eps_per_season = num_episodes / num_seasons
             meta.is_binge_ready = 6 <= eps_per_season <= 20
 
-    # --- New release ---
     if _is_recent(release_date):
         meta.is_new_release = True
 
@@ -488,10 +416,6 @@ def pick_sash(
     meta: DiscoveryMeta,
     priority: list[str],
 ) -> tuple[str, str] | None:
-    """
-    Walk *priority* (ordered list of slot names) and return the first match
-    as ``(label_text, sash_type)``, or ``None`` if nothing matches.
-    """
     for slot in priority:
         result = _evaluate_slot(slot, meta)
         if result is not None:
@@ -516,17 +440,21 @@ def _is_future(date_str: str) -> bool:
         return False
 
 def _evaluate_slot(slot: str, meta: DiscoveryMeta) -> str | None:
+    
     if slot == "next_episode":
         if meta.next_episode_to_air and _is_future(meta.next_episode_to_air):
             return f"Prossimo Ep: {_format_date_it(meta.next_episode_to_air)}"
         return None
         
     if slot == "upcoming":
+        if meta.next_episode_to_air and _is_future(meta.next_episode_to_air):
+            return f"Nuovo Ep. {_format_date_it(meta.next_episode_to_air)}"
+            
         if meta.status in ("In Production", "Planned", "Post Production") or (meta.release_date and _is_future(meta.release_date)):
             if meta.release_date and _is_future(meta.release_date):
                 try:
                     d = datetime.strptime(meta.release_date, "%Y-%m-%d").date()
-                    return f"In uscita {_format_date_it(meta.release_date)}"
+                    return f"Prossimamente a {MONTHS_IT[d.month - 1]}"
                 except ValueError:
                     return "Prossimamente"
             return "Prossimamente"
@@ -538,32 +466,20 @@ def _evaluate_slot(slot: str, meta: DiscoveryMeta) -> str | None:
         return None
 
     if slot == "wins":
-        # Oscar Best Picture wins and Emmy Outstanding wins only.
-        # Golden Globe wins have their own slot (gg_wins) so they can be
-        # prioritised independently. A title can win both Oscar and Emmy
-        # (impossible in practice) but both share this slot since one is film,
-        # one is TV — they never coexist on the same title.
         w = [v for v in meta.award_wins if v != "Golden Globe"]
         return w[0] if w else None
 
     if slot == "gg_wins":
-        # Golden Globe wins — all top film and TV categories.
         return "Golden Globe" if "Golden Globe" in meta.award_wins else None
 
     if slot in ("pic_noms", "emmy_noms"):
-        # Best Picture nominations (film) and Major Emmy nominations (TV) share
-        # this slot — they never coexist on the same title, mirroring wins.
-        # emmy_noms is kept as a legacy alias for backward-compat with old URLs.
         match = next((n for n in meta.award_noms if "Best Picture" in n or "Emmy" in n), None)
         return match
 
     if slot == "gg_noms":
-        # Golden Globe nominations — all top film and TV categories.
         return "Golden Globe" if "Golden Globe" in meta.award_noms else None
 
     if slot == "noms":
-        # Legacy catch-all: any nomination (kept for backward-compat with
-        # hand-crafted sash_priority query params)
         return " • ".join(meta.award_noms) if meta.award_noms else None
 
     if slot == "festival":
@@ -573,36 +489,33 @@ def _evaluate_slot(slot: str, meta: DiscoveryMeta) -> str | None:
         lang = meta.original_language
         if not lang or lang == "en":
             return None
-        return LANGUAGE_LABELS.get(lang, "Foreign") # return LANGUAGE_LABELS.get(lang, "Foreign Language Film")
+        return LANGUAGE_LABELS.get(lang, "Lingua Originale")
 
     if slot == "studio":
-        # matched_studios already holds display labels (dict values)
         return f"{meta.matched_studios[0]}" if meta.matched_studios else None
 
     if slot == "director":
-        # matched_directors already holds display labels (dict values)
         return f"{meta.matched_directors[0]}" if meta.matched_directors else None
 
     if slot == "cast":
-        # matched_cast already holds display labels (dict values)
         return meta.matched_cast[0] if meta.matched_cast else None
 
     if slot == "trending":
         return f"#{meta.trending_rank} Today" if meta.trending_rank else None
 
     if slot in ("new_release", "digital_release"):
-        if meta.is_new_release or meta.is_digital_release: 
+        if meta.is_new_release or meta.is_digital_release:
             return "Nuovi Episodi" if meta.is_tv else "Nuova Uscita"
         return None
 
     if slot == "metacritic":
-        return "Must-See" if meta.is_metacritic_must_see else None
+        return "Da Non Perdere" if meta.is_metacritic_must_see else None
 
     if slot == "cult":
         return "Cult Classic" if meta.is_cult else None
 
     if slot == "true_story":
-        return "True Story" if meta.is_true_story else None
+        return "Tratto da una storia vera" if meta.is_true_story else None
 
     if slot == "structural":
         for key in _STRUCTURAL_CHECKS:
@@ -612,7 +525,7 @@ def _evaluate_slot(slot: str, meta: DiscoveryMeta) -> str | None:
         return None
 
     if slot == "release_status":
-        return None  # Disabilitato per evitare i tag "In corso", "Stagione finale", ecc.
+        return meta.release_status
 
     return None
 
@@ -622,9 +535,9 @@ def _evaluate_slot(slot: str, meta: DiscoveryMeta) -> str | None:
 # ---------------------------------------------------------------------------
 
 ALL_PRIORITY_SLOTS: list[str] = [
-    "next_episode",
-    "upcoming",
-    "canceled",
+    "next_episode",     
+    "upcoming",         
+    "canceled",         
     "wins",
     "gg_wins",
     "festival",
@@ -640,10 +553,10 @@ ALL_PRIORITY_SLOTS: list[str] = [
     "metacritic",
     "true_story",
     "structural",
-    "emmy_noms",        # legacy alias for pic_noms — still accepted in sash_priority param
-    "digital_release",  # legacy alias for new_release
-    "noms",             # legacy alias for any nomination
-    "release_status",   # opt-in: Blu-ray / Streaming / Cinema / Production — requires extra API call for movies
+    "emmy_noms",        
+    "digital_release",  
+    "noms",             
+    "release_status",   
 ]
 
 
@@ -658,20 +571,11 @@ _OVERRIDE_PATH = os.environ.get(
 
 
 def _load_discovery_overrides() -> None:
-    """
-    Apply operator-supplied director / studio / cast lists from a JSON file.
-
-    Called once at module import time.  Silently skips when the file is
-    absent so the built-in defaults in this file are used unchanged.  Logs
-    a warning (and falls back to built-ins) if the file exists but is invalid.
-
-    See the module docstring at the top of this file for the full format.
-    """
     try:
         with open(_OVERRIDE_PATH, encoding="utf-8") as fh:
             data = json.load(fh)
     except FileNotFoundError:
-        return                        # normal — no overrides configured
+        return                        
     except Exception as exc:
         logger.warning(
             f"discovery_overrides.json: failed to parse ({exc}) — using built-in lists"
@@ -690,8 +594,6 @@ def _load_discovery_overrides() -> None:
     counts: list[str] = []
 
     if mode == "merge":
-        # Add / overwrite individual entries; entries absent from the file
-        # remain from the built-in lists.
         if isinstance(studios_raw, dict):
             NOTABLE_STUDIOS.update(studios_raw)
             counts.append(f"+{len(studios_raw)} studios")
@@ -704,8 +606,6 @@ def _load_discovery_overrides() -> None:
         logger.info(f"discovery_overrides.json loaded (merge): {', '.join(counts) or 'no sections'}")
 
     else:
-        # "replace" — each supplied section fully replaces its built-in list.
-        # Omitted sections keep their defaults.
         if isinstance(studios_raw, dict):
             NOTABLE_STUDIOS.clear()
             NOTABLE_STUDIOS.update(studios_raw)
