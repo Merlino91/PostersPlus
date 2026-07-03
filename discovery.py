@@ -264,6 +264,7 @@ LANGUAGE_LABELS: dict[str, str] = {
 
 # Sash type (controls colour) for each priority slot
 _SASH_TYPES: dict[str, str] = {
+    "next_episode":    "info", # Usiamo 'info' come tipo di badge (bordo azzurro/teal)
     "wins":            "win",       # gold — Oscar Best Picture + Emmy Outstanding wins
     "gg_wins":         "win",       # gold — Golden Globe wins (separate slot)
     "pic_noms":        "nom",       # silver — Best Picture nom + Major Emmy nom (film vs TV, never coexist)
