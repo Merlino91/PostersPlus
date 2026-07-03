@@ -386,7 +386,7 @@ def extract_discovery_meta(
     cast_list      = notable_cast      or NOTABLE_CAST
     fest_keywords  = festival_keywords or FESTIVAL_KEYWORDS
 
-    # Estrae correttamente la stringa della data dal dizionario di TMDB
+    # 1. Estrae correttamente la stringa della data dal dizionario di TMDB
     next_ep_data = tmdb_data.get("next_episode_to_air")
     next_ep_date = None
     if isinstance(next_ep_data, dict):
@@ -394,10 +394,17 @@ def extract_discovery_meta(
     elif isinstance(next_ep_data, str):
         next_ep_date = next_ep_data
 
+    # 2. Determina lo status corretto usando l'override se presente
+    current_status = release_status_override if release_status_override is not None else tmdb_data.get("status")
+
     meta = DiscoveryMeta(
-        award_wins=award_wins, award_noms=award_noms, trending_rank=trending_rank,
-        original_language=tmdb_data.get("original_language"), status=tmdb_data.get("status"),
-        next_episode_to_air=next_ep_date, release_date=release_date
+        award_wins=award_wins, 
+        award_noms=award_noms, 
+        trending_rank=trending_rank,
+        original_language=tmdb_data.get("original_language"), 
+        status=current_status,
+        next_episode_to_air=next_ep_date, 
+        release_date=release_date
     )
 
     # Build keyword name set once — reused for festival detection and the
