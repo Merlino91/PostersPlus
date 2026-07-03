@@ -316,13 +316,18 @@ def extract_discovery_meta(
     cast_list      = notable_cast      or NOTABLE_CAST
     fest_keywords  = festival_keywords or FESTIVAL_KEYWORDS
 
+    # Estrai il dizionario dell'episodio per sicurezza
+    next_ep_data = tmdb_data.get("next_episode_to_air")
+    # Estrai la stringa della data se il dato esiste, altrimenti None
+    next_ep_date = next_ep_data.get("air_date") if isinstance(next_ep_data, dict) else None
+
     meta = DiscoveryMeta(
         award_wins=award_wins,
         award_noms=award_noms,
         trending_rank=trending_rank,
         original_language=tmdb_data.get("original_language"),
         status=tmdb_data.get("status"),
-        next_episode_to_air=tmdb_data.get("next_episode_to_air"),
+        next_episode_to_air=next_ep_date,  # Ora estraiamo solo la stringa della data
         release_date=release_date
     )
 
