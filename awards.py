@@ -1323,8 +1323,8 @@ def draw_award_badge(
         border_rgb = (190, 140, 255)
     elif sash_type == "cast":
         border_rgb = (102, 187, 106)
-    elif sash_type == "info":
-        border_rgb = (100, 220, 210)
+    elif sash_type == "info" or sash_type == "next_episode": # Aggiunto next_episode
+        border_rgb = (100, 220, 210) # Colore teal/azzurro per le info
     elif sash_type == "trending":
         border_rgb = (160, 220, 255)
     else:  # "nom"
