@@ -533,22 +533,17 @@ def _is_future(date_str: str) -> bool:
         return False
 
 def _evaluate_slot(slot: str, meta: DiscoveryMeta) -> str | None:
-    """Return a label string if this slot has a match, else None."""
-
     if slot == "next_episode":
         if meta.next_episode_to_air and _is_future(meta.next_episode_to_air):
             return f"Prossimo Ep: {_format_date_it(meta.next_episode_to_air)}"
         return None
         
     if slot == "upcoming":
-        if meta.next_episode_to_air and _is_future(meta.next_episode_to_air):
-            return f"Nuovo Ep. {_format_date_it(meta.next_episode_to_air)}"
-            
         if meta.status in ("In Production", "Planned", "Post Production") or (meta.release_date and _is_future(meta.release_date)):
             if meta.release_date and _is_future(meta.release_date):
                 try:
                     d = datetime.strptime(meta.release_date, "%Y-%m-%d").date()
-                    return f"Prossimamente a {MONTHS_IT[d.month - 1]}"
+                    return f"In uscita {_format_date_it(meta.release_date)}"
                 except ValueError:
                     return "Prossimamente"
             return "Prossimamente"
