@@ -361,32 +361,20 @@ class DiscoveryMeta:
 # ---------------------------------------------------------------------------
 
 def extract_discovery_meta(
-    tmdb_data: dict,
-    media_type: str,
-    award_wins: list[str],
-    award_noms: list[str],
-    trending_rank: int | None,
-    *,
-    release_date: str | None = None,
-    keywords: list[dict] | None = None,
-    festival_label_override:  str | None  = None,
-    is_cult_override:         bool | None = None,
-    is_true_story_override:   bool | None = None,
-    is_metacritic_override:   bool | None = None,
-    is_digital_release_override: bool | None = None,
-    release_status_override: str | None = None,
-    notable_studios:   dict[str, str] | None = None,
-    notable_directors: dict[str, str] | None = None,
-    notable_cast:      dict[str, str] | None = None,
-    festival_keywords: dict[str, str] | None = None,
-    language_labels:   dict[str, str] | None = None,
+    tmdb_data: dict, media_type: str, award_wins: list[str], award_noms: list[str], trending_rank: int | None,
+    *, release_date: str | None = None, keywords: list[dict] | None = None, festival_label_override: str | None = None,
+    is_cult_override: bool | None = None, is_true_story_override: bool | None = None, is_metacritic_override: bool | None = None,
+    is_digital_release_override: bool | None = None, release_status_override: str | None = None, # <-- Accetta il parametro da main.py
+    notable_studios: dict[str, str] | None = None,
+    notable_directors: dict[str, str] | None = None, notable_cast: dict[str, str] | None = None,
+    festival_keywords: dict[str, str] | None = None, language_labels: dict[str, str] | None = None,
 ) -> DiscoveryMeta:
-    studios        = notable_studios   or NOTABLE_STUDIOS
-    directors      = notable_directors or NOTABLE_DIRECTORS
-    cast_list      = notable_cast      or NOTABLE_CAST
-    fest_keywords  = festival_keywords or FESTIVAL_KEYWORDS
+    studios = notable_studios or NOTABLE_STUDIOS
+    directors = notable_directors or NOTABLE_DIRECTORS
+    cast_list = notable_cast or NOTABLE_CAST
+    fest_keywords = festival_keywords or FESTIVAL_KEYWORDS
 
-    # 1. Estrae correttamente la stringa della data dal dizionario di TMDB
+    # Estrae in modo sicuro la data se next_episode_to_air è un dizionario di TMDB
     next_ep_data = tmdb_data.get("next_episode_to_air")
     next_ep_date = None
     if isinstance(next_ep_data, dict):
@@ -394,19 +382,14 @@ def extract_discovery_meta(
     elif isinstance(next_ep_data, str):
         next_ep_date = next_ep_data
 
-    # 2. Determina lo status corretto usando l'override se presente
+    # Gestisce correttamente l'override dello status calcolato in main.py
     current_status = release_status_override if release_status_override is not None else tmdb_data.get("status")
 
     meta = DiscoveryMeta(
-        award_wins=award_wins, 
-        award_noms=award_noms, 
-        trending_rank=trending_rank,
-        original_language=tmdb_data.get("original_language"), 
-        status=current_status,
-        next_episode_to_air=next_ep_date, 
-        release_date=release_date
+        award_wins=award_wins, award_noms=award_noms, trending_rank=trending_rank,
+        original_language=tmdb_data.get("original_language"), status=current_status,
+        next_episode_to_air=next_ep_date, release_date=release_date
     )
-
     # Build keyword name set once — reused for festival detection and the
     # new keyword-based signals (cult, true-story, metacritic).
     keyword_names: set[str] = (
