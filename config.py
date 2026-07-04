@@ -291,7 +291,12 @@ SCORE_NORMALISERS = {
 
 # Default Sash Priority
 
+# Default Sash Priority
+
 SASH_PRIORITY: list[str] = [
+    "next_episode",     # Aggiunto
+    "upcoming",         # Aggiunto
+    "canceled",         # Aggiunto
     "wins",
     "gg_wins",
     "festival",
