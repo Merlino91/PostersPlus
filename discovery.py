@@ -530,9 +530,15 @@ def _evaluate_slot(slot: str, meta: DiscoveryMeta) -> str | None:
         return None
 
     if slot == "release_status":
+        # Blocca in modo definitivo i tag grezzi indesiderati
+        if meta.release_status in ("Airing", "Streaming", "Physical"):
+            return None
+        # Traduci in italiano gli unici due tag che hanno senso
+        if meta.release_status == "Cinema":
+            return "Al Cinema"
+        if meta.release_status == "Production":
+            return "In Produzione"
         return meta.release_status
-
-    return None
 
 
 # ---------------------------------------------------------------------------
