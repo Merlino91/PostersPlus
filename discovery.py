@@ -530,7 +530,7 @@ def _evaluate_slot(slot: str, meta: DiscoveryMeta) -> str | None:
         return None
 
     if meta.release_status and meta.release_status.lower() in ("airing", "streaming", "physical"):
-    return None
+        return None
 
         # Traduci in italiano gli unici due tag che hanno senso
         if meta.release_status == "Cinema":
