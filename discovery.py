@@ -529,10 +529,9 @@ def _evaluate_slot(slot: str, meta: DiscoveryMeta) -> str | None:
             if key == "binge_ready" and meta.is_binge_ready:  return _STRUCTURAL_LABELS[key]
         return None
 
-    if slot == "release_status":
-        # Blocca in modo definitivo i tag grezzi indesiderati
-        if meta.release_status in ("Airing", "Streaming", "Physical"):
-            return None
+    if meta.release_status and meta.release_status.lower() in ("airing", "streaming", "physical"):
+    return None
+
         # Traduci in italiano gli unici due tag che hanno senso
         if meta.release_status == "Cinema":
             return "Al Cinema"
