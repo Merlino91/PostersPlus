@@ -219,7 +219,7 @@ LANGUAGE_LABELS: dict[str, str] = {
 
 # Tag personalizzati uniti alle novita' di UmbraProjects
 _SASH_TYPES: dict[str, str] = {
-    "next_episode":    "next_episode",  
+    "next_episode":    "info",  
     "canceled":        "nom",           
     "upcoming":        "trending",  
     "wins":            "win",       
