@@ -327,7 +327,7 @@ def extract_discovery_meta(
         trending_rank=trending_rank,
         original_language=tmdb_data.get("original_language"),
         status=tmdb_data.get("status"),
-        next_episode_to_air=next_ep_date,  # Ora estraiamo solo la stringa della data
+        next_episode_to_air=tmdb_data.get("next_episode_to_air"),  # Ora estraiamo solo la stringa della data
         release_date=release_date
     )
 
