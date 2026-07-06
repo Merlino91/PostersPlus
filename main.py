@@ -783,11 +783,12 @@ def _parse_sash_priority(raw: str | None) -> list[str]:
     if not active and not excluded:
         return list(_cfg.SASH_PRIORITY)
     # Append any default slots that weren't explicitly listed or excluded
+    # Trova i tag definiti nel config.py ma assenti dall'URL
     active_set = set(active)
-    for slot in _cfg.SASH_PRIORITY:
-        if slot not in active_set and slot not in excluded:
-            active.append(slot)
-    return active
+    missing = [slot for slot in _cfg.SASH_PRIORITY if slot not in active_set and slot not in excluded]
+    
+    # Inserisce i tag mancanti IN CIMA alla lista per rispettare l'alta priorità
+    return missing + active
 
 
 def build_request_config(params: dict) -> RequestConfig:
