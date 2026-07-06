@@ -327,7 +327,7 @@ def extract_discovery_meta(
         trending_rank=trending_rank,
         original_language=tmdb_data.get("original_language"),
         status=tmdb_data.get("status"),
-        next_episode_to_air=tmdb_data.get("next_episode_to_air"),  # Ora estraiamo solo la stringa della data
+        next_episode_to_air=next_ep_date,  # Ora estraiamo solo la stringa della data
         release_date=release_date
     )
 
@@ -431,7 +431,9 @@ def pick_sash(
 MONTHS_IT = ["Gen", "Feb", "Mar", "Apr", "Mag", "Giu", "Lug", "Ago", "Set", "Ott", "Nov", "Dic"]
 
 def _format_date_it(date_str: str) -> str:
-    try:
+    if not isinstance(date_str, str): 
+        return False
+    try:try:
         d = datetime.strptime(date_str, "%Y-%m-%d").date()
         art = "l'" if d.day in (1, 8, 11) else "il "
         return f"{art}{d.day} {MONTHS_IT[d.month - 1]}"
@@ -439,6 +441,8 @@ def _format_date_it(date_str: str) -> str:
         return date_str
 
 def _is_future(date_str: str) -> bool:
+    if not isinstance(date_str, str): 
+        return False
     try: 
         return datetime.strptime(date_str, "%Y-%m-%d").date() > date.today()
     except ValueError: 
