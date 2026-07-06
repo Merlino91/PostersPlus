@@ -433,7 +433,7 @@ MONTHS_IT = ["Gen", "Feb", "Mar", "Apr", "Mag", "Giu", "Lug", "Ago", "Set", "Ott
 def _format_date_it(date_str: str) -> str:
     if not isinstance(date_str, str): 
         return False
-    try:try:
+    try:
         d = datetime.strptime(date_str, "%Y-%m-%d").date()
         art = "l'" if d.day in (1, 8, 11) else "il "
         return f"{art}{d.day} {MONTHS_IT[d.month - 1]}"
