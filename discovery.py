@@ -315,10 +315,15 @@ def extract_discovery_meta(
     cast_list      = notable_cast      or NOTABLE_CAST
     fest_keywords  = festival_keywords or FESTIVAL_KEYWORDS
 
-    # Estrai il dizionario dell'episodio per sicurezza
+    # Estrazione flessibile: la cache salva già come stringa, ma l'API grezza usa un dizionario
     next_ep_data = tmdb_data.get("next_episode_to_air")
-    # Estrai la stringa della data se il dato esiste, altrimenti None
-    next_ep_date = next_ep_data.get("air_date") if isinstance(next_ep_data, dict) else None
+    
+    if isinstance(next_ep_data, str):
+        next_ep_date = next_ep_data
+    elif isinstance(next_ep_data, dict):
+        next_ep_date = next_ep_data.get("air_date")
+    else:
+        next_ep_date = None
 
     meta = DiscoveryMeta(
         award_wins=award_wins,
