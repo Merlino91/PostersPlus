@@ -431,8 +431,8 @@ def pick_sash(
 MONTHS_IT = ["Gen", "Feb", "Mar", "Apr", "Mag", "Giu", "Lug", "Ago", "Set", "Ott", "Nov", "Dic"]
 
 def _format_date_it(date_str: str) -> str:
-    if not isinstance(date_str, str): 
-        return False
+    if not isinstance(date_str, str):
+        return ""
     try:
         d = datetime.strptime(date_str, "%Y-%m-%d").date()
         art = "l'" if d.day in (1, 8, 11) else "il "
@@ -533,15 +533,16 @@ def _evaluate_slot(slot: str, meta: DiscoveryMeta) -> str | None:
             if key == "binge_ready" and meta.is_binge_ready:  return _STRUCTURAL_LABELS[key]
         return None
 
-    if meta.release_status and meta.release_status.lower() in ("airing", "streaming", "physical"):
-        return None
-
-        # Traduci in italiano gli unici due tag che hanno senso
+    if slot == "release_status":
         if meta.release_status == "Cinema":
             return "Al Cinema"
         if meta.release_status == "Production":
             return "In Produzione"
-        return meta.release_status
+        
+        # Qualsiasi altro stato (inclusi Airing e Streaming) viene scartato
+        return None
+
+    return None
 
 
 # ---------------------------------------------------------------------------
