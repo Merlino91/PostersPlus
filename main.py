@@ -3247,6 +3247,12 @@ async def get_poster(
             trending_rank=trending_rank,
             release_date=rel,
             keywords=keywords if not rating_already_cached else [],
+            festival_label_override=festival_label,
+            is_cult_override=is_cult,
+            is_true_story_override=is_true_story,
+            is_metacritic_override=is_metacritic,
+            is_digital_release_override=is_digital_release(imdb_id),
+            release_status_override=_release_status,
         )
 
         # ------------------------------------------------------------------
