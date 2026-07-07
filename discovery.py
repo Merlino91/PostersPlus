@@ -253,22 +253,24 @@ def _is_recent(release_date: str | None) -> bool:
         return False
 
 def _is_old_release(date_str: str) -> bool:
-    """Verifica se il film è uscito da più di 4 mesi."""
+    """Verifica se il film è uscito da più di 4 mesi o nell'anno precedente."""
     if not isinstance(date_str, str) or len(date_str) < 4:
         return False
     try:
-        # Controllo rapido dell'anno per scartare subito film vecchi di anni
+        # 1. Controllo dell'anno (infallibile per i film vecchi)
         year = int(date_str[:4])
-        if date.today().year - year >= 2:
+        # Se è uscito l'anno scorso (es. 2025) o prima, NON è assolutamente più al cinema.
+        if year < date.today().year:
             return True
-        # Controllo di precisione: se abbiamo la data completa, calcoliamo i giorni
+        
+        # 2. Controllo di precisione (se abbiamo la data completa per i film dell'anno corrente)
         if len(date_str) >= 10:
             d = datetime.strptime(date_str[:10], "%Y-%m-%d").date()
             return (date.today() - d).days > 120 # 4 mesi di finestra cinema
+            
         return False
     except ValueError:
         return False
-
 
 
 # ---------------------------------------------------------------------------
