@@ -295,7 +295,6 @@ SCORE_NORMALISERS = {
 
 SASH_PRIORITY: list[str] = [
     "next_episode",     # Aggiunto
-    "upcoming",         # Aggiunto
     "canceled",         # Aggiunto
     "wins",
     "gg_wins",
