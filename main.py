@@ -3245,10 +3245,10 @@ async def get_poster(
             award_wins=award_wins,
             award_noms=award_noms,
             trending_rank=trending_rank,
-            release_date=rel or (str(release_year) if release_year else None),
+            # Inseriamo la data TMDB come salvagente extra prima di usare solo l'anno
+            release_date=rel or tmdb_data.get("release_date") or (str(release_year) if release_year else None),
             keywords=keywords if not rating_already_cached else [],
         )
-
 
         # ------------------------------------------------------------------
         # Debug mode: return diagnostic JSON instead of rendering the poster.
