@@ -345,13 +345,14 @@ def extract_discovery_meta(
     else:
         next_ep_date = None
 
-    meta = DiscoveryMeta(
+        meta = DiscoveryMeta(
         award_wins=award_wins,
         award_noms=award_noms,
         trending_rank=trending_rank,
         original_language=tmdb_data.get("original_language"),
-        status=tmdb_data.get("status"),
-        next_episode_to_air=next_ep_date,  # Ora estraiamo solo la stringa della data
+        # Correggiamo il nome: main.py lo salva come "tmdb_status"!
+        status=tmdb_data.get("status") or tmdb_data.get("tmdb_status"), 
+        next_episode_to_air=next_ep_date,
         release_date=release_date
     )
 
