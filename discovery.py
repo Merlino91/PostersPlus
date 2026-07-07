@@ -516,14 +516,14 @@ def _evaluate_slot(slot: str, meta: DiscoveryMeta) -> str | None:
     if slot == "true_story":
         return "Tratto da una storia vera" if meta.is_true_story else None
 
-    if slot == "structural":
+        if slot == "structural":
         for key in _STRUCTURAL_CHECKS:
             if key == "short_film"  and meta.is_short_film:  return _STRUCTURAL_LABELS[key]
             if key == "mini_series" and meta.is_mini_series:  return _STRUCTURAL_LABELS[key]
             if key == "binge_ready" and meta.is_binge_ready:  return _STRUCTURAL_LABELS[key]
         return None
 
-        if slot == "release_status":
+    if slot == "release_status":
         if meta.release_status == "Cinema":
             return "Al Cinema"
         
