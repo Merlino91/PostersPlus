@@ -375,9 +375,6 @@ def extract_discovery_meta(
         award_noms=award_noms,
         trending_rank=trending_rank,
         original_language=tmdb_data.get("original_language"),
-        status=tmdb_data.get("status") or tmdb_data.get("tmdb_status"), 
-        next_episode_to_air=next_ep_date,
-        release_date=release_date
     )
 
     # Build keyword name set once — reused for festival detection and the
