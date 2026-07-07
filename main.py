@@ -3243,13 +3243,13 @@ async def get_poster(
         # ------------------------------------------------------------------
         # Build DiscoveryMeta
         # ------------------------------------------------------------------
-        discovery_meta = extract_discovery_meta(
+                discovery_meta = extract_discovery_meta(
             tmdb_data=tmdb_data,
             media_type=type,
             award_wins=award_wins,
             award_noms=award_noms,
             trending_rank=trending_rank,
-            release_date=rel,
+            release_date=rel or (str(release_year) if release_year else None),
             keywords=keywords if not rating_already_cached else [],
             festival_label_override=festival_label,
             is_cult_override=is_cult,
