@@ -252,6 +252,24 @@ def _is_recent(release_date: str | None) -> bool:
     except ValueError:
         return False
 
+def _is_old_release(date_str: str) -> bool:
+    """Verifica se il film è uscito da più di 4 mesi."""
+    if not isinstance(date_str, str) or len(date_str) < 4:
+        return False
+    try:
+        # Controllo rapido dell'anno per scartare subito film vecchi di anni
+        year = int(date_str[:4])
+        if date.today().year - year >= 2:
+            return True
+        # Controllo di precisione: se abbiamo la data completa, calcoliamo i giorni
+        if len(date_str) >= 10:
+            d = datetime.strptime(date_str[:10], "%Y-%m-%d").date()
+            return (date.today() - d).days > 120 # 4 mesi di finestra cinema
+        return False
+    except ValueError:
+        return False
+
+
 
 # ---------------------------------------------------------------------------
 # Data container
@@ -363,8 +381,14 @@ def extract_discovery_meta(
     elif keyword_names:
         meta.is_metacritic_must_see = "metacritic-must-see" in keyword_names
 
-    if is_digital_release_override is not None:
-        meta.is_digital_release = is_digital_release_override
+    if release_status_override is not None:
+        meta.release_status = release_status_override
+        
+        # --- FIX FALSI POSITIVI CINEMA ---
+        # Se TMDB indica Cinema o Produzione, ma il film è vecchio di mesi/anni,
+        # lo forziamo a "Released" per spegnere il Greyscale in main.py e rimuovere i tag errati.
+        if meta.release_status in ("Cinema", "Production") and _is_old_release(release_date):
+            meta.release_status = "Released"
 
     if release_status_override is not None:
         meta.release_status = release_status_override
@@ -527,8 +551,10 @@ def _evaluate_slot(slot: str, meta: DiscoveryMeta) -> str | None:
         if meta.release_status == "Cinema":
             return "Al Cinema"
         
-        # Uniamo il trigger del Greyscale (Production) con la tua logica infallibile sulle date
-        if meta.release_status == "Production" or meta.status in ("In Production", "Planned", "Post Production") or (meta.release_date and _is_future(meta.release_date)):
+        # Sicurezza extra: scartiamo diciture 'In Produzione' se il film è in realtà vecchio
+        _is_old = meta.release_date and _is_old_release(meta.release_date)
+        
+        if not _is_old and (meta.release_status == "Production" or meta.status in ("In Production", "Planned", "Post Production") or (meta.release_date and _is_future(meta.release_date))):
             if meta.release_date and _is_future(meta.release_date):
                 try:
                     d = datetime.strptime(meta.release_date, "%Y-%m-%d").date()
