@@ -345,7 +345,7 @@ def extract_discovery_meta(
     else:
         next_ep_date = None
 
-        meta = DiscoveryMeta(
+    meta = DiscoveryMeta(
         award_wins=award_wins,
         award_noms=award_noms,
         trending_rank=trending_rank,
