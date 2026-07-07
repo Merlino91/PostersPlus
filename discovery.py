@@ -220,8 +220,7 @@ LANGUAGE_LABELS: dict[str, str] = {
 # Tag personalizzati uniti alle novita' di UmbraProjects
 _SASH_TYPES: dict[str, str] = {
     "next_episode":    "info",  
-    "canceled":        "nom",           
-    "upcoming":        "trending",  
+    "canceled":        "nom",             
     "wins":            "win",       
     "gg_wins":         "win",       
     "pic_noms":        "nom",       
@@ -455,20 +454,6 @@ def _evaluate_slot(slot: str, meta: DiscoveryMeta) -> str | None:
             return f"Prossimo Ep: {_format_date_it(meta.next_episode_to_air)}"
         return None
         
-    if slot == "upcoming":
-        if meta.next_episode_to_air and _is_future(meta.next_episode_to_air):
-            return f"Nuovo Ep. {_format_date_it(meta.next_episode_to_air)}"
-            
-        if meta.status in ("In Production", "Planned", "Post Production") or (meta.release_date and _is_future(meta.release_date)):
-            if meta.release_date and _is_future(meta.release_date):
-                try:
-                    d = datetime.strptime(meta.release_date, "%Y-%m-%d").date()
-                    return f"Prossimamente a {MONTHS_IT[d.month - 1]}"
-                except ValueError:
-                    return "Prossimamente"
-            return "Prossimamente"
-        return None
-        
     if slot == "canceled":
         if meta.status == "Canceled":
             return "Serie Cancellata"
@@ -536,8 +521,16 @@ def _evaluate_slot(slot: str, meta: DiscoveryMeta) -> str | None:
     if slot == "release_status":
         if meta.release_status == "Cinema":
             return "Al Cinema"
-        if meta.release_status == "Production":
-            return "In Produzione"
+        
+        # Uniamo il trigger del Greyscale (Production) con la tua logica infallibile sulle date
+        if meta.release_status == "Production" or meta.status in ("In Production", "Planned", "Post Production") or (meta.release_date and _is_future(meta.release_date)):
+            if meta.release_date and _is_future(meta.release_date):
+                try:
+                    d = datetime.strptime(meta.release_date, "%Y-%m-%d").date()
+                    return f"Prossimamente a {MONTHS_IT[d.month - 1]}"
+                except ValueError:
+                    return "Prossimamente"
+            return "Prossimamente"
         
         # Qualsiasi altro stato (inclusi Airing e Streaming) viene scartato
         return None
@@ -550,8 +543,7 @@ def _evaluate_slot(slot: str, meta: DiscoveryMeta) -> str | None:
 # ---------------------------------------------------------------------------
 
 ALL_PRIORITY_SLOTS: list[str] = [
-    "next_episode",     
-    "upcoming",         
+    "next_episode",             
     "canceled",         
     "wins",
     "gg_wins",
