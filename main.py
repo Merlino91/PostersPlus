@@ -3215,7 +3215,7 @@ async def get_poster(
             if rcfg.release_status_cinema_only and _release_status not in ("Cinema", "Production"):
                 _release_status = None
 
-# --- CHIAMATA API EXTRA IN TEMPO REALE PER SERIE TV ---
+        # --- CHIAMATA API EXTRA IN TEMPO REALE PER SERIE TV ---
         # Poiché i dati cachati da tmdb.py eliminano il nodo next_episode_to_air,
         # effettuiamo una chiamata diretta per recuperare la data esatta.
         if type in ("tv", "series") and "next_episode" in rcfg.sash_priority:
@@ -3227,23 +3227,19 @@ async def get_poster(
                 if _resp.status_code == 200:
                     _data = _resp.json()
                     
-                    # Creiamo una copia del dizionario per non sporcare la cache globale
                     tmdb_data = dict(tmdb_data)
-                    
-                    # Recuperiamo lo status testuale esatto
                     tmdb_data["status"] = _data.get("status")
                     
-                    # Recuperiamo i dati del prossimo episodio
                     _ep_data = _data.get("next_episode_to_air")
                     if isinstance(_ep_data, dict) and _ep_data.get("air_date"):
                         tmdb_data["next_episode_to_air"] = {"air_date": _ep_data.get("air_date")}
             except Exception as e:
                 logger.warning(f"Impossibile scaricare dati extra TMDB per {tmdb_id}: {e}")
-                
+
         # ------------------------------------------------------------------
         # Build DiscoveryMeta
         # ------------------------------------------------------------------
-                discovery_meta = extract_discovery_meta(
+        discovery_meta = extract_discovery_meta(
             tmdb_data=tmdb_data,
             media_type=type,
             award_wins=award_wins,
@@ -3251,13 +3247,8 @@ async def get_poster(
             trending_rank=trending_rank,
             release_date=rel or (str(release_year) if release_year else None),
             keywords=keywords if not rating_already_cached else [],
-            festival_label_override=festival_label,
-            is_cult_override=is_cult,
-            is_true_story_override=is_true_story,
-            is_metacritic_override=is_metacritic,
-            is_digital_release_override=is_digital_release(imdb_id),
-            release_status_override=_release_status,
         )
+
 
         # ------------------------------------------------------------------
         # Debug mode: return diagnostic JSON instead of rendering the poster.
