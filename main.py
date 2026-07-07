@@ -3215,6 +3215,31 @@ async def get_poster(
             if rcfg.release_status_cinema_only and _release_status not in ("Cinema", "Production"):
                 _release_status = None
 
+# --- CHIAMATA API EXTRA IN TEMPO REALE PER SERIE TV ---
+        # Poiché i dati cachati da tmdb.py eliminano il nodo next_episode_to_air,
+        # effettuiamo una chiamata diretta per recuperare la data esatta.
+        if type in ("tv", "series") and "next_episode" in rcfg.sash_priority:
+            try:
+                _resp = await client.get(
+                    f"https://api.themoviedb.org/3/tv/{tmdb_id}",
+                    params={"api_key": effective_tmdb_key}
+                )
+                if _resp.status_code == 200:
+                    _data = _resp.json()
+                    
+                    # Creiamo una copia del dizionario per non sporcare la cache globale
+                    tmdb_data = dict(tmdb_data)
+                    
+                    # Recuperiamo lo status testuale esatto
+                    tmdb_data["status"] = _data.get("status")
+                    
+                    # Recuperiamo i dati del prossimo episodio
+                    _ep_data = _data.get("next_episode_to_air")
+                    if isinstance(_ep_data, dict) and _ep_data.get("air_date"):
+                        tmdb_data["next_episode_to_air"] = {"air_date": _ep_data.get("air_date")}
+            except Exception as e:
+                logger.warning(f"Impossibile scaricare dati extra TMDB per {tmdb_id}: {e}")
+                
         # ------------------------------------------------------------------
         # Build DiscoveryMeta
         # ------------------------------------------------------------------
