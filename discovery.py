@@ -252,7 +252,25 @@ def _is_recent(release_date: str | None) -> bool:
     except ValueError:
         return False
 
-
+def _is_old_release(date_str: str) -> bool:
+    """Verifica se il film è uscito da oltre un anno in modo sicuro."""
+    if not isinstance(date_str, str) or len(date_str) < 4:
+        return False
+    try:
+        # Se TMDB ci dà solo l'anno (es. "2023"), chiediamo 2 anni di scarto di sicurezza
+        if len(date_str) == 4:
+            year = int(date_str)
+            return (date.today().year - year) >= 2
+        
+        # Se abbiamo la data precisa, verifichiamo che siano passati più di 365 giorni
+        if len(date_str) >= 10:
+            d = datetime.strptime(date_str[:10], "%Y-%m-%d").date()
+            return (date.today() - d).days > 365
+            
+        return False
+    except ValueError:
+        return False
+      
 # ---------------------------------------------------------------------------
 # Data container
 # ---------------------------------------------------------------------------
@@ -368,6 +386,12 @@ def extract_discovery_meta(
 
     if release_status_override is not None:
         meta.release_status = release_status_override
+        
+        # --- BAGNO DI REALTÀ ---
+        # Se TMDB dice che è al Cinema/Produzione, ma la data ci dice che ha più di un anno,
+        # forziamo lo stato su "Released" per rimuovere il bianco/nero e i tag errati.
+        if meta.release_status in ("Cinema", "Production") and _is_old_release(release_date):
+            meta.release_status = "Released"
 
     for company in tmdb_data.get("production_companies", []):
         name = company.get("name", "")
