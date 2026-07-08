@@ -3245,7 +3245,8 @@ async def get_poster(
             award_wins=award_wins,
             award_noms=award_noms,
             trending_rank=trending_rank,
-            release_date=rel,
+            # Salvagente: se MDBlist è vuoto (rel), peschiamo la data o l'anno da TMDB
+            release_date=rel or tmdb_data.get("release_date") or (str(release_year) if release_year else None),
             keywords=keywords if not rating_already_cached else [],
             festival_label_override=festival_label,
             is_cult_override=is_cult,
