@@ -260,7 +260,7 @@ def _is_old_release(date_str: str) -> bool:
         # Se TMDB ci dà solo l'anno (es. "2023"), chiediamo 2 anni di scarto di sicurezza
         if len(date_str) == 4:
             year = int(date_str)
-            return (date.today().year - year) >= 2
+            return (date.today().year - year) >= 1
         
         # Se abbiamo la data precisa, verifichiamo che siano passati più di 365 giorni
         if len(date_str) >= 10:
