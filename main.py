@@ -1139,7 +1139,9 @@ def _draw_combined_text_badge(
     elif "WEBDL" in token_set:
         sep_color = (192, 192, 200)   # silver
     else:
-        return
+        # Se la sorgente è sconosciuta, applichiamo l'argento di default 
+        # invece di interrompere il disegno.
+        sep_color = (192, 192, 200)
 
     if "DV" in token_set:
         fmt = "DV"
