@@ -52,6 +52,11 @@ def _extract_tokens_from_parsed_file(parsed: dict) -> set[str]:
     if "DTS:X" in audio_tags or "DTSX" in audio_tags or "DTS-X" in audio_tags:
         tokens.add("DTSX")
 
+    # --- NUOVO: Rilevamento Lingua Italiana ---
+    languages = {t.upper() for t in parsed.get("languages", [])}
+    if any(tag in ["IT", "ITA", "ITALIAN", "ITALIANO", "MULTI"] for tag in languages | audio_tags):
+        tokens.add("ITA")
+
     return tokens
 
 
@@ -241,6 +246,10 @@ def _tokens_from_stremio_stream(
     if re.search(r'DTS.?X\b', text):
         tokens.add("DTSX")
 
+    # --- NUOVO: Rilevamento testuale lingua Italiana ---
+    if re.search(r'\b(ITA|ITALIAN|ITALIANO|MULTI)\b', text):
+        tokens.add("ITA")
+
     return tokens
 
 
@@ -338,6 +347,12 @@ async def fetch_quality_from_scraper(
         for audio in ("ATMOS", "DTSX"):
             if audio in seen:
                 tokens.append(audio)
+                break
+
+        # --- NUOVO: Aggiunta del token lingua ---
+        for lang in ("ITA",):
+            if lang in seen:
+                tokens.append(lang)
                 break
 
         logger.info(f"Scraper quality for {imdb_id}: {tokens}")
