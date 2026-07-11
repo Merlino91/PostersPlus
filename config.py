@@ -235,6 +235,7 @@ BADGE_FILES: dict[str, str] = {
     "DV":     "DV",
     "HDR10+": "HDR10+",
     "HDR10":  "HDR10",
+    "ITA":    "ita",
 }
 
 # Maps TMDB categories to numerics (no need to touch in most cases)
@@ -272,6 +273,7 @@ QUALITY_LABELS: dict[str, str] = {
     "HDR10":  "HDR10",
     "ATMOS":  "Atmos",
     "DTSX":   "DTS:X",
+    "ITA":    "ITA",
 }
 
 # Normalizes all scores to be out of 100
