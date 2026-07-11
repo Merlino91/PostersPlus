@@ -1426,10 +1426,12 @@ def build_poster(
             )
 
     elif mode == 2:
-        allowed_tokens  = {"4K", "1080P", "REMUX", "WEBDL", "DV", "HDR10+", "HDR10"}
+        # 1. Aggiungiamo "ITA" ai token consentiti per lo stile a riga
+        allowed_tokens  = {"4K", "1080P", "REMUX", "WEBDL", "DV", "HDR10+", "HDR10", "ITA"}
         filtered_tokens = [t for t in tokens if t in allowed_tokens]
 
-        if filtered_tokens and _score_points(tokens) >= cfg.badge_min_score:
+        # 2. Bypass del punteggio: se c'è "ITA", stampiamo i badge a prescindere dal punteggio minimo
+        if filtered_tokens and ("ITA" in tokens or _score_points(tokens) >= cfg.badge_min_score):
             bx = int(width  * cfg.badge_anchor_x)
             by = int(height * cfg.badge_anchor_y)
 
