@@ -163,6 +163,12 @@ async def fetch_quality_from_aiostreams(
                 tokens.append(audio)
                 break
 
+        # --- NUOVO: Aggiunta del token lingua ---
+        for lang in ("ITA",):
+            if lang in seen:
+                tokens.append(lang)
+                break
+                
         logger.info(f"AIOStreams quality for {imdb_id}: {tokens}")
         set_cached_quality(imdb_id, tokens, release_date)
         return tokens
