@@ -883,7 +883,13 @@ def image_language_order(
     logo_priority: str,
 ) -> list[str]:
     """Return the distinct language buckets to try, in priority order."""
-    if logo_priority == "original_native":
+    
+    # 1. La nostra nuova priorità personalizzata
+    if logo_priority == "native_english_original":
+        languages = [logo_language, "en", original_language]
+        
+    # 2. Le logiche originali del programma mantenute intatte
+    elif logo_priority == "original_native":
         languages = [original_language, logo_language]
     elif logo_priority == "native_if_original_english":
         languages = (
