@@ -945,6 +945,7 @@ def build_request_config(params: dict) -> RequestConfig:
         "original_native",
         "native_if_original_english",
         "native_text",
+        "native_english_original",
     ):
         cfg.logo_priority = _lp
     elif "logo_native_fallback" in params:
