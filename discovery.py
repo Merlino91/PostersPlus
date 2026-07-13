@@ -188,6 +188,21 @@ NOTABLE_CAST: dict[str, str] = {
     "Josh O'Connor":          "Josh O'Connor",
 }
 
+NOTABLE_CREATORS: dict[str, str] = {
+    "Akira Toriyama":    "Akira Toriyama",
+    "Eiichiro Oda":      "Eiichiro Oda",
+    "Hajime Isayama":    "Hajime Isayama",
+    "Masashi Kishimoto": "Masashi Kishimoto",
+    "Kentaro Miura":     "Kentaro Miura",
+    "Hiromu Arakawa":    "Hiromu Arakawa",
+    "Yoshihiro Togashi": "Yoshihiro Togashi",
+    "Naoko Takeuchi":    "Naoko Takeuchi",
+    "Tite Kubo":         "Tite Kubo",
+    "Koyoharu Gotouge":  "K. Gotouge",
+    "Tatsuki Fujimoto":  "T. Fujimoto",
+    "Sui Ishida":        "Sui Ishida"
+}
+
 _STRUCTURAL_CHECKS = ["short_film", "mini_series", "binge_ready"]
 
 _STRUCTURAL_LABELS: dict[str, str] = {
@@ -230,6 +245,7 @@ _SASH_TYPES: dict[str, str] = {
     "festival":        "win",       
     "studio":          "prestige",  
     "director":        "prestige",  
+    "creator":         "prestige",  # <--- AGGIUNGI QUESTA RIGA
     "cast":            "cast",      
     "trending":        "trending",  
     "cult":            "trending",  
@@ -282,6 +298,7 @@ class DiscoveryMeta:
     matched_studios: list[str] = field(default_factory=list)
     matched_directors: list[str] = field(default_factory=list)
     matched_cast: list[str] = field(default_factory=list)
+    matched_creators: list[str] = field(default_factory=list)  # <--- NUOVA RIGA
     festival_label: str | None = None
     is_short_film: bool = False
     is_mini_series: bool = False
@@ -401,12 +418,22 @@ def extract_discovery_meta(
     credits = tmdb_data.get("credits", {})
 
     for crew_member in credits.get("crew", []):
-        if crew_member.get("job") == "Director":
-            name = crew_member.get("name", "")
+        job = crew_member.get("job")
+        name = crew_member.get("name", "")
+        
+        # Cerca i registi
+        if job == "Director":
             if name in directors:
                 label = directors[name]
                 if label not in meta.matched_directors:
                     meta.matched_directors.append(label)
+                    
+        # Cerca i Mangaka e Autori originali
+        elif job in ("Comic Book", "Original Series Creator", "Writer", "Novel", "Author", "Creator", "Original Concept", "Manga"):
+            if name in NOTABLE_CREATORS:
+                label = NOTABLE_CREATORS[name]
+                if label not in meta.matched_creators:
+                    meta.matched_creators.append(label)
 
     for cast_member in credits.get("cast", [])[:10]:
         name = cast_member.get("name", "")
@@ -520,6 +547,9 @@ def _evaluate_slot(slot: str, meta: DiscoveryMeta) -> str | None:
     if slot == "director":
         return f"{meta.matched_directors[0]}" if meta.matched_directors else None
 
+    if slot == "creator":
+        return f"{meta.matched_creators[0]}" if meta.matched_creators else None
+
     if slot == "cast":
         return meta.matched_cast[0] if meta.matched_cast else None
 
@@ -582,6 +612,7 @@ ALL_PRIORITY_SLOTS: list[str] = [
     "gg_noms",
     "studio",
     "director",
+    "creator",          # <--- AGGIUNGI QUESTA RIGA QUI
     "cast",
     "trending",
     "cult",
