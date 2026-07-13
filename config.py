@@ -305,6 +305,7 @@ SASH_PRIORITY: list[str] = [
     "gg_noms",
     "studio",
     "director",
+    "creator",
     "cast",
     "trending",
     "cult",
