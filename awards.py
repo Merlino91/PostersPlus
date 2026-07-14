@@ -1194,6 +1194,20 @@ def parse_mdblist_awards(
     elif "best-picture-nominated" in keyword_names:
         noms.append("Best Picture")
 
+    # --- Altri Oscar (Solo Vincitori, in ordine di priorità) ---
+    if "best-director-winner" in keyword_names:
+        wins.append("Best Director")
+    if "best-actor-winner" in keyword_names:
+        wins.append("Best Actor")
+    if "best-actress-winner" in keyword_names:
+        wins.append("Best Actress")
+    if "best-foreign-language-film-winner" in keyword_names or "best-international-feature-film-winner" in keyword_names:
+        wins.append("Best Foreign Film")
+    if "best-animated-feature-winner" in keyword_names:
+        wins.append("Best Animated Feature")
+    if "best-original-score-winner" in keyword_names:
+        wins.append("Best Original Score")
+
     # --- Golden Globe (all top film + TV categories) ---
     if numeric_tmdb_id is not None:
         if numeric_tmdb_id in _GG_ALL_WINNERS:
