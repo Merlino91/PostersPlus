@@ -1515,12 +1515,8 @@ def draw_award_badge(
             # Rimuoviamo la parola "Oscar:" (e la stellina se per caso c'è) e puliamo gli spazi
             rest_str = label.replace("Oscar:", "").replace("★", "").strip()
             
-            # Percorso della tua immagine PNG (es. nella cartella static)
-            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            icon_path = os.path.join(base_dir, "static", "oscar.png")
-            
-            # Percorso della tua immagine PNG (es. nella cartella static)
-            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# Percorso della tua immagine PNG (rimosso un dirname di troppo)
+            base_dir = os.path.dirname(os.path.abspath(__file__))
             icon_path = os.path.join(base_dir, "static", "oscar.png")
             
             try:
@@ -1545,6 +1541,14 @@ def draw_award_badge(
                 
                 # Disegniamo il testo subito dopo l'icona
                 td.text((tx + icon.width + gap, text_cy_ss), rest_str, font=ubuntu_font, fill=text_color, anchor="lm")
+                
+            except IOError as e:
+                # Ora se l'immagine non si carica, lo vedrai chiaramente nei log!
+                print(f"[ERROR] PNG non trovato o non leggibile. Path: {icon_path}. Motivo: {e}")
+                
+                # Fallback di sicurezza: stampa solo il testo senza stella
+                tx, ty = _text_center(td, rest_str, ubuntu_font, bw / 2, text_cy_ss)
+                td.text((tx, ty), rest_str, font=ubuntu_font, fill=text_color)
                 
             except IOError:
                 # Fallback di sicurezza: se il file oscar.png non esiste, stampa solo il testo senza stella
