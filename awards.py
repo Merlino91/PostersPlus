@@ -1509,8 +1509,49 @@ def draw_award_badge(
 
         txt_layer = Image.new("RGBA", (bw, bh), (0, 0, 0, 0))
         td = ImageDraw.Draw(txt_layer)
-        tx, ty = _text_center(td, label, ubuntu_font, bw / 2, text_cy_ss)
-        td.text((tx, ty), label, font=ubuntu_font, fill=text_color)
+
+        # INTERCETTAZIONE DELLA STELLA E INSERIMENTO PNG
+        if label.startswith("★"):
+            # Rimuoviamo la stella testuale e gli spazi
+            rest_str = label.replace("★", "").strip()
+            
+            # Percorso della tua immagine PNG (es. nella cartella static)
+            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            icon_path = os.path.join(base_dir, "static", "oscar.png")
+            
+            try:
+                # Carica l'immagine e ridimensionala per combaciare con l'altezza del testo
+                icon = Image.open(icon_path).convert("RGBA")
+                icon_size = int(font_size_ss * 1.1)  # Leggermente più grande del font
+                icon = icon.resize((icon_size, icon_size), Image.LANCZOS)
+                
+                # Calcoliamo la larghezza totale (Icona + Spazio + Testo) per centrare il blocco
+                gap = int(font_size_ss * 0.4)
+                rest_w = td.textlength(rest_str, font=ubuntu_font)
+                total_w = icon.width + gap + rest_w
+                
+                # Coordinata X per iniziare a disegnare il blocco perfettamente al centro
+                tx = int((bw - total_w) / 2)
+                
+                # Coordinata Y per centrare verticalmente l'icona
+                iy = int((bh - icon.height) / 2)
+                
+                # Incolliamo il PNG
+                txt_layer.paste(icon, (tx, iy), icon)
+                
+                # Disegniamo il testo subito dopo l'icona
+                td.text((tx + icon.width + gap, text_cy_ss), rest_str, font=ubuntu_font, fill=text_color, anchor="lm")
+                
+            except IOError:
+                # Fallback di sicurezza: se il file oscar.png non esiste, stampa solo il testo senza stella
+                tx, ty = _text_center(td, rest_str, ubuntu_font, bw / 2, text_cy_ss)
+                td.text((tx, ty), rest_str, font=ubuntu_font, fill=text_color)
+                
+        else:
+            # Comportamento normale per le etichette senza stella (es. le nomination)
+            tx, ty = _text_center(td, label, ubuntu_font, bw / 2, text_cy_ss)
+            td.text((tx, ty), label, font=ubuntu_font, fill=text_color)
+
         badge_ss = Image.alpha_composite(badge_ss, txt_layer)
 
         badge_final = badge_ss.resize((badge_w, badge_h), Image.LANCZOS)
