@@ -1510,10 +1510,14 @@ def draw_award_badge(
         txt_layer = Image.new("RGBA", (bw, bh), (0, 0, 0, 0))
         td = ImageDraw.Draw(txt_layer)
 
-        # INTERCETTAZIONE DELLA STELLA E INSERIMENTO PNG
-        if label.startswith("★"):
-            # Rimuoviamo la stella testuale e gli spazi
-            rest_str = label.replace("★", "").strip()
+        # INTERCETTAZIONE DELL'OSCAR E INSERIMENTO PNG
+        if "Oscar:" in label:
+            # Rimuoviamo la parola "Oscar:" (e la stellina se per caso c'è) e puliamo gli spazi
+            rest_str = label.replace("Oscar:", "").replace("★", "").strip()
+            
+            # Percorso della tua immagine PNG (es. nella cartella static)
+            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            icon_path = os.path.join(base_dir, "static", "oscar.png")
             
             # Percorso della tua immagine PNG (es. nella cartella static)
             base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
