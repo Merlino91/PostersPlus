@@ -1503,62 +1503,56 @@ def draw_award_badge(
         body.putalpha(rr_mask_ss)
         badge_ss = body
 
-        # 4. Testo intelligente basato sulla luminosità (Bianco o Nero)
+# 4. Testo intelligente basato sulla luminosità (Bianco o Nero)
         lum = 0.299 * bg_r + 0.587 * bg_g + 0.114 * bg_b
         text_color = (250, 250, 250, 255) if lum < 140 else (15, 15, 15, 245)
 
         txt_layer = Image.new("RGBA", (bw, bh), (0, 0, 0, 0))
         td = ImageDraw.Draw(txt_layer)
 
-        # INTERCETTAZIONE DELL'OSCAR E INSERIMENTO PNG
-        if "Oscar:" in label:
-            # Rimuoviamo la parola "Oscar:" (e la stellina se per caso c'è) e puliamo gli spazi
-            rest_str = label.replace("Oscar:", "").replace("★", "").strip()
-            
-# Percorso della tua immagine PNG (rimosso un dirname di troppo)
+        # 1. PULIZIA GLOBALE: Rimuoviamo la stellina (se presente) per distruggere il quadratino rotto
+        clean_label = label.replace("★", "").strip()
+        icon_filename = None
+
+        # 2. ROUTING DELLE ICONE: Scegliamo il PNG in base al premio
+        if "Oscar:" in clean_label:
+            icon_filename = "oscar.png"
+            clean_label = clean_label.replace("Oscar:", "").strip() # Rimuove "Oscar:" per lasciare solo "Miglior Film"
+        elif "Emmy" in clean_label:
+            icon_filename = "emmy.png"
+            # Non rimuoviamo "Emmy", così stampa "Vincitore Emmy" con l'icona a fianco
+        elif "Globe" in clean_label:
+            icon_filename = "globe.png"
+            # Non rimuoviamo "Globe", stampa "Golden Globe" con l'icona
+
+        # 3. DISEGNO (Con o Senza Icona)
+        if icon_filename:
             base_dir = os.path.dirname(os.path.abspath(__file__))
-            icon_path = os.path.join(base_dir, "static", "oscar.png")
+            icon_path = os.path.join(base_dir, "static", icon_filename)
             
             try:
-                # Carica l'immagine e ridimensionala per combaciare con l'altezza del testo
                 icon = Image.open(icon_path).convert("RGBA")
-                icon_size = int(font_size_ss * 1.1)  # Leggermente più grande del font
+                icon_size = int(font_size_ss * 1.2)
                 icon = icon.resize((icon_size, icon_size), Image.LANCZOS)
                 
-                # Calcoliamo la larghezza totale (Icona + Spazio + Testo) per centrare il blocco
                 gap = int(font_size_ss * 0.4)
-                rest_w = td.textlength(rest_str, font=ubuntu_font)
+                rest_w = td.textlength(clean_label, font=ubuntu_font)
                 total_w = icon.width + gap + rest_w
                 
-                # Coordinata X per iniziare a disegnare il blocco perfettamente al centro
                 tx = int((bw - total_w) / 2)
-                
-                # Coordinata Y per centrare verticalmente l'icona
                 iy = int((bh - icon.height) / 2)
                 
-                # Incolliamo il PNG
                 txt_layer.paste(icon, (tx, iy), icon)
-                
-                # Disegniamo il testo subito dopo l'icona
-                td.text((tx + icon.width + gap, text_cy_ss), rest_str, font=ubuntu_font, fill=text_color, anchor="lm")
+                td.text((tx + icon.width + gap, text_cy_ss), clean_label, font=ubuntu_font, fill=text_color, anchor="lm")
                 
             except IOError as e:
-                # Ora se l'immagine non si carica, lo vedrai chiaramente nei log!
-                print(f"[ERROR] PNG non trovato o non leggibile. Path: {icon_path}. Motivo: {e}")
-                
-                # Fallback di sicurezza: stampa solo il testo senza stella
-                tx, ty = _text_center(td, rest_str, ubuntu_font, bw / 2, text_cy_ss)
-                td.text((tx, ty), rest_str, font=ubuntu_font, fill=text_color)
-                
-            except IOError:
-                # Fallback di sicurezza: se il file oscar.png non esiste, stampa solo il testo senza stella
-                tx, ty = _text_center(td, rest_str, ubuntu_font, bw / 2, text_cy_ss)
-                td.text((tx, ty), rest_str, font=ubuntu_font, fill=text_color)
-                
+                print(f"[ERROR] PNG non trovato: {icon_path}. Motivo: {e}")
+                tx, ty = _text_center(td, clean_label, ubuntu_font, bw / 2, text_cy_ss)
+                td.text((tx, ty), clean_label, font=ubuntu_font, fill=text_color)
         else:
-            # Comportamento normale per le etichette senza stella (es. le nomination)
-            tx, ty = _text_center(td, label, ubuntu_font, bw / 2, text_cy_ss)
-            td.text((tx, ty), label, font=ubuntu_font, fill=text_color)
+            # Comportamento normale per i tag che non hanno icone (es. Cult, Nomination, ecc.)
+            tx, ty = _text_center(td, clean_label, ubuntu_font, bw / 2, text_cy_ss)
+            td.text((tx, ty), clean_label, font=ubuntu_font, fill=text_color)
 
         badge_ss = Image.alpha_composite(badge_ss, txt_layer)
 
