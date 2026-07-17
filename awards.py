@@ -1468,97 +1468,93 @@ def draw_award_badge(
 
     # === TUA MAGIA: NUOVO STILE "MINIMAL PILL" ===
     if notch_style == "minimal_pill":
-        # 1. Carica il tuo font storico (Ubuntu-Bold) invece di quello di sistema
         try:
             ubuntu_font = ImageFont.truetype(os.path.join(_fonts_dir, "Ubuntu-Bold.ttf"), font_size_ss)
         except IOError:
             ubuntu_font = font
 
-        # Ricalcola la larghezza del testo con il nuovo font
+        # 1. INTERCETTAZIONE (Spostata all'inizio!)
+        clean_label = label.replace("★", "").strip()
+        icon_filename = None
+
+        if "Oscar:" in clean_label:
+            icon_filename = "oscar.png"
+            clean_label = clean_label.replace("Oscar:", "").strip()
+        elif "Emmy" in clean_label:
+            icon_filename = "emmy.png"
+        elif "Globe" in clean_label:
+            icon_filename = "globe.png"
+
+        # 2. CALCOLO SPAZI DINAMICI
         _tmp_d  = ImageDraw.Draw(Image.new("L", (1, 1)))
-        _tbbox  = _tmp_d.textbbox((0, 0), label, font=ubuntu_font)
+        _tbbox  = _tmp_d.textbbox((0, 0), clean_label, font=ubuntu_font)
         text_w_ss = _tbbox[2] - _tbbox[0]
-        badge_w = max(min_badge_w, min(max_badge_w, text_w_ss // SS + _h_pad))
+
+        icon_reserved_w_ss = 0
+        gap_ss = int(font_size_ss * 0.4)
+        
+        # Se c'è un'icona, prepariamo uno spazio largo il 140% dell'altezza della tacca!
+        if icon_filename:
+            icon_reserved_w_ss = int(bh * 1.4) + gap_ss 
+
+        content_w_ss = text_w_ss + icon_reserved_w_ss
+        badge_w = max(min_badge_w, min(max_badge_w, content_w_ss // SS + _h_pad))
         bw = badge_w * SS
 
-        # 2. ASSEGNAZIONE COLORE (Il colore puro arriva da main.py prima dei gradienti!)
+        # 3. DISEGNO DELLA PILLOLA
         if tint_rgb is not None:
             bg_r, bg_g, bg_b = int(tint_rgb[0]), int(tint_rgb[1]), int(tint_rgb[2])
         else:
-            bg_r, bg_g, bg_b = 50, 150, 250  # Fallback di sicurezza (non si attiverà mai)
+            bg_r, bg_g, bg_b = 50, 150, 250
 
-        # 3. Disegna la Pillola con angoli personalizzati
-        # pill_radius = bh // 4 rende gli angoli molto più spigolosi rispetto a // 2
         badge_ss = Image.new("RGBA", (bw, bh), (0, 0, 0, 0))
         rr_mask_ss = Image.new("L", (bw, bh), 0)
         pill_radius = bh // 4  
-        
         draw_mask = ImageDraw.Draw(rr_mask_ss)
-        # Rettangolo sopra (piatto)
         draw_mask.rectangle([(0, 0), (bw - 1, bh - pill_radius)], fill=255)
-        # Rettangolo arrotondato sotto (più spigoloso con raggio bh//4)
         draw_mask.rounded_rectangle([(0, 0), (bw - 1, bh - 1)], radius=pill_radius, fill=255, corners=(False, False, True, True))
         
         body = Image.new("RGBA", (bw, bh), (bg_r, bg_g, bg_b, 240))
         body.putalpha(rr_mask_ss)
         badge_ss = body
 
-# 4. Testo intelligente basato sulla luminosità (Bianco o Nero)
+        # 4. DISEGNO DEL TESTO INTELLIGENTE
         lum = 0.299 * bg_r + 0.587 * bg_g + 0.114 * bg_b
         text_color = (250, 250, 250, 255) if lum < 140 else (15, 15, 15, 245)
 
         txt_layer = Image.new("RGBA", (bw, bh), (0, 0, 0, 0))
         td = ImageDraw.Draw(txt_layer)
 
-        # 1. PULIZIA GLOBALE: Rimuoviamo la stellina (se presente) per distruggere il quadratino rotto
-        clean_label = label.replace("★", "").strip()
-        icon_filename = None
-
-        # 2. ROUTING DELLE ICONE: Scegliamo il PNG in base al premio
-        if "Oscar:" in clean_label:
-            icon_filename = "oscar.png"
-            clean_label = clean_label.replace("Oscar:", "").strip() # Rimuove "Oscar:" per lasciare solo "Miglior Film"
-        elif "Emmy" in clean_label:
-            icon_filename = "emmy.png"
-            # Non rimuoviamo "Emmy", così stampa "Vincitore Emmy" con l'icona a fianco
-        elif "Globe" in clean_label:
-            icon_filename = "globe.png"
-            # Non rimuoviamo "Globe", stampa "Golden Globe" con l'icona
-
-        # 3. DISEGNO (Con o Senza Icona)
-        if icon_filename:
-            base_dir = os.path.dirname(os.path.abspath(__file__))
-            icon_path = os.path.join(base_dir, "static", icon_filename)
-            
-            try:
-                icon = Image.open(icon_path).convert("RGBA")
-                icon_size = int(font_size_ss * 1.2)
-                icon = icon.resize((icon_size, icon_size), Image.LANCZOS)
-                
-                gap = int(font_size_ss * 0.4)
-                rest_w = td.textlength(clean_label, font=ubuntu_font)
-                total_w = icon.width + gap + rest_w
-                
-                tx = int((bw - total_w) / 2)
-                iy = int((bh - icon.height) / 2)
-                
-                txt_layer.paste(icon, (tx, iy), icon)
-                td.text((tx + icon.width + gap, text_cy_ss), clean_label, font=ubuntu_font, fill=text_color, anchor="lm")
-                
-            except IOError as e:
-                print(f"[ERROR] PNG non trovato: {icon_path}. Motivo: {e}")
-                tx, ty = _text_center(td, clean_label, ubuntu_font, bw / 2, text_cy_ss)
-                td.text((tx, ty), clean_label, font=ubuntu_font, fill=text_color)
-        else:
-            # Comportamento normale per i tag che non hanno icone (es. Cult, Nomination, ecc.)
-            tx, ty = _text_center(td, clean_label, ubuntu_font, bw / 2, text_cy_ss)
-            td.text((tx, ty), clean_label, font=ubuntu_font, fill=text_color)
-
+        tx_ss = (bw - content_w_ss) / 2
+        # Disegniamo il testo spostato a destra, lasciando il "buco" vuoto a sinistra
+        td.text((tx_ss + icon_reserved_w_ss, text_cy_ss), clean_label, font=ubuntu_font, fill=text_color, anchor="lm")
         badge_ss = Image.alpha_composite(badge_ss, txt_layer)
 
+        # 5. COMPOSIZIONE FINALE: TACCA + ICONA DEBORDANTE
         badge_final = badge_ss.resize((badge_w, badge_h), Image.LANCZOS)
         result = image.copy()
         result.alpha_composite(badge_final, (bx, by_composite))
+
+        if icon_filename:
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            icon_path = os.path.join(base_dir, "static", icon_filename)
+            try:
+                icon = Image.open(icon_path).convert("RGBA")
+                # Rendiamo l'icona gigante! 140% rispetto alla tacca
+                icon_final_size = int(badge_h * 1.4) 
+                icon = icon.resize((icon_final_size, icon_final_size), Image.LANCZOS)
+                
+                # Coordinate al millimetro per posizionarla esattamente nel buco
+                icon_x = int(bx + (badge_w - content_w_ss // SS) / 2)
+                
+                # Questa formula matematica la farà sbordare automaticamente sopra e sotto in parti uguali
+                icon_y = int(by_composite + (badge_h - icon_final_size) / 2)
+                
+                # Stampiamo l'icona fisicamente sulla locandina
+                result.paste(icon, (icon_x, icon_y), icon)
+            except IOError as e:
+                print(f"[ERROR] Impossibile caricare l'icona: {e}")
+
         return result
     # ===============================================
 
