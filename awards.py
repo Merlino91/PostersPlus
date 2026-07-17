@@ -1466,50 +1466,38 @@ def draw_award_badge(
     # Text is geometrically centred; client-specific placement is handled by inset.
     text_cy_ss = bh / 2
 
-    # === TUA MAGIA: NUOVO STILE "MINIMAL PILL" ===
+    # === STILE "MINIMAL PILL" ===
     if notch_style == "minimal_pill":
+        # 1. Caricamento Font (Testo + Icone)
         try:
             ubuntu_font = ImageFont.truetype(os.path.join(_fonts_dir, "Ubuntu-Bold.ttf"), font_size_ss)
         except IOError:
             ubuntu_font = font
 
-        # 1. INTERCETTAZIONE (Spostata all'inizio!)
-        clean_label = label.replace("★", "").strip()
-        icon_filename = None
+        try:
+            # Assicurati che il nome del file coincida esattamente con quello caricato su GitHub
+            icon_font = ImageFont.truetype(os.path.join(_fonts_dir, "Font Awesome 7 Free-Solid-900.otf"), font_size_ss)
+        except IOError:
+            icon_font = font
 
-        if "Oscar:" in clean_label:
-            icon_filename = "oscar.png"
-            clean_label = clean_label.replace("Oscar:", "").strip()
-        elif "Emmy" in clean_label:
-            icon_filename = "emmy.png"
-        elif "Globe" in clean_label:
-            icon_filename = "globe.png"
-
-        # 2. CALCOLO SPAZI DINAMICI
+        # 2. Ricalcolo delle dimensioni della pillola
         _tmp_d  = ImageDraw.Draw(Image.new("L", (1, 1)))
-        _tbbox  = _tmp_d.textbbox((0, 0), clean_label, font=ubuntu_font)
+        _tbbox  = _tmp_d.textbbox((0, 0), label, font=ubuntu_font)
         text_w_ss = _tbbox[2] - _tbbox[0]
-
-        icon_reserved_w_ss = 0
-        gap_ss = int(font_size_ss * 0.4)
-        
-        # Se c'è un'icona, prepariamo uno spazio largo il 140% dell'altezza della tacca!
-        if icon_filename:
-            icon_reserved_w_ss = int(bh * 1.4) + gap_ss 
-
-        content_w_ss = text_w_ss + icon_reserved_w_ss
-        badge_w = max(min_badge_w, min(max_badge_w, content_w_ss // SS + _h_pad))
+        badge_w = max(min_badge_w, min(max_badge_w, text_w_ss // SS + _h_pad))
         bw = badge_w * SS
 
-        # 3. DISEGNO DELLA PILLOLA
+        # 3. Assegnazione Colore Sfondo
         if tint_rgb is not None:
             bg_r, bg_g, bg_b = int(tint_rgb[0]), int(tint_rgb[1]), int(tint_rgb[2])
         else:
-            bg_r, bg_g, bg_b = 50, 150, 250
+            bg_r, bg_g, bg_b = 50, 150, 250 
 
+        # 4. Disegno della Pillola (Shape)
         badge_ss = Image.new("RGBA", (bw, bh), (0, 0, 0, 0))
         rr_mask_ss = Image.new("L", (bw, bh), 0)
         pill_radius = bh // 4  
+        
         draw_mask = ImageDraw.Draw(rr_mask_ss)
         draw_mask.rectangle([(0, 0), (bw - 1, bh - pill_radius)], fill=255)
         draw_mask.rounded_rectangle([(0, 0), (bw - 1, bh - 1)], radius=pill_radius, fill=255, corners=(False, False, True, True))
@@ -1518,43 +1506,41 @@ def draw_award_badge(
         body.putalpha(rr_mask_ss)
         badge_ss = body
 
-        # 4. DISEGNO DEL TESTO INTELLIGENTE
+        # 5. Colore Testo intelligente basato sulla luminosità dello sfondo
         lum = 0.299 * bg_r + 0.587 * bg_g + 0.114 * bg_b
         text_color = (250, 250, 250, 255) if lum < 140 else (15, 15, 15, 245)
 
         txt_layer = Image.new("RGBA", (bw, bh), (0, 0, 0, 0))
         td = ImageDraw.Draw(txt_layer)
 
-        tx_ss = (bw - content_w_ss) / 2
-        # Disegniamo il testo spostato a destra, lasciando il "buco" vuoto a sinistra
-        td.text((tx_ss + icon_reserved_w_ss, text_cy_ss), clean_label, font=ubuntu_font, fill=text_color, anchor="lm")
+        # 6. SPLIT RENDERING (Intercettazione Stella -> Sostituzione con Font Awesome)
+        if label.startswith("★"):
+            icon_char = "\uf559"  # Codice Unicode per "Award"
+            rest_str = label.replace("★", "").strip() 
+            
+            # Calcolo ingombri per centratura assoluta
+            gap = int(font_size_ss * 0.4) 
+            icon_w = td.textlength(icon_char, font=icon_font)
+            rest_w = td.textlength(rest_str, font=ubuntu_font)
+            total_w = icon_w + gap + rest_w
+            
+            tx = (bw - total_w) / 2
+            
+            # Stampa affiancata centrata verticalmente (anchor="lm")
+            td.text((tx, text_cy_ss), icon_char, font=icon_font, fill=text_color, anchor="lm")
+            td.text((tx + icon_w + gap, text_cy_ss), rest_str, font=ubuntu_font, fill=text_color, anchor="lm")
+        else:
+            # Stampa standard per etichette senza stella (es. le nomination)
+            tx, ty = _text_center(td, label, ubuntu_font, bw / 2, text_cy_ss)
+            td.text((tx, ty), label, font=ubuntu_font, fill=text_color)
+
         badge_ss = Image.alpha_composite(badge_ss, txt_layer)
 
-        # 5. COMPOSIZIONE FINALE: TACCA + ICONA DEBORDANTE
+        # 7. Composizione Finale
         badge_final = badge_ss.resize((badge_w, badge_h), Image.LANCZOS)
         result = image.copy()
         result.alpha_composite(badge_final, (bx, by_composite))
-
-        if icon_filename:
-            base_dir = os.path.dirname(os.path.abspath(__file__))
-            icon_path = os.path.join(base_dir, "static", icon_filename)
-            try:
-                icon = Image.open(icon_path).convert("RGBA")
-                # Rendiamo l'icona gigante! 140% rispetto alla tacca
-                icon_final_size = int(badge_h * 1.4) 
-                icon = icon.resize((icon_final_size, icon_final_size), Image.LANCZOS)
-                
-                # Coordinate al millimetro per posizionarla esattamente nel buco
-                icon_x = int(bx + (badge_w - content_w_ss // SS) / 2)
-                
-                # Questa formula matematica la farà sbordare automaticamente sopra e sotto in parti uguali
-                icon_y = int(by_composite + (badge_h - icon_final_size) / 2)
-                
-                # Stampiamo l'icona fisicamente sulla locandina
-                result.paste(icon, (icon_x, icon_y), icon)
-            except IOError as e:
-                print(f"[ERROR] Impossibile caricare l'icona: {e}")
-
+        
         return result
     # ===============================================
 
