@@ -1841,6 +1841,13 @@ def build_poster(
             )
 
     # --- Discovery sash / badge ---
+    if cfg.sash_mode != "hidden" and sash_result is not None:
+        label, sash_type = sash_result
+        # Decide the ★ winner marker on the CANONICAL English label, then render
+        # the translated label.  (The renderers' own English set-match would miss
+        # a translated label and drop the star.)
+        _is_star  = sash_type == "win" and label in _STAR_WIN_AWARDS
+        _label_tr = translate_sash(label, cfg.logo_language)
         if cfg.sash_mode == "notch":
             if getattr(cfg, 'text_drop_shadow', False):
                 from PIL import ImageFilter
