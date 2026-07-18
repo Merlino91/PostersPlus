@@ -1841,23 +1841,39 @@ def build_poster(
             )
 
     # --- Discovery sash / badge ---
-    if cfg.sash_mode != "hidden" and sash_result is not None:
-        label, sash_type = sash_result
-        # Decide the ★ winner marker on the CANONICAL English label, then render
-        # the translated label.  (The renderers' own English set-match would miss
-        # a translated label and drop the star.)
-        _is_star  = sash_type == "win" and label in _STAR_WIN_AWARDS
-        _label_tr = translate_sash(label, cfg.logo_language)
-        if cfg.sash_mode == "notch":
+    if cfg.sash_mode == "notch":
             if getattr(cfg, 'text_drop_shadow', False):
                 from PIL import ImageFilter
+                
+                # 1. Creiamo un livello vuoto e disegniamo la forma della tacca
                 shadow_layer = Image.new("RGBA", image.size, (0,0,0,0))
-                shadow_layer = draw_award_badge(shadow_layer, _label_tr, sash_type=sash_type, size_ratio_w=cfg.sash_badge_size_w, size_ratio_h=cfg.sash_badge_size_h, notch_style="black", notch_inset=cfg.sash_badge_inset, font_size_ratio=cfg.sash_badge_font_ratio, frost_opacity=1.0, tint_rgb=(0,0,0), star=_is_star)
-                shadow_layer = shadow_layer.filter(ImageFilter.GaussianBlur(5))
+                shadow_layer = draw_award_badge(
+                    shadow_layer, _label_tr, sash_type=sash_type, 
+                    size_ratio_w=cfg.sash_badge_size_w, size_ratio_h=cfg.sash_badge_size_h, 
+                    notch_style="black", notch_inset=cfg.sash_badge_inset, 
+                    font_size_ratio=cfg.sash_badge_font_ratio, frost_opacity=1.0, 
+                    tint_rgb=(0,0,0), star=_is_star
+                )
+                
+                # 2. Estraiamo ESCLUSIVAMENTE il canale Alpha e lo sfochiamo (previene il bordo nero)
+                alpha_mask = shadow_layer.split()[3]
+                alpha_mask = alpha_mask.filter(ImageFilter.GaussianBlur(radius=4)) # Radius ridotto per maggiore pulizia
+                
+                # 3. Rendiamo l'ombra più leggera riducendone l'opacità globale al 40%
+                alpha_mask = alpha_mask.point(lambda p: int(p * 0.40))
+                
+                # 4. Applichiamo la maschera a un livello di nero puro
+                pure_shadow = Image.new("RGBA", image.size, (0, 0, 0, 255))
+                pure_shadow.putalpha(alpha_mask)
+                
+                # 5. Spostiamo l'ombra in basso e la incolliamo USANDO LA MASCHERA
                 shifted_shadow = Image.new("RGBA", image.size, (0,0,0,0))
-                shifted_shadow.paste(shadow_layer, (0, 4))
+                shifted_shadow.paste(pure_shadow, (0, 3), pure_shadow)
+                
+                # 6. Uniamo l'ombra all'immagine principale
                 image = Image.alpha_composite(image.convert("RGBA"), shifted_shadow)
 
+            # Il resto del codice originale per disegnare la vera tacca colorata
             image = draw_award_badge(image, _label_tr, sash_type=sash_type,
                                      size_ratio_w=cfg.sash_badge_size_w,
                                      size_ratio_h=cfg.sash_badge_size_h,
