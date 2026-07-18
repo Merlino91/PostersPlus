@@ -1841,7 +1841,7 @@ def build_poster(
             )
 
     # --- Discovery sash / badge ---
-    if cfg.sash_mode == "notch":
+        if cfg.sash_mode == "notch":
             if getattr(cfg, 'text_drop_shadow', False):
                 from PIL import ImageFilter
                 
@@ -1855,9 +1855,9 @@ def build_poster(
                     tint_rgb=(0,0,0), star=_is_star
                 )
                 
-                # 2. Estraiamo ESCLUSIVAMENTE il canale Alpha e lo sfochiamo (previene il bordo nero)
+                # 2. Estraiamo ESCLUSIVAMENTE il canale Alpha e lo sfochiamo
                 alpha_mask = shadow_layer.split()[3]
-                alpha_mask = alpha_mask.filter(ImageFilter.GaussianBlur(radius=4)) # Radius ridotto per maggiore pulizia
+                alpha_mask = alpha_mask.filter(ImageFilter.GaussianBlur(radius=4)) 
                 
                 # 3. Rendiamo l'ombra più leggera riducendone l'opacità globale al 40%
                 alpha_mask = alpha_mask.point(lambda p: int(p * 0.40))
