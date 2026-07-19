@@ -1683,8 +1683,6 @@ def build_poster(
             # Score formatting:
             #   out of 100 (default): "87", "100", "N/A"
             #   out of 10:            "8.7", "8.0" (always one decimal), "10"
-            #                         (no decimal — already two glyphs wide)
-            # Non-numeric scores ("N/A") pass through unchanged in either mode.
             if cfg.score_out_of_10 and isinstance(score, (int, float)):
                 _score_text = "10" if score >= 100 else f"{score / 10:.1f}"
             else:
@@ -1694,16 +1692,18 @@ def build_poster(
 
             try:
                 font_meta = ImageFont.truetype(os.path.join(_FONTS_DIR, "Ubuntu-Bold.ttf"), font_size)
-                font_icon = ImageFont.truetype(os.path.join(_FONTS_DIR, "Font Awesome-7-Brands.otf"), font_size)
+                # Sostituito Font Awesome Brands con Font Awesome Solid
+                font_icon = ImageFont.truetype(os.path.join(_FONTS_DIR, "Font Awesome 7 Free-Solid-900.otf"), font_size)
             except IOError:
                 font_meta = ImageFont.load_default()
                 font_icon = ImageFont.load_default()
 
-            imdb_logo = "\uf2d8"
+            # ID Unicode per la stella di Font Awesome
+            star_icon = "\uf005"
             
             # Calcoliamo le lunghezze dei singoli pezzi per centrare l'intero blocco
             len_genre = draw.textlength(f"{genre_label}  ", font=font_meta) 
-            len_icon = draw.textlength(f"{imdb_logo} ", font=font_icon)     
+            len_icon = draw.textlength(f"{star_icon} ", font=font_icon)     
             len_score = draw.textlength(_score_text, font=font_meta)
             
             total_width = len_genre + len_icon + len_score
@@ -1715,7 +1715,7 @@ def build_poster(
             
             # Disegniamo in sequenza spostando la X
             draw.text((ox, adjusted_oy), f"{genre_label}  ", font=font_meta, fill=(200, 200, 200, 255))
-            draw.text((ox + len_genre, adjusted_oy), imdb_logo, font=font_icon, fill=(200, 200, 200, 255))
+            draw.text((ox + len_genre, adjusted_oy), f"{star_icon} ", font=font_icon, fill=(200, 200, 200, 255))
             draw.text((ox + len_genre + len_icon, adjusted_oy), _score_text, font=font_meta, fill=(200, 200, 200, 255))
 
         elif cfg.rating_display_mode == 3:
@@ -1723,8 +1723,8 @@ def build_poster(
 
             try:
                 font_meta = ImageFont.truetype(os.path.join(_FONTS_DIR, "Ubuntu-Bold.ttf"), font_size)
-                # Per il Minimalist carichiamo Inter-Bold invece di Font Awesome per avere la stella nitida
-                font_icon = ImageFont.truetype(os.path.join(_FONTS_DIR, "Inter-Bold.ttf"), font_size)
+                # Rimosso Inter-Bold, inserito Font Awesome Solid
+                font_icon = ImageFont.truetype(os.path.join(_FONTS_DIR, "Font Awesome 7 Free-Solid-900.otf"), font_size)
             except IOError:
                 font_meta = ImageFont.load_default()
                 font_icon = ImageFont.load_default()
@@ -1756,8 +1756,8 @@ def build_poster(
                 if _has_score:
                     parts.append((_score_text, "star"))
 
-            # Ripristiniamo il carattere della stella per Inter-Bold
-            star_glyph = "★"
+            # Sostituita la vecchia "★" testuale con l'Unicode vettoriale
+            star_glyph = "\uf005"
             pip_gap = int(font_size * 0.55)
             pip_w   = max(4, int(font_size * 0.18))
             pip_h   = int(font_size * 1.4)
@@ -1783,7 +1783,7 @@ def build_poster(
                 if kind == "text":
                     draw.text((ox, y), op[2], font=font_meta, fill=_ink)
                 elif kind == "star":
-                    # Disegna la stella nativa usando il font Inter-Bold
+                    # Disegna la stella vettoriale usando Font Awesome
                     draw.text((ox, y), star_glyph, font=font_icon, fill=_ink)
                 elif kind == "rpip":
                     draw_score_bar_vertical(image, score, x=ox, y_center=pip_cy,
