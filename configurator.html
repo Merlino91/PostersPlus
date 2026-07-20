@@ -3514,127 +3514,121 @@ function buildBaseParams({ usePlaceholders = false, domainOverride = null } = {}
   params.set('tmdb_id', tmdbId);
   params.set('imdb_id', imdbId);
   params.set('type',    type);
-  
-  if (vEl('cfg-primary-client') !== 'stremio_tv_nuvio') params.set('primary_client', vEl('cfg-primary-client'));
+  params.set('primary_client', vEl('cfg-primary-client') || 'stremio_tv_nuvio');
   if (accKey)         params.set('access_key',  accKey);
   if (userTmdbKey)    params.set('tmdb_key',     usePlaceholders ? '{tmdb_key}'    : userTmdbKey);
   if (userMdblistKey) params.set('mdblist_key',  usePlaceholders ? '{mdblist_key}' : userMdblistKey);
 
   // ── Modifiche Custom ──
-  if (n('cfg-grad-top') !== 40) params.set('gradient_top_intensity', n('cfg-grad-top').toFixed(0));
-  if (n('cfg-grad-bot') !== 70) params.set('gradient_bottom_intensity', n('cfg-grad-bot').toFixed(0));
-  if (n('cfg-glass-int') !== 90) params.set('frosted_glass_intensity', n('cfg-glass-int').toFixed(0));
-  if (vEl('cfg-grad-top-color') !== 'black') params.set('grad_color_top', vEl('cfg-grad-top-color'));
-  if (vEl('cfg-grad-bot-color') !== 'global') params.set('grad_color_bot', vEl('cfg-grad-bot-color'));
-  
-  if (c('tog-global-ui')) params.set('use_global_ui_color', 'true');
-  if (!c('tog-text-shadow')) params.set('text_drop_shadow', 'false');
-  if (!c('tog-fallback-imdb')) params.set('fallback_to_imdb', 'false');
+  params.set('gradient_top_intensity', n('cfg-grad-top').toFixed(0));
+  params.set('gradient_bottom_intensity', n('cfg-grad-bot').toFixed(0));
+  params.set('frosted_glass_intensity', n('cfg-glass-int').toFixed(0));
+  params.set('grad_color_top', vEl('cfg-grad-top-color') || 'black');
+  params.set('grad_color_bot', vEl('cfg-grad-bot-color') || 'global');
+  params.set('use_global_ui_color', c('tog-global-ui') ? 'true' : 'false');
+  params.set('text_drop_shadow', c('tog-text-shadow') ? 'true' : 'false');
+  params.set('fallback_to_imdb', c('tog-fallback-imdb') ? 'true' : 'false');
 
   // ── Rating / Genre Label ──
-  if (ratingMode !== 3) params.set('rating_display_mode', ratingMode);
+  params.set('rating_display_mode', ratingMode);
   
   if (ratingMode !== 0) {
     if (ratingMode === 1 || ratingMode === 3) {
-      if (ni('cfg-score-color-mode') !== 0) params.set('score_color_mode', ni('cfg-score-color-mode'));
+      params.set('score_color_mode', ni('cfg-score-color-mode'));
     }
     
     if (ratingMode === 1) {
-      if (n('cfg-font-mode1') !== 0.080) params.set('accent_bar_font_size_ratio', n('cfg-font-mode1').toFixed(3));
-      if (n('cfg-y-mode1') !== 0.90) params.set('accent_bar_y_offset', n('cfg-y-mode1').toFixed(2));
-      if (ni('cfg-bar-append') !== 0) params.set('accent_bar_append_mode', ni('cfg-bar-append'));
-      if (n('cfg-bar-bottom') !== 0.040) params.set('accent_bar_bottom_ratio', n('cfg-bar-bottom').toFixed(3));
-      if (ni('cfg-glow-thresh') !== 85) params.set('score_glow_threshold', ni('cfg-glow-thresh'));
-      if (ni('cfg-glow-blur') !== 1) params.set('score_glow_blur', ni('cfg-glow-blur'));
-      if (ni('cfg-glow-alpha') !== 40) params.set('score_glow_alpha', ni('cfg-glow-alpha'));
+      params.set('accent_bar_font_size_ratio', n('cfg-font-mode1').toFixed(3));
+      params.set('accent_bar_y_offset', n('cfg-y-mode1').toFixed(2));
+      params.set('accent_bar_append_mode', ni('cfg-bar-append'));
+      params.set('accent_bar_bottom_ratio', n('cfg-bar-bottom').toFixed(3));
+      params.set('score_glow_threshold', ni('cfg-glow-thresh'));
+      params.set('score_glow_blur', ni('cfg-glow-blur'));
+      params.set('score_glow_alpha', ni('cfg-glow-alpha'));
     } else if (ratingMode === 2) {
-      if (n('cfg-font-mode2') !== 0.100) params.set('numeric_score_font_size_ratio', n('cfg-font-mode2').toFixed(3));
-      if (n('cfg-y-mode2') !== 0.90) params.set('numeric_score_y_offset', n('cfg-y-mode2').toFixed(2));
-      if (!c('tog-score-out-of-10')) params.set('score_out_of_10', 'false');
+      params.set('numeric_score_font_size_ratio', n('cfg-font-mode2').toFixed(3));
+      params.set('numeric_score_y_offset', n('cfg-y-mode2').toFixed(2));
+      params.set('score_out_of_10', c('tog-score-out-of-10') ? 'true' : 'false');
     } else if (ratingMode === 3) {
-      if (ni('cfg-min-append') !== 1) params.set('minimalist_append_mode', ni('cfg-min-append'));
-      if (n('cfg-font-mode3') !== 0.050) params.set('minimalist_mode_font_size_ratio', n('cfg-font-mode3').toFixed(3));
-      if (n('cfg-x-mode3') !== 0.040) params.set('minimalist_mode_font_x_offset', n('cfg-x-mode3').toFixed(3));
-      if (n('cfg-y-mode3') !== 0.940) params.set('minimalist_mode_font_y_offset', n('cfg-y-mode3').toFixed(3));
+      params.set('minimalist_append_mode', ni('cfg-min-append'));
+      params.set('minimalist_mode_font_size_ratio', n('cfg-font-mode3').toFixed(3));
+      params.set('minimalist_mode_font_x_offset', n('cfg-x-mode3').toFixed(3));
+      params.set('minimalist_mode_font_y_offset', n('cfg-y-mode3').toFixed(3));
     } else if (ratingMode === 4) {
-      if (vEl('cfg-bar-style') !== 'frosted') params.set('bar_style', vEl('cfg-bar-style'));
+      params.set('bar_style', vEl('cfg-bar-style') || 'frosted');
       const _bs = vEl('cfg-bar-style') || '';
       if (_bs === 'rating_black' || _bs === 'rating_frosted') {
-        if (vEl('cfg-bar-accent') !== 'silver') params.set('bar_accent', vEl('cfg-bar-accent'));
+        params.set('bar_accent', vEl('cfg-bar-accent') || 'silver');
       }
-      if (vEl('cfg-bar4-append') !== 'rating_year') params.set('bar_append', vEl('cfg-bar4-append'));
-      if (c('tog-bar-score-10')) params.set('bar_score_out_of_10', 'true');
+      params.set('bar_append', vEl('cfg-bar4-append') || 'rating_year');
+      params.set('bar_score_out_of_10', c('tog-bar-score-10') ? 'true' : 'false');
       if (_bs === 'frosted' || _bs === 'rating_frosted') {
-        if (!c('tog-bar-match-notch')) params.set('bar_match_notch', 'false');
+        params.set('bar_match_notch', c('tog-bar-match-notch') ? 'true' : 'false');
       }
-      if (n('cfg-bar-height') !== 0.080) params.set('bar_height_ratio', n('cfg-bar-height').toFixed(3));
-      if (n('cfg-bar-font') !== 0.55) params.set('bar_font_size_ratio', n('cfg-bar-font').toFixed(2));
-      if (n('cfg-bar-frost') !== 0.85) params.set('bar_frost_opacity', n('cfg-bar-frost').toFixed(2));
-      if (n('cfg-bar-inset') !== 0.000) params.set('bar_bottom_inset', n('cfg-bar-inset').toFixed(3));
+      params.set('bar_height_ratio', n('cfg-bar-height').toFixed(3));
+      params.set('bar_font_size_ratio', n('cfg-bar-font').toFixed(2));
+      params.set('bar_frost_opacity', n('cfg-bar-frost').toFixed(2));
+      params.set('bar_bottom_inset', n('cfg-bar-inset').toFixed(3));
     }
 
     const mw = getWeights('movie-weights', MOVIE_SOURCES);
     const tw = getWeights('tv-weights',    TV_SOURCES);
-    const isMwDefault = mw.letterboxd === 0.8 && mw.trakt === 0 && mw.tomatoes === 0.2 && mw.popcorn === 0 && mw.imdb === 0 && mw.metacritic === 0 && mw.metacriticuser === 0 && mw.tmdb === 0 && mw.rogerebert === 0 && mw.myanimelist === 0;
-    const isTwDefault = tw.trakt === 0.8 && tw.tomatoes === 0.2 && tw.popcorn === 0 && tw.imdb === 0 && tw.metacritic === 0 && tw.metacriticuser === 0 && tw.tmdb === 0 && tw.myanimelist === 0;
-    if(!isMwDefault) params.set('movie_weights', Object.entries(mw).map(([k,v]) => `${k}:${v.toFixed(2)}`).join(','));
-    if(!isTwDefault) params.set('tv_weights',    Object.entries(tw).map(([k,v]) => `${k}:${v.toFixed(2)}`).join(','));
+    params.set('movie_weights', Object.entries(mw).map(([k,v]) => `${k}:${v.toFixed(2)}`).join(','));
+    params.set('tv_weights',    Object.entries(tw).map(([k,v]) => `${k}:${v.toFixed(2)}`).join(','));
   }
 
   // ── Logo ──
-  if (c('tog-textless')) params.set('textless', 'true');
-  if (c('tog-original-art')) params.set('use_original_art', 'true');
-  if (vEl('cfg-original-art-source') !== 'primary') params.set('original_art_source', vEl('cfg-original-art-source'));
-  if (logoLanguage !== 'it') params.set('logo_language', logoLanguage);
-  if (vEl('cfg-logo-priority') !== 'native_english_original') params.set('logo_priority', vEl('cfg-logo-priority'));
-  if (vEl('cfg-fallback-bg-style') !== 'photoreal') params.set('fallback_bg_style', vEl('cfg-fallback-bg-style'));
-  if (n('cfg-logo-w') !== 0.75) params.set('logo_max_w_ratio', n('cfg-logo-w').toFixed(2));
-  if (n('cfg-logo-h') !== 0.22) params.set('logo_max_h_ratio', n('cfg-logo-h').toFixed(2));
-  if (n('cfg-logo-bottom') !== 0.09) params.set('logo_bottom_ratio', n('cfg-logo-bottom').toFixed(2));
+  params.set('textless', c('tog-textless') ? 'true' : 'false');
+  params.set('use_original_art', c('tog-original-art') ? 'true' : 'false');
+  params.set('original_art_source', vEl('cfg-original-art-source') || 'primary');
+  params.set('logo_language', logoLanguage);
+  params.set('logo_priority', vEl('cfg-logo-priority') || 'native_english_original');
+  params.set('fallback_bg_style', vEl('cfg-fallback-bg-style') || 'photoreal');
+  params.set('logo_max_w_ratio', n('cfg-logo-w').toFixed(2));
+  params.set('logo_max_h_ratio', n('cfg-logo-h').toFixed(2));
+  params.set('logo_bottom_ratio', n('cfg-logo-bottom').toFixed(2));
 
   // ── Info Sash ──
-  if (sashMode !== 'notch') params.set('sash_mode', sashMode);
-  if (!c('tog-cinema-greyscale')) params.set('cinema_greyscale', 'false');
-  if (!c('tog-cinema-greyscale-skip')) params.set('cinema_greyscale_skip_if_available', 'false');
-  if (c('tog-release-cinema-only')) params.set('release_status_cinema_only', 'true');
+  params.set('sash_mode', sashMode);
+  params.set('cinema_greyscale', c('tog-cinema-greyscale') ? 'true' : 'false');
+  params.set('cinema_greyscale_skip_if_available', c('tog-cinema-greyscale-skip') ? 'true' : 'false');
+  params.set('release_status_cinema_only', c('tog-release-cinema-only') ? 'true' : 'false');
   
   if (showSash) {
     if (sashMode === 'notch') {
-      if (vEl('cfg-sash-badge-style') !== 'minimal_pill') params.set('sash_badge_style', vEl('cfg-sash-badge-style'));
-      if (n('cfg-sash-badge-size-w') !== 1.20) params.set('sash_badge_size_w', n('cfg-sash-badge-size-w').toFixed(2));
-      if (n('cfg-sash-badge-size-h') !== 1.15) params.set('sash_badge_size_h', n('cfg-sash-badge-size-h').toFixed(2));
-      if (n('cfg-sash-badge-inset') !== 0.000) params.set('sash_badge_inset', n('cfg-sash-badge-inset').toFixed(3));
-      if (n('cfg-sash-badge-font-ratio') !== 0.44) params.set('sash_badge_font_ratio', n('cfg-sash-badge-font-ratio').toFixed(2));
+      params.set('sash_badge_style', vEl('cfg-sash-badge-style') || 'minimal_pill');
+      params.set('sash_badge_size_w', n('cfg-sash-badge-size-w').toFixed(2));
+      params.set('sash_badge_size_h', n('cfg-sash-badge-size-h').toFixed(2));
+      params.set('sash_badge_inset', n('cfg-sash-badge-inset').toFixed(3));
+      params.set('sash_badge_font_ratio', n('cfg-sash-badge-font-ratio').toFixed(2));
       if (vEl('cfg-sash-badge-style') === 'frosted') {
-        if (n('cfg-sash-badge-frost-opacity') !== 0.75) params.set('sash_badge_frost_opacity', n('cfg-sash-badge-frost-opacity').toFixed(2));
+        params.set('sash_badge_frost_opacity', n('cfg-sash-badge-frost-opacity').toFixed(2));
       }
     } else {
-      if (c('tog-muted')) params.set('muted', 'true');
-      if (c('tog-sash-poster-color')) params.set('sash_poster_color', 'true');
-      if (n('cfg-sash-length') !== 1.20) params.set('sash_length_ratio', n('cfg-sash-length').toFixed(2));
-      if (n('cfg-sash-height') !== 0.135) params.set('sash_height_ratio', n('cfg-sash-height').toFixed(3));
+      params.set('muted', c('tog-muted') ? 'true' : 'false');
+      params.set('sash_poster_color', c('tog-sash-poster-color') ? 'true' : 'false');
+      params.set('sash_length_ratio', n('cfg-sash-length').toFixed(2));
+      params.set('sash_height_ratio', n('cfg-sash-height').toFixed(3));
     }
   }
   
   const _sashTextNeeded = showSash || (ratingMode === 1 && ni('cfg-bar-append') !== 0) || (ratingMode === 4 && vEl('cfg-bar4-append') === 'sash');
   if (_sashTextNeeded) {
-      const currentPriority = getSashPriorityParam();
-      const defaultPriority = "next_episode,canceled,wins,gg_wins,festival,pic_noms,gg_noms,studio,director,creator,cast,trending,cult,foreign,new_release,metacritic,true_story,structural,release_status";
-      if(currentPriority !== defaultPriority) params.set('sash_priority', currentPriority);
+      params.set('sash_priority', getSashPriorityParam());
   }
 
   // ── Quality Badges ──
-  if (badgeMode !== 5) params.set('badge_display_mode', badgeMode);
+  params.set('badge_display_mode', badgeMode);
   
   if (badgeMode !== 0) {
-    if (ni('cfg-badge-h') !== 23) params.set('badge_height', ni('cfg-badge-h'));
-    if (n('cfg-badge-x') !== 0.050) params.set('badge_anchor_x', n('cfg-badge-x').toFixed(3));
-    if (n('cfg-badge-y') !== 0.945) params.set('badge_anchor_y', n('cfg-badge-y').toFixed(3));
+    params.set('badge_height', ni('cfg-badge-h'));
+    params.set('badge_anchor_x', n('cfg-badge-x').toFixed(3));
+    params.set('badge_anchor_y', n('cfg-badge-y').toFixed(3));
     if (badgeMode === 2) {
-      if (ni('cfg-badge-gap') !== 8) params.set('badge_gap', ni('cfg-badge-gap'));
+      params.set('badge_gap', ni('cfg-badge-gap'));
     }
     if ([1,2,4,5].includes(badgeMode)) {
-      if (ni('cfg-badge-min-score') !== 3) params.set('badge_min_score', ni('cfg-badge-min-score'));
+      params.set('badge_min_score', ni('cfg-badge-min-score'));
     }
     if (badgeMode === 5) {
       if (c('tog-badge-stacked')) params.set('combined_badge_stacked', 'true');
@@ -3646,8 +3640,7 @@ function buildBaseParams({ usePlaceholders = false, domainOverride = null } = {}
     if (c('tog-greyscale-noquality')) params.set('greyscale_no_quality', 'true');
   }
 
-  let paramString = params.toString();
-  const finalUrl = paramString ? `${domain}/poster?${paramString}` : `${domain}/poster`;
+  const finalUrl = `${domain}/poster?${params.toString()}`;
   return usePlaceholders ? decodePlaceholders(finalUrl) : finalUrl;
 }
 
