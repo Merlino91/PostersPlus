@@ -3575,7 +3575,7 @@ function buildBaseParams({ usePlaceholders = false, domainOverride = null } = {}
 
     const mw = getWeights('movie-weights', MOVIE_SOURCES);
     const tw = getWeights('tv-weights',    TV_SOURCES);
-    const isMwDefault = mw.letterboxd === 0.99 && mw.trakt === 0.01 && mw.tomatoes === 0 && mw.popcorn === 0 && mw.imdb === 0 && mw.metacritic === 0 && mw.metacriticuser === 0 && mw.tmdb === 0 && mw.rogerebert === 0 && mw.myanimelist === 0;
+    const isMwDefault = mw.letterboxd === 0.8 && mw.trakt === 0 && mw.tomatoes === 0.2 && mw.popcorn === 0 && mw.imdb === 0 && mw.metacritic === 0 && mw.metacriticuser === 0 && mw.tmdb === 0 && mw.rogerebert === 0 && mw.myanimelist === 0;
     const isTwDefault = tw.trakt === 0.8 && tw.tomatoes === 0.2 && tw.popcorn === 0 && tw.imdb === 0 && tw.metacritic === 0 && tw.metacriticuser === 0 && tw.tmdb === 0 && tw.myanimelist === 0;
     if(!isMwDefault) params.set('movie_weights', Object.entries(mw).map(([k,v]) => `${k}:${v.toFixed(2)}`).join(','));
     if(!isTwDefault) params.set('tv_weights',    Object.entries(tw).map(([k,v]) => `${k}:${v.toFixed(2)}`).join(','));
@@ -3619,7 +3619,7 @@ function buildBaseParams({ usePlaceholders = false, domainOverride = null } = {}
   const _sashTextNeeded = showSash || (ratingMode === 1 && ni('cfg-bar-append') !== 0) || (ratingMode === 4 && vEl('cfg-bar4-append') === 'sash');
   if (_sashTextNeeded) {
       const currentPriority = getSashPriorityParam();
-      const defaultPriority = "next_episode,canceled,wins,gg_wins,festival,pic_noms,gg_noms,studio,director,cast,trending,cult,foreign,new_release,metacritic,true_story,structural,release_status,creator";
+      const defaultPriority = "next_episode,canceled,wins,gg_wins,festival,pic_noms,gg_noms,studio,director,creator,cast,trending,cult,foreign,new_release,metacritic,true_story,structural,release_status";
       if(currentPriority !== defaultPriority) params.set('sash_priority', currentPriority);
   }
 
