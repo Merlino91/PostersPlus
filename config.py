@@ -47,9 +47,9 @@ JPEG_QUALITY          = max(70, min(95, int(os.environ.get("JPEG_QUALITY", "85")
 
 # Feature Defaults 
 
-SHOW_RATING_DISPLAY_MODE = 1
+SHOW_RATING_DISPLAY_MODE = 3
 SHOW_AWARD_SASH          = True
-BADGE_DISPLAY_MODE       = 4
+BADGE_DISPLAY_MODE       = 5
 
 # Poster Dimensions (500x750)
 
@@ -60,11 +60,11 @@ POSTER_HEIGHT = 750
 
 ACCENT_BAR_MODE_FONT_SIZE_RATIO    = 0.08   # font size in accent bar mode
 NUMERIC_SCORE_MODE_FONT_SIZE_RATIO = 0.10   # font size in numeric mode
-MINIMALIST_MODE_FONT_SIZE_RATIO    = 0.055  # font size in minimalist mode
+MINIMALIST_MODE_FONT_SIZE_RATIO    = 0.05  # font size in minimalist mode
 ACCENT_BAR_MODE_FONT_Y_OFFSET      = 0.90   # vertical alignment in accent bar mode
 NUMERIC_SCORE_MODE_FONT_Y_OFFSET   = 0.90   # vertical alignment in numeric score mode
-MINIMALIST_MODE_FONT_X_OFFSET      = 0.05   # horizontal distance from right edge in minimalist mode
-MINIMALIST_MODE_FONT_Y_OFFSET      = 0.92   # vertical position in minimalist mode (0=top, 1=bottom)
+MINIMALIST_MODE_FONT_X_OFFSET      = 0.04   # horizontal distance from right edge in minimalist mode
+MINIMALIST_MODE_FONT_Y_OFFSET      = 0.94   # vertical position in minimalist mode (0=top, 1=bottom)
 
 SCORE_GLOW_THRESHOLD = 85  # score threshold to activate glow
 SCORE_GLOW_BLUR      = 1    # blur applied in glow mode
@@ -73,17 +73,17 @@ SCORE_GLOW_ALPHA     = 40   # alpha of the glow applied
 # Logo Defaults
 
 LOGO_MAX_W_RATIO  = 0.75   # target/max width of logo — the span every logo normalises to
-LOGO_MAX_H_RATIO  = 0.25   # max height of logo (paired with LOGO_ABS_MAX_H px cap)
-LOGO_BOTTOM_RATIO = 0.28   # distance of logo from the bottom
-DEFAULT_LOGO_LANGUAGE = os.environ.get("DEFAULT_LOGO_LANGUAGE", "en")
+LOGO_MAX_H_RATIO  = 0.22   # max height of logo (paired with LOGO_ABS_MAX_H px cap)
+LOGO_BOTTOM_RATIO = 0.09   # distance of logo from the bottom
+DEFAULT_LOGO_LANGUAGE = os.environ.get("DEFAULT_LOGO_LANGUAGE", "it")
 
 # Quality Badge Defaults
 
-BADGE_HEIGHT = 20   # quality badge height in pixels
+BADGE_HEIGHT = 23   # quality badge height in pixels
 BADGE_GAP    = 8    # gap between horizontal stack badges in pixels
 
 BADGE_ANCHOR_X_RATIO = 0.050   # x offset from left
-BADGE_ANCHOR_Y_RATIO = 0.050   # y offset from top 
+BADGE_ANCHOR_Y_RATIO = 0.945   # y offset from top 
 
 # TTL Settings
 
