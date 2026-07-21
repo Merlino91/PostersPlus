@@ -209,9 +209,9 @@ NOTABLE_CAST: dict[str, str] = {
 _STRUCTURAL_CHECKS = ["short_film", "mini_series", "binge_ready"]
 
 _STRUCTURAL_LABELS: dict[str, str] = {
-    "short_film":  "Short Film",
-    "mini_series": "Mini Series",
-    "binge_ready": "Binge Ready",
+    "short_film":  "Cortometraggio",
+    "mini_series": "Miniserie",
+    "binge_ready": "Serie Completa",
 }
 
 # MDblist keyword name → sash display label.
@@ -544,17 +544,17 @@ def _evaluate_slot(slot: str, meta: DiscoveryMeta) -> str | None:
         # "digital_release" is kept as a legacy alias so old sash_priority params
         # still work — both slots check the same combined condition.
         if meta.is_new_release or meta.is_digital_release:
-            return "Newly Streaming"
+            return "In Streaming"
         return None
 
     if slot == "metacritic":
         return "Must-See" if meta.is_metacritic_must_see else None
 
     if slot == "cult":
-        return "Cult Classic" if meta.is_cult else None
+        return "Cult" if meta.is_cult else None
 
     if slot == "true_story":
-        return "True Story" if meta.is_true_story else None
+        return "Storia Vera" if meta.is_true_story else None
 
     if slot == "structural":
         for key in _STRUCTURAL_CHECKS:

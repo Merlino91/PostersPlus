@@ -1,0 +1,201 @@
+607:def build_poster(
+608-    image: Image.Image,
+609-    score: int | str,
+610-    genre: str,
+611-    cfg: RequestConfig,
+612-    logo: Image.Image | None = None,
+613-    fallback_title: str | None = None,
+614-    discovery_meta: DiscoveryMeta | None = None,
+615-    quality_tokens: list[str] | None = None,
+616-    release_year: str | None = None,
+617-    age_rating: int | None = None,
+618-    no_poster: bool = False,
+619-) -> Image.Image:
+620-
+621-    width, height = image.size
+622-    draw = ImageDraw.Draw(image)
+623-
+624-
+625-    dom_color = _get_dominant_color(image)
+626-    if cfg.sash_pill_dominant_color or cfg.gradient_color_mode == "dominant":
+627-        text_color = _get_text_color(dom_color)
+628-    else:
+629-        text_color = (255, 255, 255)
+630-
+631-    # --- TOP GRADIENT (vectorised) ---
+632-    if cfg.top_gradient_enabled:
+633-        top_height = int(height * 0.4)
+634-        top_max_alpha = cfg.top_gradient_intensity
+635-        t_top = np.linspace(0, 1, top_height, dtype=np.float32)
+636-        eased_top = ((1 - t_top) * top_max_alpha).astype(np.uint8)
+637-        top_array = np.broadcast_to(eased_top[:, np.newaxis], (top_height, width)).copy()
+638-        top_overlay = Image.fromarray(top_array, mode="L")
+639-
+640-        if cfg.gradient_color_mode == "dominant":
+641-            top_tinted = Image.new("RGBA", (width, top_height), dom_color + (0,))
+642-        else:
+643-            top_tinted = Image.new("RGBA", (width, top_height), (0, 0, 0, 0))
+644-
+645-        top_tinted.putalpha(top_overlay)
+646-        image.paste(top_tinted, (0, 0), mask=top_tinted)
+647-
+648-    # --- BOTTOM GRADIENT / FROSTED GLASS (vectorised) ---
+649-    bottom_height = int(height * 0.5)
+650-    bottom_start = height - bottom_height
+651-
+652-    if cfg.rating_display_mode == 4:
+653-        # Stile Minimal ITA: Frosted Glass
+654-        bottom_crop = image.crop((0, bottom_start, width, height))
+655-        blurred_bottom = bottom_crop.filter(ImageFilter.GaussianBlur(radius=cfg.bottom_frosted_glass_intensity))
+656-
+657-        t_blur = np.linspace(0, 1, bottom_height, dtype=np.float32)
+658-        eased_blur = ((t_blur ** 1.5) * 255).astype(np.uint8)
+659-        blur_array = np.broadcast_to(eased_blur[:, np.newaxis], (bottom_height, width)).copy()
+660-        blur_mask = Image.fromarray(blur_array, mode="L")
+661-
+662-        image.paste(blurred_bottom, (0, bottom_start), mask=blur_mask)
+663-        bottom_max_alpha = cfg.bottom_gradient_intensity if cfg.bottom_gradient_enabled else 0
+664-        bottom_curve = 1.2
+665-    else:
+666-        if cfg.bottom_gradient_enabled:
+667-            bottom_max_alpha = cfg.bottom_gradient_intensity
+668-        else:
+669-            bottom_max_alpha = 0
+670-        bottom_curve = 1.2
+671-
+672-    if bottom_max_alpha > 0:
+673-        t_bot = np.linspace(0, 1, bottom_height, dtype=np.float32)
+674-        eased_bot = ((1 - (1 - t_bot) ** bottom_curve) * bottom_max_alpha).astype(np.uint8)
+675-        bottom_array = np.broadcast_to(eased_bot[:, np.newaxis], (bottom_height, width)).copy()
+676-        bottom_overlay = Image.fromarray(bottom_array, mode="L")
+677-
+678-        if cfg.gradient_color_mode == "dominant":
+679-            bottom_tinted = Image.new("RGBA", (width, bottom_height), dom_color + (0,))
+680-        else:
+681-            bottom_tinted = Image.new("RGBA", (width, bottom_height), (0, 0, 0, 0))
+682-
+683-        bottom_tinted.putalpha(bottom_overlay)
+684-        image.paste(bottom_tinted, (0, bottom_start), mask=bottom_tinted)
+685-
+686-# --- Badge / quality overlay ---
+687-    mode   = cfg.badge_display_mode
+688-    tokens = quality_tokens or []
+689-
+690-    if cfg.rating_display_mode == 4:
+691-        mode = 0  # Ignora i badge per Minimal ITA
+692-
+693-    if mode == 1:
+694-        draw_quality_age_badge(
+695-            image,
+696-            age_rating,
+697-            tokens,
+698-            anchor_x_ratio=cfg.badge_anchor_x,
+699-            anchor_y_ratio=cfg.badge_anchor_y,
+700-            badge_height=cfg.badge_height,
+701-        )
+702-
+703-    elif mode == 3:
+704-        # Age rating only — always silver, no quality dependency
+705-        draw_quality_age_badge(
+706-            image,
+707-            age_rating,
+708-            [],
+709-            anchor_x_ratio=cfg.badge_anchor_x,
+710-            anchor_y_ratio=cfg.badge_anchor_y,
+711-            badge_height=cfg.badge_height,
+712-            always_silver=True,
+713-        )
+714-
+715-    elif mode == 4:
+716-        # Accent bar — small vertical pill in tier colour, no text
+717-        draw_tier_bar(
+718-            image,
+719-            tokens,
+720-            anchor_x_ratio=cfg.badge_anchor_x,
+721-            anchor_y_ratio=cfg.badge_anchor_y,
+722-            bar_height=cfg.badge_height,
+723-        )
+724-
+725-    elif mode == 2:
+726-        allowed_tokens  = {"4K", "1080P", "REMUX", "WEBDL", "DV", "HDR10+", "HDR10"}
+727-        filtered_tokens = [t for t in tokens if t in allowed_tokens]
+728-
+729-        if filtered_tokens:
+730-            bx = int(width  * cfg.badge_anchor_x)
+731-            by = int(height * cfg.badge_anchor_y)
+732-
+733-            badge_items: list[BadgeItem] = [
+734-                (get_resized_badge(token, cfg.badge_height), _cfg.QUALITY_LABELS.get(token, token))
+735-                for token in filtered_tokens
+736-            ]
+737-
+738-            render_badges_left(
+739-                image, badge_items,
+740-                x_start=bx, y_top=by,
+741-                badge_height=cfg.badge_height,
+742-                badge_gap=cfg.badge_gap,
+743-            )
+744-
+745-    # --- Logo / fallback title ---
+746-    if logo:
+747-        composite_logo(
+748-            image, logo,
+749-            max_w_ratio=cfg.logo_max_w_ratio,
+750-            max_h_ratio=cfg.logo_max_h_ratio,
+751-            bottom_ratio=cfg.logo_bottom_ratio,
+752-        )
+753-    elif fallback_title:
+754-        try:
+755-            font_size = int(width * 0.1)
+756-            font_file = "Ubuntu-Bold.ttf" if cfg.font_family == "Ubuntu" else "Inter-Bold.ttf"
+757-            font = ImageFont.truetype(os.path.join(_FONTS_DIR, font_file), font_size)
+758-        except IOError:
+759-            font = ImageFont.load_default()
+760-
+761-        title_cy = height - int(height * 0.3)
+762-        max_width = int(width * 0.82)
+763-
+764-        while True:
+765-            bbox = draw.textbbox((0, 0), fallback_title, font=font)
+766-            text_width = bbox[2] - bbox[0]
+767-            if text_width <= max_width or font_size <= 24:  # type: ignore
+768-                break
+769-            font_size -= 2  # type: ignore
+770-            try:
+771-                font_file = "Ubuntu-Bold.ttf" if cfg.font_family == "Ubuntu" else "Inter-Bold.ttf"
+772-                font = ImageFont.truetype(os.path.join(_FONTS_DIR, font_file), font_size)
+773-            except IOError:
+774-                break
+775-
+776-        tx, ty = _text_center(draw, fallback_title, font, width / 2, title_cy)  # type: ignore
+777-        shadow_offset = max(2, int(font_size * 0.04))  # type: ignore
+778-        if cfg.text_drop_shadow:
+779-            draw.text((tx + shadow_offset, ty + shadow_offset), fallback_title, font=font, fill=(0, 0, 0, 180))
+780-        draw.text((tx, ty), fallback_title, font=font, fill=(255, 255, 255, 255))
+781-
+782-        if no_poster:
+783-            # Small watermark below the title so viewers know this is a
+784-            # PostersPlus-generated fallback, not a client or CDN failure.
+785-            try:
+786-                wm_font = ImageFont.truetype(os.path.join(_FONTS_DIR, "Inter-Bold.ttf"), 18)
+787-            except IOError:
+788-                wm_font = ImageFont.load_default()
+789-            wm_text = "Posters+ fallback"
+790-            wm_bb   = draw.textbbox((0, 0), wm_text, font=wm_font)
+791-            wm_x    = (width - (wm_bb[2] - wm_bb[0])) // 2
+792-            wm_y    = ty + (wm_bb[3] - wm_bb[1]) + int(font_size * 1.4)  # type: ignore
+793-            draw.text((wm_x, wm_y), wm_text, font=wm_font, fill=(160, 160, 160, 110))
+794-
+795-    # --- Rating / genre label ---
+796-    if cfg.rating_display_mode != 0:
+797-
+798-        if cfg.rating_display_mode == 1:
+799-            font_size = int(width * cfg.accent_bar_font_size_ratio)
+800-            label = f"{genre} · {release_year}" if release_year else genre
+801-            rating_cy = height * cfg.accent_bar_y_offset
+802-
+803-            try:
+804-                font_file = "Ubuntu-Bold.ttf" if cfg.font_family == "Ubuntu" else "Inter-Bold.ttf"
+805-                font_meta = ImageFont.truetype(os.path.join(_FONTS_DIR, font_file), font_size)
+806-            except IOError:
+807-                font_meta = ImageFont.load_default()
