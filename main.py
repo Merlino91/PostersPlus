@@ -1657,7 +1657,7 @@ def build_poster(
 
             try:
                 font_meta = ImageFont.truetype(os.path.join(_FONTS_DIR, "Ubuntu-Bold.ttf"), font_size)
-                font_icon = ImageFont.truetype(os.path.join(_FONTS_DIR, "Font Awesome-7-Brands.otf"), font_size)
+                font_icon = ImageFont.truetype(os.path.join(_FONTS_DIR, "Font Awesome 7 Free-Solid-900.otf"), font_size)
             except IOError:
                 font_meta = ImageFont.load_default()
                 font_icon = ImageFont.load_default()
