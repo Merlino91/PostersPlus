@@ -1724,6 +1724,8 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
              never resizes the panel (and thus the matched-height preview). -->
         <div id="tab-host">
 
+        <div id="tab-host">
+
         <!-- 1. CORE CONFIG -->
         <div class="section" data-tab="core">
           <div class="section-header">
@@ -1799,11 +1801,11 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
             <div class="field">
               <label class="field-label">User Native Language</label>
               <select id="cfg-language" oninput="build(); queuePreviewReload(); saveApiKeys()">
-                <option value="en" selected>English ★</option>
+                <option value="en">English ★</option>
                 <option value="es">Spanish</option>
                 <option value="fr">French ★</option>
                 <option value="de">German</option>
-                <option value="it">Italian ★</option>
+                <option value="it" selected>Italian ★</option>
                 <option value="pt">Portuguese ★</option>
                 <option value="ja">Japanese</option>
                 <option value="ko">Korean</option>
@@ -1844,10 +1846,9 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
             <div class="field" style="margin-top:6px;">
               <label class="field-label">Language Priority</label>
               <select id="cfg-logo-priority" onchange="build(); queuePreviewReload()">
-                <option value="native_original" selected>Native &gt; Original &gt; Text</option>
-                <option value="native_english_original">Native &gt; English &gt; Original &gt; Text</option>
+                <option value="native_original">Native &gt; Original &gt; Text</option>
                 <option value="original_native">Original &gt; Native &gt; Text</option>
-                <option value="native_if_original_english">Native if Original, otherwise English &gt; Original &gt; Text</option>
+                <option value="native_if_original_english" selected>Native if Original, otherwise English &gt; Original &gt; Text</option>
                 <option value="native_text">Native Language &gt; Text</option>
               </select>
               <div class="field-hint">Original is the source language of the content, text is plain text.</div>
@@ -1863,8 +1864,8 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
             <div class="field cfg-sep">
               <label class="field-label">Top Gradient Intensity</label>
               <div class="range-row">
-                <input type="range" id="cfg-grad-top" min="0" max="100" step="1" value="30" oninput="updateRange(this,'rng-grad-top'); build(); queuePreviewReload()">
-                <span class="range-val" id="rng-grad-top">30</span>
+                <input type="range" id="cfg-grad-top" min="0" max="100" step="1" value="40" oninput="updateRange(this,'rng-grad-top'); build(); queuePreviewReload()">
+                <span class="range-val" id="rng-grad-top">40</span>
               </div>
               <div style="margin-top:8px;">
                   <label class="field-label" style="font-size:10px; opacity:0.8;">Top Color Source</label>
@@ -1879,15 +1880,15 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
             <div class="field cfg-sep">
               <label class="field-label">Bottom Gradient Intensity</label>
               <div class="range-row">
-                <input type="range" id="cfg-grad-bot" min="0" max="100" step="1" value="60" oninput="updateRange(this,'rng-grad-bot'); build(); queuePreviewReload()">
-                <span class="range-val" id="rng-grad-bot">60</span>
+                <input type="range" id="cfg-grad-bot" min="0" max="100" step="1" value="70" oninput="updateRange(this,'rng-grad-bot'); build(); queuePreviewReload()">
+                <span class="range-val" id="rng-grad-bot">70</span>
               </div>
               <div style="margin-top:8px;">
                   <label class="field-label" style="font-size:10px; opacity:0.8;">Bottom Color Source</label>
                   <select id="cfg-grad-bot-color" onchange="build(); queuePreviewReload()">
-                    <option value="black" selected>Black (Default)</option>
+                    <option value="black">Black (Default)</option>
                     <option value="local">Local Color (Ground/Bot)</option>
-                    <option value="global">Global Dominant Color</option>
+                    <option value="global" selected>Global Dominant Color</option>
                   </select>
               </div>
             </div>
@@ -1895,8 +1896,8 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
             <div class="field cfg-sep">
               <label class="field-label">Frosted Glass Intensity (Blur)</label>
               <div class="range-row">
-                <input type="range" id="cfg-glass-int" min="0" max="250" step="1" value="50" oninput="updateRange(this,'rng-glass'); build(); queuePreviewReload()">
-                <span class="range-val" id="rng-glass">50</span>
+                <input type="range" id="cfg-glass-int" min="0" max="250" step="1" value="90" oninput="updateRange(this,'rng-glass'); build(); queuePreviewReload()">
+                <span class="range-val" id="rng-glass">90</span>
               </div>
             </div>            
             <div class="field cfg-sep" style="margin-bottom:0;">
@@ -1915,7 +1916,7 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
                     <div class="toggle-label">Notch Drop Shadow</div>
                   </div>
                   <label class="toggle-switch">
-                    <input type="checkbox" id="tog-text-shadow" onchange="build(); queuePreviewReload()">
+                    <input type="checkbox" id="tog-text-shadow" checked onchange="build(); queuePreviewReload()">
                     <div class="toggle-track"><div class="toggle-thumb"></div></div>
                   </label>
                 </div>
@@ -1935,9 +1936,9 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
               <label class="field-label">Display Mode</label>
               <select id="cfg-rating-mode" onchange="updateRatingFields(); build(); queuePreviewReload()">
                 <option value="0">Hidden</option>
-                <option value="1" selected>Rating Bar</option>
+                <option value="1">Rating Bar</option>
                 <option value="2">Clean</option>
-                <option value="3">Minimalist</option>
+                <option value="3" selected>Minimalist</option>
                 <option value="4">Bar</option>
               </select>
             </div>
@@ -1945,13 +1946,13 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
               <div class="field">
                 <label class="field-label">Colour Palette</label>
                 <select id="cfg-score-color-mode" onchange="build(); queuePreviewReload()">
-                  <option value="2" selected>Prestige</option>
-                  <option value="0">Light</option>
+                  <option value="2">Prestige</option>
+                  <option value="0" selected>Light</option>
                   <option value="1">Dark/light</option>
                 </select>
               </div>
             </div>
-            <div id="rating-mode1-fields">
+            <div id="rating-mode1-fields" style="display:none;">
               <div class="field">
                 <label class="field-label">Label Suffix</label>
                 <select id="cfg-bar-append" onchange="build(); queuePreviewReload()">
@@ -2008,44 +2009,35 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
                 </div>
               </div>
             </div>
-            <div id="rating-mode3-fields" style="display:none;">
+            <div id="rating-mode3-fields">
               <div class="field">
                 <label class="field-label">Append</label>
                 <select id="cfg-min-append" onchange="build(); queuePreviewReload()">
-                  <option value="0" selected>Year</option>
-                  <option value="1">Rating</option>
+                  <option value="0">Year</option>
+                  <option value="1" selected>Rating</option>
                   <option value="2">Year + Rating</option>
                 </select>
                 <div class="field-hint">If rating is not chosen the seperator color will give an approximation.</div>
               </div>
-              <div class="toggle-row cfg-sep">
-                <div>
-                  <div class="toggle-label">Display score out of 10</div>
-                </div>
-                <label class="toggle-switch">
-                  <input type="checkbox" id="tog-score-out-of-10-min" onchange="build(); queuePreviewReload()">
-                  <div class="toggle-track"><div class="toggle-thumb"></div></div>
-                </label>
-              </div>
-              <div class="field" style="margin-top:10px;">
+              <div class="field">
                 <label class="field-label">Font Size</label>
                 <div class="range-row">
-                  <input type="range" id="cfg-font-mode3" min="0.02" max="0.10" step="0.002" value="0.055" oninput="updateRange(this,'rng-font3'); build(); queuePreviewReload()">
-                  <span class="range-val" id="rng-font3">0.055</span>
+                  <input type="range" id="cfg-font-mode3" min="0.02" max="0.10" step="0.002" value="0.050" oninput="updateRange(this,'rng-font3'); build(); queuePreviewReload()">
+                  <span class="range-val" id="rng-font3">0.050</span>
                 </div>
               </div>
               <div class="field">
                 <label class="field-label">Font Horizontal Position</label>
                 <div class="range-row">
-                  <input type="range" id="cfg-x-mode3" min="0.01" max="0.20" step="0.005" value="0.065" oninput="updateRange(this,'rng-x3'); build(); queuePreviewReload()">
-                  <span class="range-val" id="rng-x3">0.065</span>
+                  <input type="range" id="cfg-x-mode3" min="0.01" max="0.20" step="0.005" value="0.040" oninput="updateRange(this,'rng-x3'); build(); queuePreviewReload()">
+                  <span class="range-val" id="rng-x3">0.040</span>
                 </div>
               </div>
               <div class="field">
                 <label class="field-label">Font Vertical Position</label>
                 <div class="range-row">
-                  <input type="range" id="cfg-y-mode3" min="0.00" max="0.98" step="0.01" value="0.92" oninput="updateRange(this,'rng-y3'); build(); queuePreviewReload()">
-                  <span class="range-val" id="rng-y3">0.92</span>
+                  <input type="range" id="cfg-y-mode3" min="0.00" max="0.98" step="0.01" value="0.940" oninput="updateRange(this,'rng-y3'); build(); queuePreviewReload()">
+                  <span class="range-val" id="rng-y3">0.940</span>
                 </div>
               </div>
             </div>
@@ -2129,7 +2121,7 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
                 </div>
               </div>
             </div>
-            <div id="rating-glow-fields" style="margin-top:10px;">
+            <div id="rating-glow-fields" style="margin-top:10px; display:none;">
               <div class="field">
                 <label class="field-label">Score Glow Threshold</label>
                 <div class="range-row">
@@ -2173,7 +2165,6 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
                 <div class="toggle-track"><div class="toggle-thumb"></div></div>
               </label>
             </div>
-            <!-- Original Art source (shown only in Original Art mode) -->
             <div class="field" id="original-art-source-field" style="display:none; margin-top:12px;">
               <label class="field-label">Art Source</label>
               <select id="cfg-original-art-source" onchange="build(); queuePreviewReload()">
@@ -2182,7 +2173,6 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
               </select>
               <div class="field-hint">Primary is TMDB's main poster, while top-rated picks the highest-voted poster by users.</div>
             </div>
-            <!-- Logo overlay controls — N/A in Original Art mode (no logo drawn) -->
             <div id="logo-controls">
             <div class="toggle-row">
               <div>
@@ -2203,15 +2193,15 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
             <div class="field">
               <label class="field-label">Logo Height</label>
               <div class="range-row">
-                <input type="range" id="cfg-logo-h" min="0.05" max="0.40" step="0.01" value="0.25" oninput="updateRange(this,'rng-lh'); build(); queuePreviewReload()">
-                <span class="range-val" id="rng-lh">0.25</span>
+                <input type="range" id="cfg-logo-h" min="0.05" max="0.40" step="0.01" value="0.22" oninput="updateRange(this,'rng-lh'); build(); queuePreviewReload()">
+                <span class="range-val" id="rng-lh">0.22</span>
               </div>
             </div>
             <div class="field">
               <label class="field-label">Logo Position</label>
               <div class="range-row">
-                <input type="range" id="cfg-logo-bottom" min="0.05" max="0.60" step="0.01" value="0.28" oninput="updateRange(this,'rng-lb'); build(); queuePreviewReload()">
-                <span class="range-val" id="rng-lb">0.28</span>
+                <input type="range" id="cfg-logo-bottom" min="0.05" max="0.60" step="0.01" value="0.09" oninput="updateRange(this,'rng-lb'); build(); queuePreviewReload()">
+                <span class="range-val" id="rng-lb">0.09</span>
               </div>
             </div>
             </div>
@@ -2230,11 +2220,11 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
               <label class="field-label">Info Sash Mode</label>
               <select id="cfg-sash-mode" onchange="onSashModeChange()">
                 <option value="hidden">Hidden</option>
-                <option value="sash" selected>Diagonal Sash</option>
-                <option value="notch">Notch</option>
+                <option value="sash">Diagonal Sash</option>
+                <option value="notch" selected>Notch</option>
               </select>
             </div>
-            <div class="field" id="sash-style-field" style="display:none;">
+            <div class="field" id="sash-style-field">
               <label class="field-label">Style</label>
               <select id="cfg-sash-badge-style" onchange="updateBadgeStyleFields(); build(); queuePreviewReload()">
                 <option value="minimal_pill" selected>Minimal Pill (Tua Versione)</option>
@@ -2260,11 +2250,11 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
                 <div class="field-hint">Only show the release status sash when a title is in cinemas or in production.</div>
               </div>
               <label class="toggle-switch">
-                <input type="checkbox" id="tog-release-cinema-only" checked onchange="build(); queuePreviewReload()">
+                <input type="checkbox" id="tog-release-cinema-only" onchange="build(); queuePreviewReload()">
                 <div class="toggle-track"><div class="toggle-thumb"></div></div>
               </label>
             </div>
-            <div class="toggle-row" id="sash-muted-row">
+            <div class="toggle-row" id="sash-muted-row" style="display:none;">
               <div>
                 <div class="toggle-label">Muted Sashes</div>
                 <div class="field-hint">Reduce sash opacity slightly.</div>
@@ -2274,7 +2264,7 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
                 <div class="toggle-track"><div class="toggle-thumb"></div></div>
               </label>
             </div>
-            <div class="toggle-row" id="sash-poster-color-row">
+            <div class="toggle-row" id="sash-poster-color-row" style="display:none;">
               <div>
                 <div class="toggle-label">Sash Colour from Poster</div>
                 <div class="field-hint">Tints the sash from the poster art instead of the category colour.</div>
@@ -2284,20 +2274,19 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
                 <div class="toggle-track"><div class="toggle-thumb"></div></div>
               </label>
             </div>
-            <!-- Notch sizing/offset options — only shown in Notch mode -->
-            <div id="sash-badge-offsets" style="display:none; margin-top:14px;">
+            <div id="sash-badge-offsets" style="margin-top:14px;">
               <div class="field">
                 <label class="field-label">Width</label>
                 <div class="range-row">
-                  <input type="range" id="cfg-sash-badge-size-w" min="0.50" max="2" step="0.05" value="1.40" oninput="updateRange(this,'rng-sbsw'); build(); queuePreviewReload()">
-                  <span class="range-val" id="rng-sbsw">1.40</span>
+                  <input type="range" id="cfg-sash-badge-size-w" min="0.50" max="2" step="0.05" value="1.20" oninput="updateRange(this,'rng-sbsw'); build(); queuePreviewReload()">
+                  <span class="range-val" id="rng-sbsw">1.20</span>
                 </div>
               </div>
               <div class="field">
                 <label class="field-label">Height</label>
                 <div class="range-row">
-                  <input type="range" id="cfg-sash-badge-size-h" min="0.50" max="2" step="0.05" value="1.20" oninput="updateRange(this,'rng-sbsh'); build(); queuePreviewReload()">
-                  <span class="range-val" id="rng-sbsh">1.20</span>
+                  <input type="range" id="cfg-sash-badge-size-h" min="0.50" max="2" step="0.05" value="1.15" oninput="updateRange(this,'rng-sbsh'); build(); queuePreviewReload()">
+                  <span class="range-val" id="rng-sbsh">1.15</span>
                 </div>
               </div>
               <div class="field">
@@ -2311,8 +2300,8 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
               <div class="field">
                 <label class="field-label">Font Size Ratio</label>
                 <div class="range-row">
-                  <input type="range" id="cfg-sash-badge-font-ratio" min="0.10" max="1.00" step="0.01" value="0.43" oninput="updateRange(this,'rng-sbfr'); build(); queuePreviewReload()">
-                  <span class="range-val" id="rng-sbfr">0.43</span>
+                  <input type="range" id="cfg-sash-badge-font-ratio" min="0.10" max="1.00" step="0.01" value="0.44" oninput="updateRange(this,'rng-sbfr'); build(); queuePreviewReload()">
+                  <span class="range-val" id="rng-sbfr">0.44</span>
                 </div>
               </div>
               <div class="field" id="sash-badge-opacity-field" style="display:none;">
@@ -2353,43 +2342,41 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
           </div>
           <div class="section-body">
 
-            <!-- Dropdowns -->
             <div class="field">
               <label class="field-label">Display Mode</label>
               <select id="cfg-badge-display-mode" onchange="updateBadgeModeHint(); build(); queuePreviewReload()">
                 <option value="0">Hidden</option>
-                <option value="4" selected>Quality Notch</option>
+                <option value="4">Quality Notch</option>
                 <option value="2">Quality Badge Row</option>
-                <option value="5">Combined Badge</option>
+                <option value="5" selected>Combined Badge</option>
                 <option value="1">Quality Age Rating</option>
                 <option value="3">Age Rating Only</option>
               </select>
-              <div class="field-hint" id="badge-mode1-hint">
+              <div class="field-hint" id="badge-mode1-hint" style="display:none;">
                 The color of the font reflects stream quality, following medal tiers.
               </div>
               <div class="field-hint" id="badge-mode4-hint" style="display:none">
                 Medal colored marker based on stream quality.
               </div>
-              <div class="field-hint" id="badge-mode5-hint" style="display:none">
+              <div class="field-hint" id="badge-mode5-hint">
                 Minimalist text badge: resolution · visual tag, pip coloured by source. Requires both resolution and source; visual tag defaults to SDR if absent.
               </div>
               <div class="field-hint" id="aiostreams-hint" style="display:none">
                 No quality source is configured on this instance. The operator can set up AIOStreams or a Stremio scraper via environment variables.
               </div>
             </div>
-            <div class="field" id="badge-min-score-field" style="display:none">
+            <div class="field" id="badge-min-score-field">
               <label class="field-label">Minimum Quality to Display</label>
               <select id="cfg-badge-min-score" onchange="build(); queuePreviewReload()">
                 <option value="2">HD Web</option>
-                <option value="3">One of 4K, HDR or Remux</option>
+                <option value="3" selected>One of 4K, HDR or Remux</option>
                 <option value="4">Two of the above or DV</option>
-                <option value="5" selected>HD Remux DV, 4K Web DV or 4K Remux HDR</option>
+                <option value="5">HD Remux DV, 4K Web DV or 4K Remux HDR</option>
                 <option value="6">4K Remux DV</option>
               </select>
             </div>
 
-            <!-- Toggles -->
-            <div class="toggle-row" id="badge-stacked-field" style="display:none; margin-top:8px;">
+            <div class="toggle-row" id="badge-stacked-field" style="margin-top:8px;">
               <div>
                 <div class="toggle-label">Stacked Layout</div>
                 <div class="field-hint">Renders resolution above visual tag separated by a horizontal rule — useful for the notch where horizontal space is limited.</div>
@@ -2399,7 +2386,7 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
                 <div class="toggle-track"><div class="toggle-thumb"></div></div>
               </label>
             </div>
-            <div id="wait-quality-field" style="display:none;">
+            <div id="wait-quality-field">
               <div class="toggle-row" style="margin-top:8px;">
                 <div>
                   <div class="toggle-label">Wait for Quality</div>
@@ -2421,24 +2408,23 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
               </div>
               <div class="field-hint" id="greyscale-noquality-hint" style="display:none; margin-top:4px;">Desaturates the poster when no stream quality is found.</div>
             </div>
-            <div class="toggle-row" id="consider-available-field" style="display:none; margin-top:8px; border-bottom:none;">
+            <div class="toggle-row" id="consider-available-field" style="margin-top:8px; border-bottom:none;">
               <div>
                 <div class="toggle-label">Consider Available if Source Found</div>
                 <div class="field-hint" style="margin-top:4px;">Overrides the "Greyscale Poster if unavaiable" option in info sash if WebDL or Remux is found in quality.</div>
               </div>
               <label class="toggle-switch">
-                <input type="checkbox" id="tog-cinema-greyscale-skip" onchange="build(); queuePreviewReload()">
+                <input type="checkbox" id="tog-cinema-greyscale-skip" checked onchange="build(); queuePreviewReload()">
                 <div class="toggle-track"><div class="toggle-thumb"></div></div>
               </label>
             </div>
 
-            <!-- Sliders (hidden entirely when Display Mode = Hidden) -->
             <div id="badge-layout-fields" class="cfg-sep">
               <div class="field">
                 <label class="field-label">Badge Size</label>
                 <div class="range-row">
-                  <input type="range" id="cfg-badge-h" min="16" max="80" step="1" value="20" oninput="updateRange(this,'rng-bh'); build(); queuePreviewReload()">
-                  <span class="range-val" id="rng-bh">20</span>
+                  <input type="range" id="cfg-badge-h" min="16" max="80" step="1" value="23" oninput="updateRange(this,'rng-bh'); build(); queuePreviewReload()">
+                  <span class="range-val" id="rng-bh">23</span>
                 </div>
               </div>
               <div class="field" id="badge-gap-field" style="display:none">
@@ -2458,8 +2444,8 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
               <div class="field">
                 <label class="field-label">Badge Vertical Position</label>
                 <div class="range-row">
-                  <input type="range" id="cfg-badge-y" min="0.01" max="0.95" step="0.005" value="0.050" oninput="updateRange(this,'rng-by'); build(); queuePreviewReload()">
-                  <span class="range-val" id="rng-by">0.050</span>
+                  <input type="range" id="cfg-badge-y" min="0.01" max="0.95" step="0.005" value="0.945" oninput="updateRange(this,'rng-by'); build(); queuePreviewReload()">
+                  <span class="range-val" id="rng-by">0.945</span>
                 </div>
               </div>
             </div>
@@ -3510,7 +3496,7 @@ function buildBaseParams({ usePlaceholders = false, domainOverride = null } = {}
 
   const params = new URLSearchParams();
 
-  // ── Core identity ──
+  // ── Dati Base Obbligatori ──
   params.set('tmdb_id', tmdbId);
   params.set('imdb_id', imdbId);
   params.set('type',    type);
@@ -3519,7 +3505,8 @@ function buildBaseParams({ usePlaceholders = false, domainOverride = null } = {}
   if (userTmdbKey)    params.set('tmdb_key',     usePlaceholders ? '{tmdb_key}'    : userTmdbKey);
   if (userMdblistKey) params.set('mdblist_key',  usePlaceholders ? '{mdblist_key}' : userMdblistKey);
 
-  // ── Modifiche Custom ──
+  // ── Variabili Grafiche Custom ── 
+  // N.B: Dato che main.py ha i propri default interni, se omettiamo queste variabili il server "rompe" la grafica ripristinando i vecchi settaggi. Devono per forza viaggiare dentro l'URL.
   params.set('gradient_top_intensity', n('cfg-grad-top').toFixed(0));
   params.set('gradient_bottom_intensity', n('cfg-grad-bot').toFixed(0));
   params.set('frosted_glass_intensity', n('cfg-glass-int').toFixed(0));
@@ -3530,11 +3517,12 @@ function buildBaseParams({ usePlaceholders = false, domainOverride = null } = {}
   params.set('fallback_to_imdb', c('tog-fallback-imdb') ? 'true' : 'false');
 
   // ── Rating / Genre Label ──
-  params.set('rating_display_mode', ratingMode);
+  // Per queste variabili il file config.py è in grado di rimpiazzare i valori se omessi, quindi snelliamo il link.
+  if (ratingMode !== 3) params.set('rating_display_mode', ratingMode);
   
   if (ratingMode !== 0) {
     if (ratingMode === 1 || ratingMode === 3) {
-      params.set('score_color_mode', ni('cfg-score-color-mode'));
+      if (ni('cfg-score-color-mode') !== 0) params.set('score_color_mode', ni('cfg-score-color-mode'));
     }
     
     if (ratingMode === 1) {
@@ -3550,21 +3538,17 @@ function buildBaseParams({ usePlaceholders = false, domainOverride = null } = {}
       params.set('numeric_score_y_offset', n('cfg-y-mode2').toFixed(2));
       params.set('score_out_of_10', c('tog-score-out-of-10') ? 'true' : 'false');
     } else if (ratingMode === 3) {
-      params.set('minimalist_append_mode', ni('cfg-min-append'));
-      params.set('minimalist_mode_font_size_ratio', n('cfg-font-mode3').toFixed(3));
-      params.set('minimalist_mode_font_x_offset', n('cfg-x-mode3').toFixed(3));
-      params.set('minimalist_mode_font_y_offset', n('cfg-y-mode3').toFixed(3));
+      if (ni('cfg-min-append') !== 1) params.set('minimalist_append_mode', ni('cfg-min-append'));
+      if (n('cfg-font-mode3') !== 0.050) params.set('minimalist_mode_font_size_ratio', n('cfg-font-mode3').toFixed(3));
+      if (n('cfg-x-mode3') !== 0.040) params.set('minimalist_mode_font_x_offset', n('cfg-x-mode3').toFixed(3));
+      if (n('cfg-y-mode3') !== 0.940) params.set('minimalist_mode_font_y_offset', n('cfg-y-mode3').toFixed(3));
     } else if (ratingMode === 4) {
       params.set('bar_style', vEl('cfg-bar-style') || 'frosted');
       const _bs = vEl('cfg-bar-style') || '';
-      if (_bs === 'rating_black' || _bs === 'rating_frosted') {
-        params.set('bar_accent', vEl('cfg-bar-accent') || 'silver');
-      }
+      if (_bs === 'rating_black' || _bs === 'rating_frosted') params.set('bar_accent', vEl('cfg-bar-accent') || 'silver');
       params.set('bar_append', vEl('cfg-bar4-append') || 'rating_year');
       params.set('bar_score_out_of_10', c('tog-bar-score-10') ? 'true' : 'false');
-      if (_bs === 'frosted' || _bs === 'rating_frosted') {
-        params.set('bar_match_notch', c('tog-bar-match-notch') ? 'true' : 'false');
-      }
+      if (_bs === 'frosted' || _bs === 'rating_frosted') params.set('bar_match_notch', c('tog-bar-match-notch') ? 'true' : 'false');
       params.set('bar_height_ratio', n('cfg-bar-height').toFixed(3));
       params.set('bar_font_size_ratio', n('cfg-bar-font').toFixed(2));
       params.set('bar_frost_opacity', n('cfg-bar-frost').toFixed(2));
@@ -3573,22 +3557,25 @@ function buildBaseParams({ usePlaceholders = false, domainOverride = null } = {}
 
     const mw = getWeights('movie-weights', MOVIE_SOURCES);
     const tw = getWeights('tv-weights',    TV_SOURCES);
-    params.set('movie_weights', Object.entries(mw).map(([k,v]) => `${k}:${v.toFixed(2)}`).join(','));
-    params.set('tv_weights',    Object.entries(tw).map(([k,v]) => `${k}:${v.toFixed(2)}`).join(','));
+    const isMwDefault = mw.letterboxd === 0.99 && mw.trakt === 0.01 && mw.tomatoes === 0 && mw.popcorn === 0 && mw.imdb === 0 && mw.metacritic === 0 && mw.metacriticuser === 0 && mw.tmdb === 0 && mw.rogerebert === 0 && mw.myanimelist === 0;
+    const isTwDefault = tw.trakt === 0.8 && tw.tomatoes === 0.2 && tw.popcorn === 0 && tw.imdb === 0 && tw.metacritic === 0 && tw.metacriticuser === 0 && tw.tmdb === 0 && tw.myanimelist === 0;
+    if(!isMwDefault) params.set('movie_weights', Object.entries(mw).map(([k,v]) => `${k}:${v.toFixed(2)}`).join(','));
+    if(!isTwDefault) params.set('tv_weights',    Object.entries(tw).map(([k,v]) => `${k}:${v.toFixed(2)}`).join(','));
   }
 
   // ── Logo ──
   params.set('textless', c('tog-textless') ? 'true' : 'false');
   params.set('use_original_art', c('tog-original-art') ? 'true' : 'false');
   params.set('original_art_source', vEl('cfg-original-art-source') || 'primary');
-  params.set('logo_language', logoLanguage);
+  if (logoLanguage !== 'it') params.set('logo_language', logoLanguage);
   params.set('logo_priority', vEl('cfg-logo-priority') || 'native_english_original');
   params.set('fallback_bg_style', vEl('cfg-fallback-bg-style') || 'photoreal');
-  params.set('logo_max_w_ratio', n('cfg-logo-w').toFixed(2));
-  params.set('logo_max_h_ratio', n('cfg-logo-h').toFixed(2));
-  params.set('logo_bottom_ratio', n('cfg-logo-bottom').toFixed(2));
+  if (n('cfg-logo-w') !== 0.75) params.set('logo_max_w_ratio', n('cfg-logo-w').toFixed(2));
+  if (n('cfg-logo-h') !== 0.22) params.set('logo_max_h_ratio', n('cfg-logo-h').toFixed(2));
+  if (n('cfg-logo-bottom') !== 0.09) params.set('logo_bottom_ratio', n('cfg-logo-bottom').toFixed(2));
 
   // ── Info Sash ──
+  // Non possiamo omettere questo altrimenti il server userà "Diagonal Sash"
   params.set('sash_mode', sashMode);
   params.set('cinema_greyscale', c('tog-cinema-greyscale') ? 'true' : 'false');
   params.set('cinema_greyscale_skip_if_available', c('tog-cinema-greyscale-skip') ? 'true' : 'false');
@@ -3601,9 +3588,6 @@ function buildBaseParams({ usePlaceholders = false, domainOverride = null } = {}
       params.set('sash_badge_size_h', n('cfg-sash-badge-size-h').toFixed(2));
       params.set('sash_badge_inset', n('cfg-sash-badge-inset').toFixed(3));
       params.set('sash_badge_font_ratio', n('cfg-sash-badge-font-ratio').toFixed(2));
-      if (vEl('cfg-sash-badge-style') === 'frosted') {
-        params.set('sash_badge_frost_opacity', n('cfg-sash-badge-frost-opacity').toFixed(2));
-      }
     } else {
       params.set('muted', c('tog-muted') ? 'true' : 'false');
       params.set('sash_poster_color', c('tog-sash-poster-color') ? 'true' : 'false');
@@ -3614,21 +3598,21 @@ function buildBaseParams({ usePlaceholders = false, domainOverride = null } = {}
   
   const _sashTextNeeded = showSash || (ratingMode === 1 && ni('cfg-bar-append') !== 0) || (ratingMode === 4 && vEl('cfg-bar4-append') === 'sash');
   if (_sashTextNeeded) {
-      params.set('sash_priority', getSashPriorityParam());
+      const currentPriority = getSashPriorityParam();
+      const defaultPriority = "next_episode,canceled,wins,gg_wins,festival,pic_noms,gg_noms,studio,director,cast,trending,cult,foreign,new_release,metacritic,true_story,structural,release_status,creator";
+      if(currentPriority !== defaultPriority) params.set('sash_priority', currentPriority);
   }
 
   // ── Quality Badges ──
-  params.set('badge_display_mode', badgeMode);
+  if (badgeMode !== 5) params.set('badge_display_mode', badgeMode);
   
   if (badgeMode !== 0) {
-    params.set('badge_height', ni('cfg-badge-h'));
-    params.set('badge_anchor_x', n('cfg-badge-x').toFixed(3));
-    params.set('badge_anchor_y', n('cfg-badge-y').toFixed(3));
-    if (badgeMode === 2) {
-      params.set('badge_gap', ni('cfg-badge-gap'));
-    }
+    if (ni('cfg-badge-h') !== 23) params.set('badge_height', ni('cfg-badge-h'));
+    if (n('cfg-badge-x') !== 0.050) params.set('badge_anchor_x', n('cfg-badge-x').toFixed(3));
+    if (n('cfg-badge-y') !== 0.945) params.set('badge_anchor_y', n('cfg-badge-y').toFixed(3));
+    if (badgeMode === 2) params.set('badge_gap', ni('cfg-badge-gap'));
     if ([1,2,4,5].includes(badgeMode)) {
-      params.set('badge_min_score', ni('cfg-badge-min-score'));
+      if (ni('cfg-badge-min-score') !== 3) params.set('badge_min_score', ni('cfg-badge-min-score'));
     }
     if (badgeMode === 5) {
       if (c('tog-badge-stacked')) params.set('combined_badge_stacked', 'true');
