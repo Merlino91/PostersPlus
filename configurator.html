@@ -3545,7 +3545,8 @@ function buildBaseParams({ usePlaceholders = false, domainOverride = null } = {}
       params.set('numeric_score_y_offset', n('cfg-y-mode2').toFixed(2));
       params.set('score_out_of_10', c('tog-score-out-of-10') ? 'true' : 'false');
     } else if (ratingMode === 3) {
-      if (ni('cfg-min-append') !== 1) params.set('minimalist_append_mode', ni('cfg-min-append'));
+      params.set('minimalist_append_mode', ni('cfg-min-append'));
+      params.set('score_out_of_10', c('tog-score-out-of-10-min') ? 'true' : 'false');
       if (n('cfg-font-mode3') !== 0.050) params.set('minimalist_mode_font_size_ratio', n('cfg-font-mode3').toFixed(3));
       if (n('cfg-x-mode3') !== 0.040) params.set('minimalist_mode_font_x_offset', n('cfg-x-mode3').toFixed(3));
       if (n('cfg-y-mode3') !== 0.940) params.set('minimalist_mode_font_y_offset', n('cfg-y-mode3').toFixed(3));
