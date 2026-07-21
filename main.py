@@ -1599,12 +1599,13 @@ def build_poster(
     # 1. Assegniamo il colore base in base ai tuoi stili personalizzati
     if getattr(cfg, 'use_global_ui_color', False):
         _shared_tint = global_dom_color
-        
-    # Applica il colore della Pillola SOLO SE il toggle "Match Notch Colour" è acceso
-    elif cfg.bar_match_notch and getattr(cfg, 'sash_badge_style', '') == "minimal_pill":
-        _shared_tint = smart_top_color
-        
-    # Altrimenti, se il toggle è acceso ma non c'è la Pillola, usa la logica standard
+    elif getattr(cfg, 'sash_badge_style', '') == "minimal_pill":
+        # Se Match Notch è attivo la pillola copia il colore dal basso (local_bot_color),
+        # altrimenti usa il suo colore naturale (smart_top_color)
+        if getattr(cfg, 'bar_match_notch', False):
+            _shared_tint = local_bot_color
+        else:
+            _shared_tint = smart_top_color
     elif (
         cfg.bar_match_notch
         and cfg.rating_display_mode == 4
