@@ -1679,6 +1679,8 @@ def build_poster(
 
         elif cfg.rating_display_mode == 2:
             font_size = int(width * cfg.numeric_score_font_size_ratio)
+            # Riduciamo la grandezza dell'icona del 15% rispetto al testo
+            icon_size = max(10, int(font_size * 0.85))
             # Score formatting:
             #   out of 100 (default): "87", "100", "N/A"
             #   out of 10:            "8.7", "8.0" (always one decimal), "10"
@@ -1691,16 +1693,14 @@ def build_poster(
 
             try:
                 font_meta = ImageFont.truetype(os.path.join(_FONTS_DIR, "Ubuntu-Bold.ttf"), font_size)
-                # Sostituito Font Awesome Brands con Font Awesome Solid
-                font_icon = ImageFont.truetype(os.path.join(_FONTS_DIR, "Font Awesome 7 Free-Solid-900.otf"), font_size)
+                font_icon = ImageFont.truetype(os.path.join(_FONTS_DIR, "Font Awesome 7 Free-Solid-900.otf"), icon_size)
             except IOError:
                 font_meta = ImageFont.load_default()
                 font_icon = ImageFont.load_default()
+                icon_size = font_size
 
-            # ID Unicode per la stella di Font Awesome
             star_icon = "\uf005"
             
-            # Calcoliamo le lunghezze dei singoli pezzi per centrare l'intero blocco
             len_genre = draw.textlength(f"{genre_label}  ", font=font_meta) 
             len_icon = draw.textlength(f"{star_icon} ", font=font_icon)     
             len_score = draw.textlength(_score_text, font=font_meta)
@@ -1708,25 +1708,28 @@ def build_poster(
             total_width = len_genre + len_icon + len_score
             ox = (width - total_width) // 2
             
-            # Calcoliamo la Y centrata
             _, ty = _text_center(draw, genre_label, font_meta, width / 2, rating_cy)
             adjusted_oy = ty - int(font_size * 0.10)
             
-            # Disegniamo in sequenza spostando la X
+            # Compensazione Y per mantenere la stella piccola perfettamente centrata al testo
+            icon_oy = adjusted_oy + (font_size - icon_size) // 2 
+            
             draw.text((ox, adjusted_oy), f"{genre_label}  ", font=font_meta, fill=(200, 200, 200, 255))
-            draw.text((ox + len_genre, adjusted_oy), f"{star_icon} ", font=font_icon, fill=(200, 200, 200, 255))
+            draw.text((ox + len_genre, icon_oy), f"{star_icon} ", font=font_icon, fill=(200, 200, 200, 255))
             draw.text((ox + len_genre + len_icon, adjusted_oy), _score_text, font=font_meta, fill=(200, 200, 200, 255))
 
         elif cfg.rating_display_mode == 3:
             font_size = int(width * cfg.minimalist_mode_font_size_ratio)
+            # Riduciamo la grandezza dell'icona del 15%
+            icon_size = max(10, int(font_size * 0.85))
 
             try:
                 font_meta = ImageFont.truetype(os.path.join(_FONTS_DIR, "Ubuntu-Bold.ttf"), font_size)
-                # Rimosso Inter-Bold, inserito Font Awesome Solid
-                font_icon = ImageFont.truetype(os.path.join(_FONTS_DIR, "Font Awesome 7 Free-Solid-900.otf"), font_size)
+                font_icon = ImageFont.truetype(os.path.join(_FONTS_DIR, "Font Awesome 7 Free-Solid-900.otf"), icon_size)
             except IOError:
                 font_meta = ImageFont.load_default()
                 font_icon = ImageFont.load_default()
+                icon_size = font_size
 
             y = round(height * cfg.minimalist_mode_font_y_offset)
             right_edge = width - int(width * cfg.minimalist_mode_font_x_offset)
@@ -1739,8 +1742,18 @@ def build_poster(
                     _score_text = "10" if score >= 100 else f"{score / 10:.1f}"
                 else:
                     _score_text = str(score)
+                
+                # ESTRAZIONE COLORE IN BASE ALLA PALETTE (per la stella)
+                try:
+                    s_val = int(score)
+                    palette_func = {0: _score_color, 1: _score_color_alt, 2: _score_color_metal}.get(cfg.score_color_mode, _score_color)
+                    # _score_color restituisce (color_foreground, color_background), a noi serve [0]
+                    star_color = palette_func(s_val)[0]
+                except ValueError:
+                    star_color = _ink
             else:
                 _score_text = "N/A"
+                star_color = _ink
 
             parts = [(genre_label, None)]   
             if cfg.minimalist_append_mode == 0:
@@ -1751,11 +1764,11 @@ def build_poster(
                     parts.append((_score_text, "star"))
             else:  
                 if release_year:
+                    # Inserisce un pip neutro grigio come divisore, la stella avrà il colore vero
                     parts.append((str(release_year), "pip"))
                 if _has_score:
                     parts.append((_score_text, "star"))
 
-            # Sostituita la vecchia "★" testuale con l'Unicode vettoriale
             star_glyph = "\uf005"
             pip_gap = int(font_size * 0.55)
             pip_w   = max(4, int(font_size * 0.18))
@@ -1777,13 +1790,15 @@ def build_poster(
                     ops.append((sep, sep_x))
                     cursor = sep_x - pip_gap
 
+            icon_y_offset = (font_size - icon_size) // 2
+
             for op in ops:
                 kind, ox = op[0], op[1]
                 if kind == "text":
                     draw.text((ox, y), op[2], font=font_meta, fill=_ink)
                 elif kind == "star":
-                    # Disegna la stella vettoriale usando Font Awesome
-                    draw.text((ox, y), star_glyph, font=font_icon, fill=_ink)
+                    # Disegna la stella con il SUO COLORE calcolato dalla palette e la centra
+                    draw.text((ox, y + icon_y_offset), star_glyph, font=font_icon, fill=star_color)
                 elif kind == "rpip":
                     draw_score_bar_vertical(image, score, x=ox, y_center=pip_cy,
                                             height=pip_h, width=pip_w,
