@@ -1599,14 +1599,14 @@ def build_poster(
     # 1. Assegniamo il colore base in base ai tuoi stili personalizzati
     if getattr(cfg, 'use_global_ui_color', False):
         _shared_tint = global_dom_color
-    elif getattr(cfg, 'sash_badge_style', '') == "minimal_pill" and cfg.sash_mode == "notch":
+        
+    # Applica il colore della Pillola SOLO SE il toggle "Match Notch Colour" è acceso
+    elif cfg.bar_match_notch and getattr(cfg, 'sash_badge_style', '') == "minimal_pill":
         _shared_tint = smart_top_color
-
-    # 2. SElezioniamo il colore con la logica originale SOLO SE non lo abbiamo già forzato
-    # (Se _shared_tint è già diventato smart_top_color, la Frosted Bar lo userà automaticamente!)
-    if (
-        _shared_tint is None
-        and cfg.bar_match_notch
+        
+    # Altrimenti, se il toggle è acceso ma non c'è la Pillola, usa la logica standard
+    elif (
+        cfg.bar_match_notch
         and cfg.rating_display_mode == 4
         and cfg.bar_style in ("frosted", "rating_frosted")
         and (_notch_frosted or _sash_poster)
