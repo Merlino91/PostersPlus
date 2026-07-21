@@ -3607,7 +3607,7 @@ function buildBaseParams({ usePlaceholders = false, domainOverride = null } = {}
   const _sashTextNeeded = showSash || (ratingMode === 1 && ni('cfg-bar-append') !== 0) || (ratingMode === 4 && vEl('cfg-bar4-append') === 'sash');
   if (_sashTextNeeded) {
       const currentPriority = getSashPriorityParam();
-      const defaultPriority = "next_episode,canceled,wins,gg_wins,festival,pic_noms,gg_noms,studio,director,cast,trending,cult,foreign,new_release,metacritic,true_story,structural,release_status,creator";
+      const defaultPriority = "next_episode,canceled,wins,gg_wins,festival,pic_noms,gg_noms,studio,director,creator,cast,trending,cult,foreign,new_release,metacritic,true_story,structural,release_status";
       if(currentPriority !== defaultPriority) params.set('sash_priority', currentPriority);
   }
 
