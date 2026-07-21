@@ -2017,7 +2017,16 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
                 </select>
                 <div class="field-hint">If rating is not chosen the seperator color will give an approximation.</div>
               </div>
-              <div class="field">
+              <div class="toggle-row cfg-sep">
+                <div>
+                  <div class="toggle-label">Display score out of 10</div>
+                </div>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="tog-score-out-of-10-min" checked onchange="build(); queuePreviewReload()">
+                  <div class="toggle-track"><div class="toggle-thumb"></div></div>
+                </label>
+              </div>
+              <div class="field" style="margin-top:10px;">
                 <label class="field-label">Font Size</label>
                 <div class="range-row">
                   <input type="range" id="cfg-font-mode3" min="0.02" max="0.10" step="0.002" value="0.050" oninput="updateRange(this,'rng-font3'); build(); queuePreviewReload()">
