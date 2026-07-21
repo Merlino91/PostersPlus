@@ -724,8 +724,6 @@ class RequestConfig:
     muted: bool = False
     textless: bool = False
     score_color_mode: int = 2
-    top_gradient:    str = "high"   # off | low | medium | high — strength of the top vignette
-    bottom_gradient: str = "high"   # off | low | medium | high — strength of the bottom vignette
     sash_badge: bool = False              # legacy; superseded by sash_mode (kept for back-compat parsing)
     sash_mode: str = "sash"               # "sash" (diagonal) | "notch"
     sash_badge_style:  str   = "frosted" # "silver" | "gold" | "frosted"
@@ -1600,12 +1598,8 @@ def build_poster(
     if getattr(cfg, 'use_global_ui_color', False):
         _shared_tint = global_dom_color
     elif getattr(cfg, 'sash_badge_style', '') == "minimal_pill":
-        # Se Match Notch è attivo la pillola copia il colore dal basso (local_bot_color),
-        # altrimenti usa il suo colore naturale (smart_top_color)
-        if getattr(cfg, 'bar_match_notch', False):
-            _shared_tint = local_bot_color
-        else:
-            _shared_tint = smart_top_color
+        # Se usi la Pillola e il Global è spento, usa il colore estratto in alto pulito!
+        _shared_tint = smart_top_color
     elif (
         cfg.bar_match_notch
         and cfg.rating_display_mode == 4
