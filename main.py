@@ -893,8 +893,8 @@ def build_request_config(params: dict) -> RequestConfig:
     _gct = params.get("grad_color_top", "black").strip().lower()
     cfg.grad_color_top = _gct if _gct in ("black", "local", "global") else "black"
     
-    _gcb = params.get("grad_color_bot", "black").strip().lower()
-    cfg.grad_color_bot = _gcb if _gcb in ("black", "local", "global") else "black"
+    _gcb = params.get("grad_color_bot", "global").strip().lower()
+    cfg.grad_color_bot = _gcb if _gcb in ("black", "local", "global") else "global"
 
     cfg.use_global_ui_color = _b("use_global_ui_color", cfg.use_global_ui_color)
     cfg.text_drop_shadow = _b("text_drop_shadow", cfg.text_drop_shadow)
