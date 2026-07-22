@@ -707,7 +707,7 @@ class RequestConfig:
     #   "native_if_original_english": native if content is native, else English
     #                                 → original → text
     #   "native_text":               native → text (no original-language logo)
-    logo_priority: str = "native_original"
+    logo_priority: str = "native_english_original"
     # Fallback-poster style for titles with no art: "minimal" (procedural textured
     # backdrop) or "photoreal" (hand-made photographic art that blends with real
     # posters).  Missing photoreal art degrades to the minimal set.
