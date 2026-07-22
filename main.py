@@ -1123,7 +1123,8 @@ def _draw_combined_text_badge(
     """
     token_set = set(tokens)
 
-    if tokens and _score_points(tokens) < min_score:
+    # Se non c'è ITA e il punteggio è troppo basso, non disegniamo nulla
+    if tokens and "ITA" not in token_set and _score_points(tokens) < min_score:
         return
 
     if "4K" in token_set:
@@ -1151,6 +1152,9 @@ def _draw_combined_text_badge(
     else:
         fmt = "SDR"
 
+    # Verifichiamo la presenza della lingua italiana
+    is_ita = "ITA" in token_set
+    
     try:
         font = ImageFont.truetype(os.path.join(_FONTS_DIR, "Ubuntu-Bold.ttf"), font_size)
     except IOError:
@@ -1179,13 +1183,19 @@ def _draw_combined_text_badge(
 
         # Horizontal rule — v_gap below the actual glyph bottom
         ly = y + h_res + v_gap
-        draw.rounded_rectangle(
-            [x, ly, x + total_w, ly + line_h],
-            radius=line_h // 2,
-            fill=sep_color,
-        )
+        if is_ita:
+            # Dividiamo la larghezza in 3 e disegniamo la bandiera in orizzontale
+            w_third = total_w / 3.0
+            draw.rectangle([x, ly, x + int(w_third), ly + line_h], fill=(0, 146, 70))             # Verde
+            draw.rectangle([x + int(w_third), ly, x + int(w_third * 2), ly + line_h], fill=(255, 255, 255))   # Bianco
+            draw.rectangle([x + int(w_third * 2), ly, x + total_w, ly + line_h], fill=(206, 43, 55))          # Rosso
+        else:
+            draw.rounded_rectangle(
+                [x, ly, x + total_w, ly + line_h],
+                radius=line_h // 2,
+                fill=sep_color,
+            )
 
-        # Visual tag — v_gap below the rule, aligned to its own visual top
         fmt_x = x + (total_w - w_fmt) // 2 - b_fmt[0]
         fmt_y = ly + line_h + v_gap - b_fmt[1]
         draw.text((fmt_x, fmt_y), fmt, font=font, fill=ink)
@@ -1199,10 +1209,19 @@ def _draw_combined_text_badge(
         cx = x
         draw.text((cx, y), res, font=font, fill=ink)
         cx += round(draw.textlength(res, font=font)) + pip_gap
-        _draw_solid_pip(image, x=cx, y_center=pip_cy, width=pip_w, height=pip_h, color=sep_color)
+        
+        if is_ita:
+            # Dividiamo l'altezza in 3 e disegniamo la bandiera in verticale
+            top_y = pip_cy - pip_h // 2
+            h_third = pip_h / 3.0
+            draw.rectangle([cx, top_y, cx + pip_w, top_y + int(h_third)], fill=(0, 146, 70))              # Verde
+            draw.rectangle([cx, top_y + int(h_third), cx + pip_w, top_y + int(h_third * 2)], fill=(255, 255, 255))    # Bianco
+            draw.rectangle([cx, top_y + int(h_third * 2), cx + pip_w, top_y + pip_h], fill=(206, 43, 55))           # Rosso
+        else:
+            _draw_solid_pip(image, x=cx, y_center=pip_cy, width=pip_w, height=pip_h, color=sep_color)
+            
         cx += pip_w + pip_gap
         draw.text((cx, y), fmt, font=font, fill=ink)
-
 
 def build_poster(
     image: Image.Image,
