@@ -738,11 +738,11 @@ class RequestConfig:
     greyscale_no_quality: bool = False  # greyscale art when no quality found (needs wait_for_quality)
 
     # --- TUE VARIABILI CUSTOM ---
-    frosted_glass_intensity: int = 50
-    gradient_top_intensity: int = 30
-    gradient_bottom_intensity: int = 60
+    frosted_glass_intensity: int = 80
+    gradient_top_intensity: int = 40
+    gradient_bottom_intensity: int = 70
     grad_color_top: str = "black"  
-    grad_color_bot: str = "black"  
+    grad_color_bot: str = "global"  
     use_global_ui_color: bool = False
     text_drop_shadow: bool = False
 
