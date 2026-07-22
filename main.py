@@ -788,6 +788,47 @@ def _parse_sash_priority(raw: str | None) -> list[str]:
     # Inserisce i tag mancanti IN CIMA alla lista per rispettare l'alta priorità
     return missing + active
 
+# --- NUOVO: DIZIONARIO DEI PRESET ---
+# Qui definisci i valori base per ogni preset. I nomi delle chiavi 
+# devono coincidere esattamente con le variabili della classe RequestConfig.
+_PRESETS = {
+    "mio_stile": {
+        "gradient_top_intensity": 40,
+        "gradient_bottom_intensity": 70,
+        "frosted_glass_intensity": 90,
+        "grad_color_top": "black",
+        "grad_color_bot": "global",
+        "use_global_ui_color": False,
+        "text_drop_shadow": True,
+        "fallback_to_imdb": True,
+        "minimalist_append_mode": 1,
+        "score_out_of_10": True,
+        "textless": False,
+        "use_original_art": False,
+        "original_art_source": "primary",
+        "logo_priority": "native_english_original",
+        "fallback_bg_style": "photoreal",
+        "sash_mode": "notch",
+        "cinema_greyscale": True,
+        "cinema_greyscale_skip_if_available": True,
+        "release_status_cinema_only": False,
+        "sash_badge_style": "minimal_pill",
+        "sash_badge_size_w": 1.20,
+        "sash_badge_size_h": 1.15,
+        "sash_badge_inset": 0.0,
+        "sash_badge_font_ratio": 0.44,
+        "badge_height": 24,
+        "badge_anchor_y": 0.940,
+        "movie_weights": {"letterboxd": 0.80, "tomatoes": 0.20},
+        "rating_display_mode": 3  # Dedotto dall'uso di minimalist_append_mode
+    },
+    "score_bar": {
+        "rating_display_mode": 1,
+        "badge_display_mode": 1,
+        "sash_mode": "sash",
+        # Aggiungi qui tutti i valori specifici di questo preset
+    }
+}
 
 def build_request_config(params: dict) -> RequestConfig:
     """Build a RequestConfig from raw query-param strings.
@@ -801,6 +842,16 @@ def build_request_config(params: dict) -> RequestConfig:
     """
     cfg = RequestConfig()
 
+    # --- NUOVO: APPLICAZIONE PRESET LATO BACKEND ---
+    # Intercetta la parola chiave 'preset' dall'URL. Se esiste nel nostro
+    # dizionario, applica i suoi valori a cfg come nuova base.
+    preset_name = (params.get("preset") or "").strip().lower()
+    if preset_name in _PRESETS:
+        for key, val in _PRESETS[preset_name].items():
+            if hasattr(cfg, key):
+                setattr(cfg, key, val)
+    # -----------------------------------------------
+    
     # Client profiles provide defaults only; explicit inset parameters below
     # remain authoritative for users who fine-tune either edge manually.
     _client_insets = _CLIENT_EDGE_INSETS.get(
@@ -930,10 +981,11 @@ def build_request_config(params: dict) -> RequestConfig:
     cfg.combined_badge_stacked   = _b("combined_badge_stacked",   cfg.combined_badge_stacked)
 
     all_sources = list(_cfg.MOVIE_WEIGHTS.keys())
-    cfg.movie_weights = _parse_weights(params.get("movie_weights"), all_sources)
+    # Usa 'or cfg.movie_weights' così se l'url non passa nulla, non cancella il preset
+    cfg.movie_weights = _parse_weights(params.get("movie_weights"), all_sources) or cfg.movie_weights
 
     tv_sources = list(_cfg.TV_WEIGHTS.keys())
-    cfg.tv_weights = _parse_weights(params.get("tv_weights"), tv_sources)
+    cfg.tv_weights = _parse_weights(params.get("tv_weights"), tv_sources) or cfg.tv_weights
     cfg.fallback_to_imdb = _b("fallback_to_imdb", cfg.fallback_to_imdb)
 
     cfg.logo_language        = (params.get("logo_language", cfg.logo_language).strip().lower())
@@ -956,7 +1008,9 @@ def build_request_config(params: dict) -> RequestConfig:
     _oas = (params.get("original_art_source") or "").strip().lower()
     if _oas in ("primary", "top_rated"):
         cfg.original_art_source = _oas
-    cfg.sash_priority        = _parse_sash_priority(params.get("sash_priority"))
+    # Processa sash_priority SOLO se è stato forzato un cambiamento nell'URL
+    if "sash_priority" in params:
+        cfg.sash_priority = _parse_sash_priority(params.get("sash_priority"))
 
     return cfg
 
