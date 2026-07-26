@@ -810,6 +810,7 @@ _PRESETS = {
         "fallback_bg_style": "photoreal",
         "sash_mode": "notch",
         "cinema_greyscale": True,
+        "wait_for_quality": True,
         "cinema_greyscale_skip_if_available": True,
         "release_status_cinema_only": False,
         "sash_badge_style": "minimal_pill",
@@ -820,6 +821,7 @@ _PRESETS = {
         "badge_height": 24,
         "badge_anchor_y": 0.940,
         "movie_weights": {"letterboxd": 0.80, "tomatoes": 0.20},
+        "tv_weights": {"trakt": 0.80, "tomatoes": 0.20},
         "rating_display_mode": 3  # Dedotto dall'uso di minimalist_append_mode
     },
     "score_bar": {
