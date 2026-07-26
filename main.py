@@ -792,7 +792,7 @@ def _parse_sash_priority(raw: str | None) -> list[str]:
 # Qui definisci i valori base per ogni preset. I nomi delle chiavi 
 # devono coincidere esattamente con le variabili della classe RequestConfig.
 _PRESETS = {
-    "mio_stile": {
+    "0": {
         "gradient_top_intensity": 40,
         "gradient_bottom_intensity": 70,
         "frosted_glass_intensity": 90,
