@@ -1398,7 +1398,7 @@ def build_poster(
         image.paste(top_tinted, (0, 0), mask=top_tinted)
 
     # --- DISEGNO BOTTOM GRADIENT & EFFETTO VETRO SFUMATO 2.0 ---
-    bottom_height = int(height * 0.70) 
+    bottom_height = int(height * 0.50) 
     bottom_start = height - bottom_height
 
     if getattr(cfg, 'frosted_glass_intensity', 0) > 0:
@@ -1436,10 +1436,16 @@ def build_poster(
 
     # 2. Gradiente Inferiore con conversione graduale dei neri assoluti
     if cfg.gradient_bottom_intensity > 0:
+        # --- VARIABILI INDIPENDENTI: Gradiente confinato all'ultimo 33% ---
+        tint_height = int(height * 0.33)
+        tint_start = height - tint_height
+
         bottom_max_alpha = int((cfg.gradient_bottom_intensity / 100) * 255)
-        t_bot = np.linspace(0, 1, bottom_height, dtype=np.float32)
+        # Sostituito bottom_height con tint_height
+        t_bot = np.linspace(0, 1, tint_height, dtype=np.float32)
+        # Qui puoi modificare l'esponente 1.2 in futuro per variare la curva
         eased_bot = ((t_bot ** 1.2) * bottom_max_alpha).astype(np.uint8)
-        gradient_mask = Image.fromarray(np.broadcast_to(eased_bot[:, np.newaxis], (bottom_height, width)).copy(), mode="L")
+        gradient_mask = Image.fromarray(np.broadcast_to(eased_bot[:, np.newaxis], (tint_height, width)).copy(), mode="L")
         
         # Se l'utente ha scelto un colore (Local o Global), abbassiamo la sua luminosità al 18%
         # per creare un "falso nero" pigmentato ed elegantissimo. Se ha scelto Black, resta (0,0,0).
@@ -1452,8 +1458,9 @@ def build_poster(
         else:
             dark_tint_color = (0, 0, 0)
             
-        tint_layer = Image.new("RGBA", (width, bottom_height), (*dark_tint_color, 255))
-        image.paste(tint_layer, (0, bottom_start), mask=gradient_mask)
+        # Sostituito bottom_height e bottom_start con tint_height e tint_start
+        tint_layer = Image.new("RGBA", (width, tint_height), (*dark_tint_color, 255))
+        image.paste(tint_layer, (0, tint_start), mask=gradient_mask)
 
     # --- Badge / quality overlay ---
     mode   = cfg.badge_display_mode
