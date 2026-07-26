@@ -642,8 +642,8 @@ class RequestConfig:
     show_award_sash:     bool = field(default_factory=lambda: _cfg.SHOW_AWARD_SASH)
     sash_poster_color:   bool = False   # diagonal sash colour derived from poster art
     cinema_greyscale:    bool = True    # greyscale art when release_status == "Cinema"
-    cinema_greyscale_skip_if_available: bool = False  # keep colour if Web/Remux source found
-    release_status_cinema_only: bool = True   # only show release status when "Cinema"
+    cinema_greyscale_skip_if_available: bool = True  # keep colour if Web/Remux source found
+    release_status_cinema_only: bool = False   # only show release status when "Cinema"
     badge_display_mode:  int  = field(default_factory=lambda: _cfg.BADGE_DISPLAY_MODE)
     rating_display_mode: int  = field(default_factory=lambda: _cfg.SHOW_RATING_DISPLAY_MODE)
 
@@ -657,7 +657,7 @@ class RequestConfig:
     # Clean mode (mode 2) numeric format.  When True, the rating is divided by
     # 10 and shown to one decimal (87 → "8.7", 100 → "10.0").  Default keeps
     # the legacy 0-100 integer form.
-    score_out_of_10: bool = False
+    score_out_of_10: bool = True
     accent_bar_y_offset:           float = field(default_factory=lambda: _cfg.ACCENT_BAR_MODE_FONT_Y_OFFSET)
     numeric_score_y_offset:        float = field(default_factory=lambda: _cfg.NUMERIC_SCORE_MODE_FONT_Y_OFFSET)
     score_glow_threshold:          int   = field(default_factory=lambda: _cfg.SCORE_GLOW_THRESHOLD)
@@ -725,8 +725,8 @@ class RequestConfig:
     textless: bool = False
     score_color_mode: int = 2
     sash_badge: bool = False              # legacy; superseded by sash_mode (kept for back-compat parsing)
-    sash_mode: str = "sash"               # "sash" (diagonal) | "notch"
-    sash_badge_style:  str   = "frosted" # "silver" | "gold" | "frosted"
+    sash_mode: str = "notch"               # "sash" (diagonal) | "notch"
+    sash_badge_style:  str   = "minimal_pill" # "silver" | "gold" | "frosted"
     sash_badge_size_w: float = 1.05      # horizontal scale of badge
     sash_badge_size_h: float = 1.05      # vertical scale of badge
     sash_badge_inset: float = 0.0          # top-edge offset as fraction of poster height (± small)
@@ -734,17 +734,17 @@ class RequestConfig:
     sash_badge_frost_opacity: float = 0.75 # frosted overlay opacity (0.0–1.0)
     sash_length_ratio: float = 1.15  # diagonal sash length as fraction of poster width
     sash_height_ratio: float = 0.12  # diagonal sash height (thickness) as fraction of poster width
-    wait_for_quality: bool = False  # block response until quality is fetched (for poster-warm workflows)
+    wait_for_quality: bool = True  # block response until quality is fetched (for poster-warm workflows)
     greyscale_no_quality: bool = False  # greyscale art when no quality found (needs wait_for_quality)
 
     # --- TUE VARIABILI CUSTOM ---
-    frosted_glass_intensity: int = 80
+    frosted_glass_intensity: int = 90
     gradient_top_intensity: int = 40
     gradient_bottom_intensity: int = 70
     grad_color_top: str = "black"  
     grad_color_bot: str = "global"  
     use_global_ui_color: bool = False
-    text_drop_shadow: bool = False
+    text_drop_shadow: bool = True
 
 
 def _parse_bool(val: str | None, default: bool) -> bool:
