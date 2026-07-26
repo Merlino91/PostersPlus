@@ -845,7 +845,7 @@ def build_request_config(params: dict) -> RequestConfig:
     # --- NUOVO: APPLICAZIONE PRESET LATO BACKEND ---
     # Intercetta la parola chiave 'preset' dall'URL. Se esiste nel nostro
     # dizionario, applica i suoi valori a cfg come nuova base.
-    preset_name = (params.get("badge_display_mode") or "").strip().lower()
+    preset_name = (params.get("presets") or "").strip().lower()
     if preset_name in _PRESETS:
         for key, val in _PRESETS[preset_name].items():
             if hasattr(cfg, key):
