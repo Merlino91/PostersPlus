@@ -2554,8 +2554,58 @@ async def get_poster(
     if _cfg.ACCESS_KEY and not hmac.compare_digest(access_key, _cfg.ACCESS_KEY):
         raise HTTPException(status_code=403, detail="Unauthorized, your access key is not valid for this instance.")
 
+    # =======================================================================
+    # --- NUOVO: PONTE DI SALVATAGGIO (BYPASS PER WATCHLY / RPDB) ---
+    # =======================================================================
+    
+    # 1. Filtro "Graffe": Se Watchly invia le variabili non compilate, le consideriamo nulle.
+    if "{" in tmdb_id:
+        tmdb_id = ""
+    if "{" in imdb_id:
+        imdb_id = ""
+
+    # 2. Ponte API: Se manca il TMDB ID ma abbiamo un IMDB ID valido, chiediamo a TheMovieDB.
+    # Questo bypassa completamente il problema dei client che inviano solo ID incompleti.
+    if not tmdb_id and imdb_id:
+        effective_tmdb_key = _resolve_tmdb_key(tmdb_key)
+        if effective_tmdb_key and _HTTP_CLIENT:
+            try:
+                find_resp = await _HTTP_CLIENT.get(
+                    f"https://api.themoviedb.org/3/find/{imdb_id}",
+                    params={"api_key": effective_tmdb_key, "external_source": "imdb_id"}
+                )
+                if find_resp.status_code == 200:
+                    find_data = find_resp.json()
+                    
+                    # Cerca in automatico il tipo di media e ne estrae il VERO ID numerico.
+                    if find_data.get("movie_results"):
+                        tmdb_id = str(find_data["movie_results"][0]["id"])
+                        type = "movie"
+                    elif find_data.get("tv_results"):
+                        tmdb_id = str(find_data["tv_results"][0]["id"])
+                        type = "tv"
+                    elif find_data.get("tv_episode_results"):
+                        tmdb_id = str(find_data["tv_episode_results"][0]["show_id"])
+                        type = "tv"
+                    elif find_data.get("tv_season_results"):
+                        tmdb_id = str(find_data["tv_season_results"][0]["show_id"])
+                        type = "tv"
+            except Exception as e:
+                logger.error(f"Ponte IMDB->TMDB fallito per {imdb_id}: {e}")
+
+    # 3. Controllo finale: se dopo tutti i tentativi non abbiamo ottenuto un TMDB ID valido, blocchiamo.
+    if not tmdb_id:
+        raise HTTPException(status_code=400, detail="Missing valid tmdb_id and mapping via imdb_id failed")
+    
+    # =======================================================================
+
+    # Adesso passiamo ai controlli rigidi. A questo punto arriveranno solo ID corretti.
     _check_tmdb_id(tmdb_id)
-    _check_imdb_id(imdb_id)
+    
+    # Controlliamo l'imdb_id rigorosamente solo se esiste ancora (se non lo abbiamo svuotato al punto 1)
+    if imdb_id:
+        _check_imdb_id(imdb_id)
+        
     _check_type(type)
 
     # -----------------------------------------------------------------------
