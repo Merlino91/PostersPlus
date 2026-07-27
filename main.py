@@ -1398,7 +1398,7 @@ def build_poster(
         image.paste(top_tinted, (0, 0), mask=top_tinted)
 
     # --- DISEGNO BOTTOM GRADIENT & EFFETTO VETRO SFUMATO 2.0 ---
-    bottom_height = int(height * 0.70) 
+    bottom_height = int(height * 0.60) 
     bottom_start = height - bottom_height
 
     if getattr(cfg, 'frosted_glass_intensity', 0) > 0:
@@ -1416,8 +1416,13 @@ def build_poster(
         # Accentuiamo i bordi rifratti
         glass_layer = glass_layer.filter(ImageFilter.UnsharpMask(radius=3, percent=150, threshold=3))
         
-        # 2. BOOST DI VIVIDEZZA
+        # 2. BOOST DI VIVIDEZZA E LUMINOSITÀ
+        # Mantiene i colori saturi (vivaci) al 140%
         glass_layer = ImageEnhance.Color(glass_layer).enhance(1.4)
+        
+        # AGGIUNTA: Abbassa la luminosità. 
+        # 0.7 significa che mantieni il 70% della luce originale (lo scurisci del 30%)
+        glass_layer = ImageEnhance.Brightness(glass_layer).enhance(0.7)
         
         # Micro-grana organica anti-banding
         noise = np.random.normal(0, 2, (bottom_height, width, 3)).astype(np.float32)
