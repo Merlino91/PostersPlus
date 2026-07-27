@@ -1398,7 +1398,7 @@ def build_poster(
         image.paste(top_tinted, (0, 0), mask=top_tinted)
 
     # --- DISEGNO BOTTOM GRADIENT & EFFETTO VETRO SFUMATO 2.0 ---
-    bottom_height = int(height * 0.50) 
+    bottom_height = int(height * 0.70) 
     bottom_start = height - bottom_height
 
     if getattr(cfg, 'frosted_glass_intensity', 0) > 0:
