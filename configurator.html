@@ -1855,8 +1855,8 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
             <div class="field" style="margin-top:6px;">
               <label class="field-label">Fallback Poster Style</label>
               <select id="cfg-fallback-bg-style" onchange="build(); queuePreviewReload()">
-                <option value="minimal">Textured Backdrop</option>
-                <option value="photoreal" selected>Photorealistic</option>
+                <option value="minimal" selected>Textured Backdrop</option>
+                <option value="photoreal">Photorealistic</option>
               </select>
               <div class="field-hint"><a href="#" onclick="openFallbackGallery(); return false;">Displayed if no poster can be found.</a>.</div>
             </div>
@@ -2294,7 +2294,7 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
                 <label class="field-label">Height</label>
                 <div class="range-row">
                   <input type="range" id="cfg-sash-badge-size-h" min="0.50" max="2" step="0.05" value="1.15" oninput="updateRange(this,'rng-sbsh'); build(); queuePreviewReload()">
-                  <span class="range-val" id="rng-sbsh">1.15</span>
+                  <span class="range-val" id="rng-sbsh">1.05</span>
                 </div>
               </div>
               <div class="field">
@@ -2309,7 +2309,7 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
                 <label class="field-label">Font Size Ratio</label>
                 <div class="range-row">
                   <input type="range" id="cfg-sash-badge-font-ratio" min="0.10" max="1.00" step="0.01" value="0.44" oninput="updateRange(this,'rng-sbfr'); build(); queuePreviewReload()">
-                  <span class="range-val" id="rng-sbfr">0.44</span>
+                  <span class="range-val" id="rng-sbfr">0.48</span>
                 </div>
               </div>
               <div class="field" id="sash-badge-opacity-field" style="display:none;">
@@ -2604,7 +2604,7 @@ let currentActivePreset = null; // Memorizza quale preset stiamo usando
 
 const PRESET_DEFAULTS = {
   "mio_stile": {
-    "gradient_top_intensity": "40",
+    "gradient_top_intensity": "50",
     "gradient_bottom_intensity": "70",
     "frosted_glass_intensity": "90",
     "grad_color_top": "black",
@@ -2619,16 +2619,16 @@ const PRESET_DEFAULTS = {
     "use_original_art": "false",
     "original_art_source": "primary",
     "logo_priority": "native_english_original",
-    "fallback_bg_style": "photoreal",
+    "fallback_bg_style": "minimal",
     "sash_mode": "notch",
     "cinema_greyscale": "true",
     "cinema_greyscale_skip_if_available": "true",
     "release_status_cinema_only": "false",
     "sash_badge_style": "minimal_pill",
     "sash_badge_size_w": "1.20",
-    "sash_badge_size_h": "1.15",
+    "sash_badge_size_h": "1.05",
     "sash_badge_inset": "0.000",
-    "sash_badge_font_ratio": "0.44",
+    "sash_badge_font_ratio": "0.48",
     "badge_height": "24",
     "badge_anchor_y": "0.940",
     "badge_display_mode": "0",
