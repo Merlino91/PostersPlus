@@ -670,7 +670,7 @@ class RequestConfig:
     #   0 = Year (Genre + year, rating as a colour-coded pip — the original look)
     #   1 = Rating (Genre | Score, score printed as text)
     #   2 = Year + Rating (Genre | Year | Score)
-    minimalist_append_mode: int = 0
+    minimalist_append_mode: int = 1
 
     # Frosted bar (rating_display_mode == 4)
     bar_height_ratio:        float = 0.080
