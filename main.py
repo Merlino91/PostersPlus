@@ -727,10 +727,10 @@ class RequestConfig:
     sash_badge: bool = False              # legacy; superseded by sash_mode (kept for back-compat parsing)
     sash_mode: str = "notch"               # "sash" (diagonal) | "notch"
     sash_badge_style:  str   = "minimal_pill" # "silver" | "gold" | "frosted"
-    sash_badge_size_w: float = 1.05      # horizontal scale of badge
+    sash_badge_size_w: float = 1.20      # horizontal scale of badge
     sash_badge_size_h: float = 1.05      # vertical scale of badge
     sash_badge_inset: float = 0.0          # top-edge offset as fraction of poster height (± small)
-    sash_badge_font_ratio:   float = 0.43  # font size as fraction of badge height
+    sash_badge_font_ratio:   float = 0.48  # font size as fraction of badge height
     sash_badge_frost_opacity: float = 0.75 # frosted overlay opacity (0.0–1.0)
     sash_length_ratio: float = 1.15  # diagonal sash length as fraction of poster width
     sash_height_ratio: float = 0.12  # diagonal sash height (thickness) as fraction of poster width
@@ -739,7 +739,7 @@ class RequestConfig:
 
     # --- TUE VARIABILI CUSTOM ---
     frosted_glass_intensity: int = 90
-    gradient_top_intensity: int = 40
+    gradient_top_intensity: int = 50
     gradient_bottom_intensity: int = 70
     grad_color_top: str = "black"  
     grad_color_bot: str = "global"  
@@ -793,7 +793,7 @@ def _parse_sash_priority(raw: str | None) -> list[str]:
 # devono coincidere esattamente con le variabili della classe RequestConfig.
 _PRESETS = {
     "0": {
-        "gradient_top_intensity": 40,
+        "gradient_top_intensity": 50,
         "gradient_bottom_intensity": 70,
         "frosted_glass_intensity": 90,
         "grad_color_top": "black",
@@ -815,9 +815,9 @@ _PRESETS = {
         "release_status_cinema_only": False,
         "sash_badge_style": "minimal_pill",
         "sash_badge_size_w": 1.20,
-        "sash_badge_size_h": 1.15,
+        "sash_badge_size_h": 1.05,
         "sash_badge_inset": 0.0,
-        "sash_badge_font_ratio": 0.44,
+        "sash_badge_font_ratio": 0.48,
         "badge_height": 24,
         "badge_anchor_y": 0.940,
         "movie_weights": {"letterboxd": 0.80, "tomatoes": 0.20},
