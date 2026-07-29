@@ -14,7 +14,7 @@ except ImportError:
     _HAS_CAIRO = False
     logger.warning("pycairo not available — shape edges will use PIL (no antialiasing)")
 
-from awards import FETCH_FAILED, _FetchFailed, _RateLimited
+from awards import FETCH_FAILED, _FetchFailed, _RateLimited, dominant_frost_rgb, _frosted_tint
 from config import (
     GENRE_MAP,
     GENRE_PRIORITY,
@@ -140,6 +140,58 @@ async def fetch_rating(
 # Score colour
 # ---------------------------------------------------------------------------
 
+CustomScorePalette = list[tuple[int, tuple[int, int, int]]]
+
+
+def parse_custom_score_palette(raw: str | None) -> CustomScorePalette | None:
+    if not raw:
+        return None
+    out: dict[int, tuple[int, int, int]] = {}
+    for part in raw.replace("\n", ",").replace(";", ",").split(","):
+        part = part.strip()
+        if not part or ":" not in part:
+            continue
+        raw_score, raw_hex = part.split(":", 1)
+        try:
+            score = max(0, min(100, int(round(float(raw_score.strip())))))
+        except (TypeError, ValueError):
+            continue
+        hex_value = raw_hex.strip().lstrip("#")
+        if len(hex_value) != 6:
+            continue
+        try:
+            rgb = (
+                int(hex_value[0:2], 16),
+                int(hex_value[2:4], 16),
+                int(hex_value[4:6], 16),
+            )
+        except ValueError:
+            continue
+        out[score] = rgb
+    if not out:
+        return None
+    return sorted(out.items())
+
+
+def _darken(rgb: tuple[int, int, int], amount: float = 0.72) -> tuple[int, int, int]:
+    return tuple(max(0, min(255, int(c * amount))) for c in rgb)
+
+
+def _score_color_custom(
+    score: int,
+    custom_palette: CustomScorePalette | None,
+) -> tuple[tuple[int, int, int], tuple[int, int, int]] | None:
+    if not custom_palette:
+        return None
+    score = max(0, min(int(score), 100))
+    selected = custom_palette[0][1]
+    for threshold, rgb in custom_palette:
+        if score < threshold:
+            break
+        selected = rgb
+    return selected, _darken(selected)
+
+
 def _score_color(score: int) -> tuple[tuple[int, int, int], tuple[int, int, int]]:
     if score < 50:
         return (255, 80, 80), (160, 40, 40)
@@ -177,6 +229,18 @@ def _score_color_metal(score: int) -> tuple[tuple[int, int, int], tuple[int, int
         return (218, 224, 240), (155, 165, 195)
     else:             # gold
         return (255, 210,  60), (200, 150,  25)
+
+
+def score_color_for_mode(
+    score: int,
+    color_mode: int = 0,
+    custom_palette: CustomScorePalette | None = None,
+) -> tuple[tuple[int, int, int], tuple[int, int, int]]:
+    if color_mode == 3:
+        custom = _score_color_custom(score, custom_palette)
+        if custom is not None:
+            return custom
+    return {1: _score_color_alt, 2: _score_color_metal}.get(color_mode, _score_color)(score)
 
 
 def _cairo_pill_mask(w: int, h: int, radius: int) -> Image.Image:
@@ -236,7 +300,9 @@ def draw_score_bar(
     glow_threshold: int = SCORE_GLOW_THRESHOLD,
     glow_blur: int = SCORE_GLOW_BLUR,
     glow_alpha: int = SCORE_GLOW_ALPHA,
+    glow_color: tuple[int, int, int] | str | None = None,
     color_mode: int = 0,
+    custom_palette: CustomScorePalette | None = None,
 ) -> None:
     if score is None:
         return
@@ -269,8 +335,7 @@ def draw_score_bar(
     if fill_w <= 0:
         return
 
-    _color_fn = {1: _score_color_alt, 2: _score_color_metal}.get(color_mode, _score_color)
-    left_color, right_color = _color_fn(score)
+    left_color, right_color = score_color_for_mode(score, color_mode, custom_palette)
     left_color  = _soften(left_color,  0.90)
     right_color = _soften(right_color, 0.90)
 
@@ -322,11 +387,19 @@ def draw_score_bar(
         pad = glow_blur * 3 + 2
         cx0, cy0 = max(0, rx0 - pad), max(0, ry0 - pad)
         cx1, cy1 = min(W, rx1 + pad), min(H, ry1 + pad)
+        # Glow colour: "match" blends the bar's own gradient ends for a cohesive
+        # coloured halo; a tuple is a custom colour; anything else stays white.
+        if glow_color == "match":
+            gc = tuple((left_color[i] + right_color[i]) // 2 for i in range(3))
+        elif isinstance(glow_color, (tuple, list)) and len(glow_color) == 3:
+            gc = tuple(int(c) for c in glow_color)
+        else:
+            gc = (255, 255, 255)
         glow = Image.new("RGBA", (cx1 - cx0, cy1 - cy0), (0, 0, 0, 0))
         ImageDraw.Draw(glow).rounded_rectangle(
             [(rx0 - cx0, ry0 - cy0), (rx1 - cx0, ry1 - cy0)],
             radius=radius + expand,
-            fill=(255, 255, 255, glow_alpha),
+            fill=(*gc, glow_alpha),
         )
         glow = glow.filter(ImageFilter.GaussianBlur(glow_blur))
         image.alpha_composite(glow, dest=(cx0, cy0))
@@ -370,6 +443,7 @@ def draw_score_bar_vertical(
     height: int = 36,
     width: int = 4,
     color_mode: int = 0,
+    custom_palette: CustomScorePalette | None = None,
 ) -> None:
     if score is None:
         return
@@ -380,35 +454,13 @@ def draw_score_bar_vertical(
             return
 
     score = max(0, min(int(score), 100))
-    _color_fn = {1: _score_color_alt, 2: _score_color_metal}.get(color_mode, _score_color)
-    left_color, _right_color = _color_fn(score)
+    left_color, _right_color = score_color_for_mode(score, color_mode, custom_palette)
     _draw_solid_pip(image, x=x, y_center=y_center, width=width, height=height, color=left_color)
 
 
 # ---------------------------------------------------------------------------
 # Frosted bar (rating_display_mode == 4)
 # ---------------------------------------------------------------------------
-
-def sample_frosted_bar_rgb(
-    image: Image.Image,
-    bar_height_ratio: float = 0.090,
-    bottom_inset: float = 0.0,
-) -> tuple[float, float, float]:
-    """Dominant RGB the frosted bar would sample from its bottom strip.
-
-    Mirrors the crop/blur/thumbnail in draw_frosted_bar's _build_frosted_base
-    so the colour-matching logic upstream can compare it against the notch.
-    """
-    width, height = image.size
-    bar_h = max(24, int(height * bar_height_ratio))
-    bar_y = height - bar_h - int(height * bottom_inset)
-    cy = max(0, bar_y); ch = min(bar_h, height - cy)
-    reg = image.crop((0, cy, width, cy + ch))
-    blr = reg.filter(ImageFilter.GaussianBlur(radius=max(6, int(bar_h * 0.45))))
-    th  = blr.resize((8, 8), Image.LANCZOS).convert("RGB")
-    ar  = np.array(th, dtype=np.float32)
-    return float(ar[:, :, 0].mean()), float(ar[:, :, 1].mean()), float(ar[:, :, 2].mean())
-
 
 def draw_frosted_bar(
     image: Image.Image,
@@ -418,11 +470,14 @@ def draw_frosted_bar(
     bar_height_ratio: float = 0.090,
     font_size_ratio: float = 0.40,
     frost_opacity: float = 0.75,
+    frost_saturation: float = 1.2,
+    frost_reference: bool = False,
     bottom_inset: float = 0.0,
     style: str = "frosted",
     score: int | str | None = None,
     fill_color: tuple[int, int, int] | None = None,
     tint_rgb: tuple[float, float, float] | None = None,
+    text_color: tuple[int, int, int] | None = None,
 ) -> Image.Image:
     """Full-width frosted glass or dark-body strip near the bottom of the poster.
 
@@ -477,16 +532,15 @@ def draw_frosted_bar(
         cy = max(0, bar_y); ch = min(bar_h, height - cy)
         reg = image.crop((0, cy, width, cy + ch))
         blr = reg.filter(ImageFilter.GaussianBlur(radius=blur_r))
+        # Colour comes from tint_rgb (a whole-poster sample the caller takes from
+        # the un-graded art); the blurred texture still comes from the image.
         if tint_rgb is not None:
             dr, dg, db = tint_rgb
         else:
-            th  = blr.resize((8, 8), Image.LANCZOS).convert("RGB")
-            ar  = np.array(th, dtype=np.float32)
-            dr, dg, db = ar[:,:,0].mean(), ar[:,:,1].mean(), ar[:,:,2].mean()
+            dr, dg, db = dominant_frost_rgb(image)
         _h2, _s2, _v2 = _cs.rgb_to_hsv(dr/255, dg/255, db/255)
-        tr, tg, tb = _cs.hsv_to_rgb(_h2, min(1.0, _s2*1.2), _v2*0.4+0.60)
-        r, g, b = int(tr*255*0.6+255*0.4), int(tg*255*0.6+255*0.4), int(tb*255*0.6+255*0.4)
-        base  = blr.resize((width, bar_h), Image.LANCZOS).convert("RGBA")
+        r, g, b = _frosted_tint(dr, dg, db, frost_saturation, frost_reference)
+        base  = blr.resize((width, bar_h), Image.Resampling.LANCZOS).convert("RGBA")
         frost = Image.new("RGBA", (width, bar_h), (r, g, b, int(frost_opacity*255)))
         return Image.alpha_composite(base, frost), _h2, _s2, _v2
 
@@ -563,6 +617,9 @@ def draw_frosted_bar(
         ink = (15, 15, 15, 248)
         bar_img, _, _, _ = _build_frosted_base()
         text_y += max(1, int(bar_h * 0.03))
+
+    if text_color is not None:
+        ink = (*text_color, 248)
 
     txt_layer = Image.new("RGBA", (width, bar_h), (0, 0, 0, 0))
     td        = ImageDraw.Draw(txt_layer)

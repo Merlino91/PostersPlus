@@ -28,6 +28,11 @@
   },
   "sashLabels": {
     "trendingToday": "#{rank} Hoje",
+    "New Season": "Nova temporada",
+    "Returning": "Retornando",
+    "Premiere": "Estreia",
+    "Just Added": "Recem-adicionado",
+    "Season Finale": "Final de temporada",
     "New": "Novo",
     "Must-See": "Imperdível",
     "Cult Classic": "Clássico de culto",
@@ -60,9 +65,11 @@
     "Czech": "Checo",
     "Hebrew": "Hebraico",
     "Greek": "Grego",
-    "Best Picture": "Melhor Filme",
+    "Oscar Winner": "Vencedor do Oscar",
+    "Oscar Nominee": "Nomeado ao Oscar",
     "Emmy Winner": "Vencedor de Emmy",
     "Emmy Nominee": "Nomeado p/ Emmy",
-    "Golden Globe": "Globo de Ouro"
+    "Globe Winner": "Globo de Ouro",
+    "Globe Nominee": "Nomeado ao Globo"
   }
 }

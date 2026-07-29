@@ -46,6 +46,8 @@ from cache import (
     set_cached_tmdb_metadata,
     get_cached_release_status,
     set_cached_release_status,
+    get_cached_movie_release_info,
+    set_cached_movie_release_info,
 )
 
 from config import (
@@ -60,6 +62,7 @@ from config import (
     DEBUG_LOGO_SIZING,
     TMDB_POSTER_MIN_VOTES,
     TMDB_POSTER_MAX_SCORE_DROP,
+    CINEMA_MAX_AGE_YEARS,
 )
 
 
@@ -73,50 +76,108 @@ def normalise_poster(image: Image.Image) -> Image.Image:
     scale = max(target_w / src_w, target_h / src_h)
     new_w = round(src_w * scale)
     new_h = round(src_h * scale)
-    image = image.resize((new_w, new_h), Image.LANCZOS)
+    image = image.resize((new_w, new_h), Image.Resampling.LANCZOS)
     left = round((new_w - target_w) / 2)
     top  = round((new_h - target_h) / 2)
     return image.crop((left, top, left + target_w, top + target_h))
 
 
 def ensure_light_logo(logo: Image.Image,
-                       lum_threshold: float = 0.2,
-                       sat_threshold: float = 0.25) -> Image.Image:
+                      lum_threshold: float = 0.2,
+                      sat_threshold: float = 0.25,
+                      light_lum: float = 0.6,
+                      light_frac_min: float = 0.05,
+                      card_coverage_max: float = 0.6) -> Image.Image:
     """
-    If the visible pixels of a logo are too dark AND mostly achromatic (low
-    saturation), force them to white so they read on dark poster backgrounds.
-    Coloured logos (red titles, branded colours, etc.) are left untouched —
-    only neutral black/dark-grey logos are converted.
+    Whiten a logo's pixels *only* when we are confident it is a dark, achromatic
+    wordmark that would otherwise be invisible on a dark poster — and leave every
+    other logo completely untouched. Doing nothing is always preferable to a
+    recolour that could make the logo worse.
+
+    The asset this primarily guards against is a logo that is a *filled dark card
+    with light text baked in* (e.g. white "JURY DUTY" letters on a solid black
+    rectangle). Averaging the luminance of every opaque pixel — the naive test —
+    is dominated by the dark card, mislabels the asset "dark", and blanket-whitens
+    it into a solid white block, erasing the text. Two complementary structural
+    guards catch that before any recolour:
+
+      • Light-content guard — if a non-trivial share of the solid pixels are
+        already light, the logo carries its own legible content (light text,
+        free-standing or on a dark card) and reads fine on a dark poster. This
+        is the signal that tells a "black card + white text" asset (has a light
+        population) apart from plain "black text" (has none).
+
+      • Card guard — if the solid pixels fill most of their own bounding box, the
+        logo is a filled card/emblem rather than glyphs on transparency.
+        Whitening it would produce a solid block, so never touch it. This backs
+        up the light-content guard for the dark-card / dark-or-no-text case,
+        where there is no light population to detect.
+
+    Only after both guards pass do the original tests apply — the ink must be
+    dark (low mean luminance) and achromatic (low saturation), so coloured or
+    branded logos keep their hues. Colour statistics are computed over *solid*
+    pixels (alpha >= 128) so a soft anti-aliased fringe can't skew them; the
+    recolour itself still covers the full visible mask (alpha > 30) to keep
+    edge anti-aliasing intact.
     """
     rgba = np.array(logo.convert("RGBA"), dtype=np.float32)
     alpha = rgba[:, :, 3]
-    visible = alpha > 30
 
-    if not visible.any():
+    # Analyse only solidly-opaque pixels so a semi-transparent AA halo can't
+    # skew the luminance/saturation/coverage statistics below.
+    solid = alpha >= 128
+    if not solid.any():
+        return logo  # nothing solid to analyse — leave as-is
+
+    r = rgba[:, :, 0][solid]
+    g = rgba[:, :, 1][solid]
+    b = rgba[:, :, 2][solid]
+    lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255.0  # per-pixel 0–1
+
+    # Guard 1 — the logo already carries light content (white text, on a card
+    # or free-standing), so it already reads on a dark poster. Leave it alone.
+    light_frac = float((lum >= light_lum).mean())
+    if light_frac >= light_frac_min:
+        logger.debug(
+            f"ensure_light_logo: skip (light content {light_frac:.0%} >= "
+            f"{light_frac_min:.0%}) — already legible on dark"
+        )
         return logo
 
-    r = rgba[:, :, 0][visible]
-    g = rgba[:, :, 1][visible]
-    b = rgba[:, :, 2][visible]
+    # Guard 2 — a filled card/emblem fills most of its bounding box. Whitening
+    # it would produce a solid block, so never touch it.
+    ys, xs = np.nonzero(solid)
+    bbox_area = (int(ys.max()) - int(ys.min()) + 1) * (int(xs.max()) - int(xs.min()) + 1)
+    coverage = float(solid.sum()) / bbox_area if bbox_area else 0.0
+    if coverage >= card_coverage_max:
+        logger.debug(
+            f"ensure_light_logo: skip (coverage {coverage:.0%} >= "
+            f"{card_coverage_max:.0%}) — filled card/shape, not a wordmark"
+        )
+        return logo
 
-    avg_lum = (0.2126 * r + 0.7152 * g + 0.0722 * b).mean() / 255.0
+    # Original gates — only whiten genuinely dark, achromatic ink.
+    avg_lum = float(lum.mean())
     if avg_lum > lum_threshold:
-        return logo  # Already light enough
+        return logo  # already light enough
 
-    # Check average saturation of visible pixels.
     # Saturation = (max - min) / max per pixel (HSV definition).
     max_c = np.maximum(np.maximum(r, g), b)
     min_c = np.minimum(np.minimum(r, g), b)
     coloured = max_c > 0
     if coloured.any():
-        avg_sat = (((max_c - min_c) / np.where(coloured, max_c, 1.0)) * coloured).mean()
+        avg_sat = float((((max_c - min_c) / np.where(coloured, max_c, 1.0)) * coloured).mean())
     else:
         avg_sat = 0.0
-
     if avg_sat > sat_threshold:
-        return logo  # Coloured logo — preserve original hues
+        return logo  # coloured/branded logo — preserve original hues
 
-    # Dark, achromatic logo — force to white
+    logger.debug(
+        f"ensure_light_logo: whitening dark wordmark "
+        f"(light={light_frac:.0%}, coverage={coverage:.0%}, "
+        f"avg_lum={avg_lum:.2f}, avg_sat={avg_sat:.2f})"
+    )
+    visible = alpha > 30
     out = rgba.copy()
     out[:, :, 0][visible] = 255
     out[:, :, 1][visible] = 255
@@ -233,13 +294,17 @@ def _recolor_logo_solid(logo: Image.Image, rgb: tuple[int, int, int]) -> Image.I
 # ---------------------------------------------------------------------------
 
 def tmdb_metadata_cache_key(
-    endpoint: str, tmdb_id: str, logo_language: str
+    endpoint: str, tmdb_id: str, logo_language: str, secondary_language: str = ""
 ) -> str:
     selection_sig = (
         f"p{TMDB_POSTER_MIN_VOTES}"
         f"d{TMDB_POSTER_MAX_SCORE_DROP:g}"
     )
-    return f"{endpoint}_{tmdb_id}_{logo_language}_{selection_sig}"
+    base = f"{endpoint}_{tmdb_id}_{logo_language}_{selection_sig}"
+    # A secondary preferred language changes the image set fetched from TMDB, so
+    # it must key separately.  Suffixed (not inlined) so existing single-language
+    # cache entries keep their key and don't all miss on deploy.
+    return f"{base}_s{secondary_language}" if secondary_language else base
 
 
 def _select_textless_poster(posters: list[dict]) -> dict | None:
@@ -274,6 +339,7 @@ async def fetch_poster_metadata(
     tmdb_key: str,
     media_type: str = "movie",
     logo_language: str = "en",
+    secondary_language: str = "",
 ) -> tuple[list[int], bool, list[dict], str | None, str, str, str | None, dict]:
     """
     Fetch (or return cached) TMDB metadata, including credits,
@@ -287,7 +353,7 @@ async def fetch_poster_metadata(
     # so a title cached under one language must not be served to another without
     # that language's art.  Each language gets its own correctly-fetched entry.
     metadata_cache_key = tmdb_metadata_cache_key(
-        endpoint, tmdb_id, logo_language
+        endpoint, tmdb_id, logo_language, secondary_language
     )
 
     meta = get_cached_tmdb_metadata(metadata_cache_key)
@@ -307,6 +373,12 @@ async def fetch_poster_metadata(
             "text_backdrop_path":    meta.get("text_backdrop_path"),
             "original_poster_path":  meta.get("original_poster_path"),
             "poster_langs":          meta.get("poster_langs", {}),
+            "imdb_id":               meta.get("imdb_id"),
+            "tmdb_release_date":     meta.get("tmdb_release_date"),
+            "last_air_date":         meta.get("last_air_date"),
+            "next_episode":          meta.get("next_episode"),
+            "last_episode":          meta.get("last_episode"),
+            "seasons":               meta.get("seasons", []),
         }
         return (
             meta["genre_ids"],
@@ -323,21 +395,30 @@ async def fetch_poster_metadata(
     #   null  — language-neutral entries (TMDB's signal for textless/unspecified)
     #   en    — English (logos + fallback posters)
     #   logo_language — non-English logo candidates when requested
+    # For regional locales (fr-fr), TMDB image rows are still language-tagged
+    # with iso_639_1=fr and iso_3166_1=FR, so the API request must include the
+    # base language too. The later selector remains strict and rejects fr-CA for
+    # a fr-fr request.
     # Note: null-language ≠ guaranteed text-free; TMDB uses it for both truly
     # textless art and posters where the language simply wasn't catalogued.
-    _img_langs = "en,null" if logo_language == "en" else f"{logo_language},en,null"
+    _img_langs = ",".join(_tmdb_include_image_languages(logo_language, secondary_language))
 
     logger.info(f"External API Call: Requested meta from TMDB for {tmdb_id}")
     resp = await client.get(
         f"https://api.themoviedb.org/3/{endpoint}/{tmdb_id}",
         params={
             "api_key": tmdb_key,
-            "append_to_response": "images,credits",
+            "append_to_response": "images,credits,external_ids",
             "include_image_language": _img_langs,
         },
     )
     resp.raise_for_status()
     data = resp.json()
+
+    # imdb_id from external_ids — used by cache warming to look up MDBList
+    # ratings/awards without a separate API call. TV's external_ids also
+    # includes imdb_id (the show's IMDb entry).
+    imdb_id = (data.get("external_ids") or {}).get("imdb_id") or None
 
     original_title = data.get("original_title") or data.get("original_name")
 
@@ -411,6 +492,11 @@ async def fetch_poster_metadata(
     number_of_episodes   = data.get("number_of_episodes")
     tmdb_status          = data.get("status")   # e.g. "Released", "In Production", "Returning Series"
     vote_count           = data.get("vote_count")
+    tmdb_release_date    = raw_date or None
+    last_air_date        = data.get("last_air_date")
+    next_episode         = data.get("next_episode_to_air") or None
+    last_episode         = data.get("last_episode_to_air") or None
+    seasons              = data.get("seasons") or []
 
     # If the content's original language wasn't included in the initial image
     # request (e.g. a Romanian show fetched by an English-language user), TMDB
@@ -421,6 +507,8 @@ async def fetch_poster_metadata(
     # original-art mode needs the original-language poster (e.g. the Spanish
     # poster for a Spanish film) to honour poster-language priority.
     _covered = {logo_language, "en"}
+    if secondary_language:
+        _covered.add(secondary_language)
     _have_orig_logos   = any(lg.get("iso_639_1") == original_language for lg in logos)
     _have_orig_posters = any(p.get("iso_639_1")  == original_language for p in posters)
     if (
@@ -453,19 +541,17 @@ async def fetch_poster_metadata(
             logger.warning(f"Supplemental image fetch failed for {tmdb_id}: {exc}")
 
     # Original-art mode picks a TEXTUAL poster by language at RENDER time (so it
-    # honours the request's native language, not the fetch-time one).  Store the
-    # best language-tagged poster per language here — keyed iso_639_1 → file_path,
-    # excluding null/"" (textless).  (Computed after the supplemental fetch.)
+    # honours the request's native language, not the fetch-time one). Store the
+    # best language-tagged poster per locale key (e.g. fr-fr) and base language
+    # (e.g. fr), excluding null/"" textless entries.
     poster_langs: dict[str, str] = {}
     _poster_best_vote: dict[str, float] = {}
     for _p in posters:
-        _pl = _p.get("iso_639_1")
-        if not _pl:
-            continue
         _pv = _p.get("vote_average") or 0
-        if _pl not in poster_langs or _pv > _poster_best_vote[_pl]:
-            poster_langs[_pl] = _p["file_path"]
-            _poster_best_vote[_pl] = _pv
+        for _pl in _image_language_keys(_p):
+            if _pl not in poster_langs or _pv > _poster_best_vote[_pl]:
+                poster_langs[_pl] = _p["file_path"]
+                _poster_best_vote[_pl] = _pv
 
     set_cached_tmdb_metadata(
         metadata_cache_key,
@@ -488,6 +574,12 @@ async def fetch_poster_metadata(
         text_backdrop_path=text_backdrop_path,
         original_poster_path=original_poster_path,
         poster_langs=poster_langs,
+        imdb_id=imdb_id,
+        tmdb_release_date=tmdb_release_date,
+        last_air_date=last_air_date,
+        next_episode=next_episode,
+        last_episode=last_episode,
+        seasons=seasons,
     )
 
     tmdb_data = {
@@ -503,6 +595,12 @@ async def fetch_poster_metadata(
         "text_backdrop_path":   text_backdrop_path,
         "original_poster_path": original_poster_path,
         "poster_langs":         poster_langs,
+        "imdb_id":              imdb_id,
+        "tmdb_release_date":    tmdb_release_date,
+        "last_air_date":        last_air_date,
+        "next_episode":         next_episode,
+        "last_episode":         last_episode,
+        "seasons":              seasons,
     }
 
     return genre_ids, is_textless, logos, release_year, title, poster_path, backdrop_path, tmdb_data
@@ -639,7 +737,7 @@ def _saliency_crop_left(image: Image.Image, crop_w: int,
     sh      = max(1, int(h * scale))
     scrop_w = max(1, int(crop_w * scale))
 
-    small = image.resize((sw, sh), Image.LANCZOS).convert("RGB")
+    small = image.resize((sw, sh), Image.Resampling.LANCZOS).convert("RGB")
     rgb   = np.array(small, dtype=np.float32) / 255.0   # H × W × 3, [0,1]
     r, g, b = rgb[:,:,0], rgb[:,:,1], rgb[:,:,2]
 
@@ -877,12 +975,68 @@ async def _fetch_metahub_logo(
     return logo
 
 
+def _normalise_image_locale(value: str | None) -> str:
+    return (value or "").strip().lower().replace("_", "-")
+
+
+def _image_language_keys(image: dict) -> list[str]:
+    language = _normalise_image_locale(image.get("iso_639_1"))
+    if not language:
+        return []
+    region = _normalise_image_locale(image.get("iso_3166_1"))
+    keys = [f"{language}-{region}"] if region else []
+    keys.append(language)
+    return list(dict.fromkeys(keys))
+
+
+def _image_matches_language(image: dict, requested: str | None) -> bool:
+    requested = _normalise_image_locale(requested)
+    if not requested:
+        return False
+    keys = _image_language_keys(image)
+    if "-" in requested:
+        return requested in keys
+    return requested in keys
+
+
+def _tmdb_include_image_languages(
+    logo_language: str | None, secondary_language: str | None = None
+) -> list[str]:
+    languages: list[str] = []
+    for candidate in (logo_language, secondary_language):
+        requested = _normalise_image_locale(candidate) or ""
+        if requested and requested != "en":
+            languages.append(requested)
+            base = requested.split("-", 1)[0]
+            if base and base != requested:
+                languages.append(base)
+    languages.extend(["en", "null"])
+    return list(dict.fromkeys(languages))
+
+
+# Priorities whose fallback tail is "text-forward": once the language buckets
+# are exhausted we prefer TMDB English → Metahub → language-neutral, and finally
+# a rendered text title, rather than dropping to a neutral/wrong-language logo.
+TEXT_FORWARD_PRIORITIES = frozenset({
+    "native_text",
+    "native_custom_text",
+    "native_custom_original_text",
+})
+
+
 def image_language_order(
     logo_language: str,
     original_language: str | None,
     logo_priority: str,
+    secondary_language: str | None = None,
 ) -> list[str]:
-    """Return the distinct language buckets to try, in priority order."""
+    """Return the distinct language buckets to try, in priority order.
+
+    *secondary_language* is a user's second preferred language ("custom").  It is
+    only consulted by the ``native_custom_*`` priorities; a blank value there
+    degrades those modes to ``native_text`` / ``native_original`` respectively
+    (the falsy filter below drops it), so the field is safe to leave unset.
+    """
     if logo_priority == "original_native":
         languages = [original_language, logo_language]
     elif logo_priority == "native_if_original_english":
@@ -893,6 +1047,10 @@ def image_language_order(
         )
     elif logo_priority == "native_text":
         languages = [logo_language]
+    elif logo_priority == "native_custom_text":
+        languages = [logo_language, secondary_language]
+    elif logo_priority == "native_custom_original_text":
+        languages = [logo_language, secondary_language, original_language]
     else:
         languages = [logo_language, original_language]
 
@@ -906,6 +1064,8 @@ async def fetch_logo(
     imdb_id: str | None = None,
     original_language: str | None = None,
     logo_priority: str = "native_original",
+    use_metahub: bool = True,
+    secondary_language: str | None = None,
 ) -> Image.Image | None:
     """
     Fetch the best available logo for a title, with a Metahub CDN fallback.
@@ -921,14 +1081,17 @@ async def fetch_logo(
         "original_native"           → original, then native
         "native_if_original_english" → native when the content is native,
                                         otherwise English, then original
-        "native_text"               → native only (skip the original-language
-                                       bucket so the caller's text-title fallback
-                                       renders the translated title instead)
+        "native_text"               → native only, then English before neutral
+                                       fallback (skip original-language logos)
+        "native_custom_text"          → native, then the secondary_language
+                                       ("custom"), then English/neutral/text
+        "native_custom_original_text" → native, secondary_language, original,
+                                       then English/neutral/text
 
-    After those, the common fallbacks apply regardless of priority:
-      → TMDB language-neutral logo (iso_639_1 null/"")
-      → TMDB English logo
-      → Metahub CDN logo (images.metahub.space) — requires imdb_id
+    After the priority buckets, the common fallbacks apply:
+      → TMDB English logo, Metahub, then neutral logo for native_text
+      → TMDB language-neutral logo, then English logo for other priorities
+      → Metahub CDN logo for other priorities (images.metahub.space)
       → None (caller may render the translated title as text instead).
 
     All results are cached locally so repeat requests never hit external APIs.
@@ -940,20 +1103,33 @@ async def fetch_logo(
     _cand = [lg for lg in logos if lg["file_path"].lower().endswith(_exts)]
 
     language_buckets = {
-        language: [lg for lg in _cand if lg.get("iso_639_1") == language]
+        language: [lg for lg in _cand if _image_matches_language(lg, language)]
         for language in image_language_order(
-            logo_language, original_language, logo_priority
+            logo_language, original_language, logo_priority, secondary_language
         )
     }
     neutral   = [lg for lg in _cand if lg.get("iso_639_1") in (None, "")]
-    english   = [lg for lg in _cand if lg.get("iso_639_1") == "en"]
+    english   = [lg for lg in _cand if _image_matches_language(lg, "en")]
 
     candidates = []
     for language in language_buckets:
         if language_buckets[language]:
             candidates = language_buckets[language]
             break
-    candidates = candidates or neutral or english
+
+    if logo_priority in TEXT_FORWARD_PRIORITIES:
+        if not candidates and english:
+            candidates = english
+        if not candidates and use_metahub and imdb_id:
+            metahub_logo = await _fetch_metahub_logo(client, imdb_id)
+            if metahub_logo is not None:
+                return metahub_logo
+        if not candidates and neutral:
+            candidates = neutral
+    else:
+        for bucket in (neutral, english):
+            if not candidates and bucket:
+                candidates = bucket
 
     candidates = sorted(
         candidates,
@@ -962,8 +1138,9 @@ async def fetch_logo(
     )
 
     if not candidates:
-        # No TMDB logo at all — try Metahub before giving up
-        if imdb_id:
+        # No TMDB logo at all — try Metahub before giving up (unless the caller
+        # has asked to skip it, e.g. to slot another source in between).
+        if use_metahub and imdb_id:
             return await _fetch_metahub_logo(client, imdb_id)
         return None
 
@@ -990,7 +1167,7 @@ async def fetch_logo(
         if logo is None:
             # Rasterise failed — fall back to Metahub, then None.
             logger.warning(f"SVG logo unusable for {imdb_id} — trying Metahub fallback")
-            return await _fetch_metahub_logo(client, imdb_id) if imdb_id else None
+            return await _fetch_metahub_logo(client, imdb_id) if (use_metahub and imdb_id) else None
     else:
         logo = Image.open(io.BytesIO(resp.content)).convert("RGBA")
 
@@ -1005,6 +1182,8 @@ async def fetch_logo(
     return logo
 
 
+_trending_inflight: dict[str, asyncio.Event] = {}
+
 async def fetch_trending_rank(
     client: httpx.AsyncClient,
     tmdb_id: str,
@@ -1017,33 +1196,44 @@ async def fetch_trending_rank(
     snapshot = get_cached_trending_snapshot(endpoint)
 
     if snapshot is None:
-        logger.info("External API Call: Refreshing TMDB trending snapshot (pages 1+2 concurrent)")
+        inflight_event = _trending_inflight.get(endpoint)
+        if inflight_event is not None:
+            await inflight_event.wait()
+            snapshot = get_cached_trending_snapshot(endpoint)
+        
+        if snapshot is None:
+            event_to_set = asyncio.Event()
+            _trending_inflight[endpoint] = event_to_set
+            
+            try:
+                logger.info("External API Call: Refreshing TMDB trending snapshot (pages 1-5 concurrent)")
 
-        async def _fetch_page(page: int) -> list[dict]:
-            resp = await client.get(
-                f"https://api.themoviedb.org/3/trending/{endpoint}/day",
-                params={"api_key": tmdb_key, "page": page},
-            )
-            resp.raise_for_status()
-            return resp.json().get("results", [])
+                async def _fetch_page(page: int) -> list[dict]:
+                    resp = await client.get(
+                        f"https://api.themoviedb.org/3/trending/{endpoint}/day",
+                        params={"api_key": tmdb_key, "page": page},
+                    )
+                    resp.raise_for_status()
+                    return resp.json().get("results", [])
 
-        try:
-            page1_results, page2_results = await asyncio.gather(
-                _fetch_page(1),
-                _fetch_page(2),
-            )
-        except Exception as exc:
-            logger.error(f"TMDB trending fetch error: {exc}")
-            return None
+                try:
+                    pages = await asyncio.gather(*(_fetch_page(page) for page in range(1, 6)))
+                except Exception as exc:
+                    logger.error(f"TMDB trending fetch error: {exc}")
+                    return None
 
-        rankings: dict[str, int] = {}
-        for i, item in enumerate(page1_results, start=1):
-            rankings[str(item["id"])] = i
-        for i, item in enumerate(page2_results, start=len(page1_results) + 1):
-            rankings[str(item["id"])] = i
+                rankings: dict[str, int] = {}
+                rank = 1
+                for results in pages:
+                    for item in results:
+                        rankings[str(item["id"])] = rank
+                        rank += 1
 
-        set_cached_trending_snapshot(endpoint, rankings)
-        snapshot = rankings
+                set_cached_trending_snapshot(endpoint, rankings)
+                snapshot = rankings
+            finally:
+                event_to_set.set()
+                _trending_inflight.pop(endpoint, None)
 
     rank = snapshot.get(str(tmdb_id))
 
@@ -1051,6 +1241,495 @@ async def fetch_trending_rank(
         logger.info(f"Trending rank for {tmdb_id}: #{rank}")
 
     return rank
+
+
+async def fetch_trending_candidates(
+    client: httpx.AsyncClient,
+    tmdb_key: str,
+    max_items: int = 500,
+) -> list[dict]:
+    """
+    Build a deduped, ranked list of currently-trending titles for cache
+    warming, by paginating TMDB's trending endpoint across movie/tv and
+    day/week windows.
+
+    Returns a list of dicts: ``{"tmdb_id": str, "media_type": "movie"|"tv"}``,
+    ordered with the hottest (day-trending) titles first. Each (media_type,
+    tmdb_id) pair appears at most once. May return fewer than *max_items* if
+    TMDB's trending lists are exhausted first.
+    """
+    pages_per_list = max(1, (max_items + 19) // 20)  # 20 results per page
+
+    async def _fetch_list(media_type: str, window: str) -> list[dict]:
+        results: list[dict] = []
+        for page in range(1, pages_per_list + 1):
+            try:
+                resp = await client.get(
+                    f"https://api.themoviedb.org/3/trending/{media_type}/{window}",
+                    params={"api_key": tmdb_key, "page": page},
+                )
+                resp.raise_for_status()
+                page_results = resp.json().get("results", [])
+            except Exception as exc:
+                logger.warning(f"Cache warm: trending fetch failed ({media_type}/{window} p{page}): {exc}")
+                break
+            if not page_results:
+                break
+            for item in page_results:
+                results.append({"tmdb_id": str(item["id"]), "media_type": media_type})
+        return results
+
+    lists = await asyncio.gather(
+        _fetch_list("movie", "day"),
+        _fetch_list("tv", "day"),
+        _fetch_list("movie", "week"),
+        _fetch_list("tv", "week"),
+    )
+
+    # Round-robin merge so the result mixes movie/tv and prioritises the
+    # day-trending lists before the week-trending ones, deduping as we go.
+    seen: set[tuple[str, str]] = set()
+    candidates: list[dict] = []
+    for group in zip(*[l + [None] * (max(len(x) for x in lists) - len(l)) for l in lists]):
+        for item in group:
+            if item is None:
+                continue
+            key = (item["media_type"], item["tmdb_id"])
+            if key in seen:
+                continue
+            seen.add(key)
+            candidates.append(item)
+            if len(candidates) >= max_items:
+                return candidates
+
+    return candidates
+
+
+async def fetch_popular_candidates(
+    client: httpx.AsyncClient,
+    tmdb_key: str,
+    max_items: int = 500,
+) -> list[dict]:
+    """
+    Build a deduped, ranked list of TMDB's "popular" titles for cache
+    warming, by paginating the movie/tv popular endpoints.
+
+    Unlike trending (day/week, very volatile), "popular" is a broad,
+    slow-moving long-tail list — a useful complement to trending for cache
+    warming since it covers steady-demand catalogue staples that trending
+    alone would miss.
+
+    Returns a list of dicts: ``{"tmdb_id": str, "media_type": "movie"|"tv"}``,
+    each (media_type, tmdb_id) pair appearing at most once. May return fewer
+    than *max_items* if TMDB's popular lists are exhausted first.
+    """
+    pages_per_list = max(1, (max_items + 19) // 20)  # 20 results per page
+
+    async def _fetch_list(media_type: str) -> list[dict]:
+        results: list[dict] = []
+        for page in range(1, pages_per_list + 1):
+            try:
+                resp = await client.get(
+                    f"https://api.themoviedb.org/3/{media_type}/popular",
+                    params={"api_key": tmdb_key, "page": page},
+                )
+                resp.raise_for_status()
+                page_results = resp.json().get("results", [])
+            except Exception as exc:
+                logger.warning(f"Cache warm: popular fetch failed ({media_type} p{page}): {exc}")
+                break
+            if not page_results:
+                break
+            for item in page_results:
+                results.append({"tmdb_id": str(item["id"]), "media_type": media_type})
+        return results
+
+    lists = await asyncio.gather(
+        _fetch_list("movie"),
+        _fetch_list("tv"),
+    )
+
+    # Round-robin merge so the result mixes movie/tv, deduping as we go.
+    seen: set[tuple[str, str]] = set()
+    candidates: list[dict] = []
+    for group in zip(*[l + [None] * (max(len(x) for x in lists) - len(l)) for l in lists]):
+        for item in group:
+            if item is None:
+                continue
+            key = (item["media_type"], item["tmdb_id"])
+            if key in seen:
+                continue
+            seen.add(key)
+            candidates.append(item)
+            if len(candidates) >= max_items:
+                return candidates
+
+    return candidates
+
+
+async def fetch_supplemental_candidates(
+    client: httpx.AsyncClient,
+    tmdb_key: str,
+    max_items: int = 500,
+) -> list[dict]:
+    """
+    Build a deduped, ranked list of cache-warming candidates from TMDB lists
+    that trending/popular don't cover: critically-acclaimed catalogue staples
+    (top rated) and titles currently airing/in theatres (now playing, on the
+    air) — the kind of thing a user finds via a "Top Rated" or "Now Playing"
+    catalog rather than trending/popular.
+
+    Returns a list of dicts: ``{"tmdb_id": str, "media_type": "movie"|"tv"}``,
+    each (media_type, tmdb_id) pair appearing at most once. May return fewer
+    than *max_items* if these lists are exhausted first.
+    """
+    pages_per_list = max(1, (max_items + 19) // 20)  # 20 results per page
+
+    async def _fetch_list(media_type: str, list_name: str) -> list[dict]:
+        results: list[dict] = []
+        for page in range(1, pages_per_list + 1):
+            try:
+                resp = await client.get(
+                    f"https://api.themoviedb.org/3/{media_type}/{list_name}",
+                    params={"api_key": tmdb_key, "page": page},
+                )
+                resp.raise_for_status()
+                page_results = resp.json().get("results", [])
+            except Exception as exc:
+                logger.warning(f"Cache warm: {list_name} fetch failed ({media_type} p{page}): {exc}")
+                break
+            if not page_results:
+                break
+            for item in page_results:
+                results.append({"tmdb_id": str(item["id"]), "media_type": media_type})
+        return results
+
+    lists = await asyncio.gather(
+        _fetch_list("movie", "top_rated"),
+        _fetch_list("tv", "top_rated"),
+        _fetch_list("movie", "now_playing"),
+        _fetch_list("tv", "on_the_air"),
+    )
+
+    # Round-robin merge across the four lists, deduping as we go.
+    seen: set[tuple[str, str]] = set()
+    candidates: list[dict] = []
+    for group in zip(*[l + [None] * (max(len(x) for x in lists) - len(l)) for l in lists]):
+        for item in group:
+            if item is None:
+                continue
+            key = (item["media_type"], item["tmdb_id"])
+            if key in seen:
+                continue
+            seen.add(key)
+            candidates.append(item)
+            if len(candidates) >= max_items:
+                return candidates
+
+    return candidates
+
+
+async def resolve_tmdb_id_from_imdb(
+    client: httpx.AsyncClient,
+    imdb_id: str,
+    tmdb_key: str,
+    media_type_hint: str | None = None,
+) -> dict | None:
+    """
+    Resolve an IMDB id (``tt...``) to a TMDB id via TMDB's /find endpoint.
+
+    Returns ``{"tmdb_id": str, "media_type": "movie"|"tv"}``, preferring a
+    result matching *media_type_hint* when both movie and tv results are
+    present, or ``None`` if TMDB has no match for either.
+    """
+    try:
+        resp = await client.get(
+            f"https://api.themoviedb.org/3/find/{imdb_id}",
+            params={"api_key": tmdb_key, "external_source": "imdb_id"},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception as exc:
+        logger.warning(f"Cache warm: TMDB find failed for {imdb_id}: {exc}")
+        return None
+
+    movie_results = data.get("movie_results") or []
+    tv_results    = data.get("tv_results") or []
+
+    if media_type_hint == "tv" and tv_results:
+        return {"tmdb_id": str(tv_results[0]["id"]), "media_type": "tv"}
+    if media_type_hint == "movie" and movie_results:
+        return {"tmdb_id": str(movie_results[0]["id"]), "media_type": "movie"}
+    if movie_results:
+        return {"tmdb_id": str(movie_results[0]["id"]), "media_type": "movie"}
+    if tv_results:
+        return {"tmdb_id": str(tv_results[0]["id"]), "media_type": "tv"}
+    return None
+
+
+
+def _normalize_manifest_url(url: str) -> str:
+    """Normalise a user-pasted addon install link to a manifest.json URL."""
+    url = url.strip()
+    if url.startswith("stremio://"):
+        url = "https://" + url[len("stremio://"):]
+    if not url.endswith("/manifest.json"):
+        url = url.rstrip("/") + "/manifest.json"
+    return url
+
+
+async def fetch_catalog_candidates(
+    client: httpx.AsyncClient,
+    catalog_urls: list[str],
+    tmdb_key: str,
+    max_items_per_catalog: int = 100,
+) -> list[dict]:
+    """
+    Build a deduped list of ``{"tmdb_id", "media_type"}`` candidates by
+    fetching the catalogs exposed by the given Stremio addon manifest URLs,
+    the same way a Stremio client would when a user opens that catalog.
+
+    IMDB ids (the common case for Cinemeta-backed catalogs) are resolved to
+    TMDB ids via TMDB's /find endpoint. ``tmdb:<id>`` ids are used directly.
+    Any other id namespace (kitsu/mal/anilist/etc.) is skipped — there's no
+    TMDB mapping for those, so warming can't cover that title.
+    """
+    if not catalog_urls or not tmdb_key:
+        return []
+
+    seen: set[tuple[str, str]] = set()
+    candidates: list[dict] = []
+    resolve_sem = asyncio.Semaphore(10)
+
+    async def _resolve(meta_id: str, media_type: str) -> dict | None:
+        if meta_id.startswith("tmdb:"):
+            return {"tmdb_id": meta_id.split(":", 1)[1], "media_type": media_type}
+        if meta_id.startswith("tt"):
+            async with resolve_sem:
+                return await resolve_tmdb_id_from_imdb(client, meta_id, tmdb_key, media_type)
+        return None
+
+    for raw_url in catalog_urls:
+        manifest_url = _normalize_manifest_url(raw_url)
+        try:
+            resp = await client.get(manifest_url, timeout=15.0, follow_redirects=True)
+            resp.raise_for_status()
+            manifest = resp.json()
+        except Exception as exc:
+            logger.warning(f"Cache warm: catalog manifest fetch failed for {manifest_url}: {exc}")
+            continue
+
+        base = manifest_url[: -len("/manifest.json")]
+        catalogs = manifest.get("catalogs") or []
+        if not catalogs:
+            logger.warning(f"Cache warm: no catalogs in manifest {manifest_url}")
+            continue
+
+        for catalog in catalogs:
+            cat_type = catalog.get("type")
+            cat_id   = catalog.get("id")
+            if not cat_type or not cat_id:
+                continue
+
+            metas: list[dict] = []
+            while len(metas) < max_items_per_catalog:
+                skip = len(metas)
+                path = (
+                    f"/catalog/{cat_type}/{cat_id}.json"
+                    if skip == 0
+                    else f"/catalog/{cat_type}/{cat_id}/skip={skip}.json"
+                )
+                try:
+                    page_resp = await client.get(f"{base}{path}", timeout=15.0, follow_redirects=True)
+                    page_resp.raise_for_status()
+                    page_metas = page_resp.json().get("metas") or []
+                except Exception as exc:
+                    logger.warning(f"Cache warm: catalog fetch failed for {base}{path}: {exc}")
+                    break
+                if not page_metas:
+                    break
+                metas.extend(page_metas)
+
+            metas = metas[:max_items_per_catalog]
+
+            resolved = await asyncio.gather(*(
+                _resolve(
+                    meta.get("id", ""),
+                    "tv" if meta.get("type") in ("series", "tv") else "movie",
+                )
+                for meta in metas
+                if meta.get("id")
+            ))
+
+            added = 0
+            for item in resolved:
+                if item is None:
+                    continue
+                key = (item["media_type"], item["tmdb_id"])
+                if key in seen:
+                    continue
+                seen.add(key)
+                candidates.append(item)
+                added += 1
+
+            logger.info(
+                f"Cache warm: catalog {cat_type}/{cat_id} from {base} — "
+                f"{len(metas)} items, {added} new candidates"
+            )
+
+    return candidates
+
+
+def _parse_tmdb_date(value: str | None) -> _date | None:
+    try:
+        return _date.fromisoformat((value or "")[:10])
+    except (TypeError, ValueError):
+        return None
+
+
+def _compute_movie_status_from_dates(
+    theatrical_date: _date | None,
+    digital_date: _date | None,
+    physical_date: _date | None,
+    tmdb_status: str | None,
+) -> str:
+    today = _date.today()
+    has_physical = physical_date is not None and physical_date <= today
+    has_digital = digital_date is not None and digital_date <= today
+    has_theatrical = theatrical_date is not None and theatrical_date <= today
+
+    if has_physical:
+        return "Physical"
+    elif has_digital:
+        return "Streaming"
+    elif has_theatrical:
+        if (
+            CINEMA_MAX_AGE_YEARS > 0
+            and theatrical_date is not None
+            and (today - theatrical_date).days > CINEMA_MAX_AGE_YEARS * 365
+        ):
+            return "Streaming"
+        else:
+            return "Cinema"
+    elif tmdb_status == "Released":
+        return "Streaming"
+    else:
+        return "Production"
+
+
+async def fetch_movie_release_info(
+    client: httpx.AsyncClient,
+    tmdb_id: str,
+    tmdb_key: str,
+    tmdb_status: str | None,
+) -> dict | None:
+    """Cached TMDB movie release-date facts used by release-status and freshness sashes."""
+    cache_key = f"movie_{tmdb_id}"
+    cached = get_cached_movie_release_info(cache_key)
+    if cached:
+        cached["status"] = _compute_movie_status_from_dates(
+            _parse_tmdb_date(cached.get("theatrical_date")),
+            _parse_tmdb_date(cached.get("digital_date")),
+            _parse_tmdb_date(cached.get("physical_date")),
+            tmdb_status,
+        )
+        return cached
+
+    result: str | None = None
+    info: dict[str, str | None] = {
+        "status": None,
+        "theatrical_date": None,
+        "digital_date": None,
+        "physical_date": None,
+    }
+
+    _pre_release = {"In Production", "Post Production", "Planned", "Rumored"}
+    if tmdb_status in _pre_release:
+        info["status"] = "Production"
+        set_cached_movie_release_info(cache_key, info)
+        return info
+    if tmdb_status == "Cancelled":
+        info["status"] = "Cancelled"
+        set_cached_movie_release_info(cache_key, info)
+        return info
+
+    try:
+        logger.info(f"External API Call: TMDB release_dates for movie {tmdb_id}")
+        resp = await client.get(
+            f"https://api.themoviedb.org/3/movie/{tmdb_id}/release_dates",
+            params={"api_key": tmdb_key},
+        )
+        resp.raise_for_status()
+    except Exception as exc:
+        logger.warning(f"fetch_movie_release_info failed for {tmdb_id}: {exc}")
+        return None
+
+    # Release-status decisions key off the EARLIEST date a film enters each
+    # window (its first availability anywhere), so a title already streaming or
+    # on disc in one region isn't held at "Cinema" just because a later regional
+    # digital/physical date is still pending.  ``latest_digital`` is tracked
+    # separately for the freshness "just added" sash, which wants the most
+    # recent digital date rather than the first.
+    earliest_theatrical: _date | None = None
+    earliest_digital: _date | None = None
+    latest_digital: _date | None = None
+    earliest_physical: _date | None = None
+
+    for entry in resp.json().get("results", []):
+        for rd in entry.get("release_dates", []):
+            rtype = rd.get("type")
+            rdate = _parse_tmdb_date(rd.get("release_date"))
+            if rdate is None:
+                continue
+            if rtype == 5:
+                if earliest_physical is None or rdate < earliest_physical:
+                    earliest_physical = rdate
+            elif rtype in (4, 6):   # digital or TV broadcast
+                if earliest_digital is None or rdate < earliest_digital:
+                    earliest_digital = rdate
+                if latest_digital is None or rdate > latest_digital:
+                    latest_digital = rdate
+            elif rtype == 3:
+                if earliest_theatrical is None or rdate < earliest_theatrical:
+                    earliest_theatrical = rdate
+
+    result = _compute_movie_status_from_dates(
+        earliest_theatrical,
+        earliest_digital,
+        earliest_physical,
+        tmdb_status,
+    )
+
+    info = {
+        "status": result,
+        "theatrical_date": earliest_theatrical.isoformat() if earliest_theatrical else None,
+        "digital_date": earliest_digital.isoformat() if earliest_digital else None,
+        "physical_date": earliest_physical.isoformat() if earliest_physical else None,
+        "digital_latest_date": latest_digital.isoformat() if latest_digital else None,
+    }
+    set_cached_movie_release_info(cache_key, info)
+    return info
+
+
+async def fetch_recent_movie_digital_release_date(
+    client: httpx.AsyncClient,
+    tmdb_id: str,
+    tmdb_key: str,
+    tmdb_status: str | None,
+    *,
+    max_age_days: int = 14,
+) -> str | None:
+    """Return the most recent TMDB digital/TV release date when it is fresh."""
+    info = await fetch_movie_release_info(client, tmdb_id, tmdb_key, tmdb_status)
+    if not info:
+        return None
+    # "Just added" wants the most recent digital date; fall back to the plain
+    # digital_date for cache entries written before that field was tracked.
+    digital = _parse_tmdb_date(info.get("digital_latest_date") or info.get("digital_date"))
+    if digital is None:
+        return None
+    age = (_date.today() - digital).days
+    return digital.isoformat() if 0 <= age <= max_age_days else None
 
 
 async def fetch_release_status(
@@ -1092,68 +1771,14 @@ async def fetch_release_status(
             "In Production":    "Production",
             "Planned":          "Production",
             "Pilot":            "Production",
-            "Ended":            "Streaming",  # completed run → assume available on streaming
+            "Ended":            "Ended",
             "Cancelled":        "Cancelled",
             "Canceled":         "Cancelled",
         }
         result = _tv_map.get(tmdb_status or "")
     else:
-        # For movies already known to be pre-release, skip the API call.
-        _pre_release = {"In Production", "Post Production", "Planned", "Rumored"}
-        if tmdb_status in _pre_release:
-            result = "Production"
-        elif tmdb_status == "Cancelled":
-            result = "Cancelled"
-        else:
-            # Fetch release dates to distinguish Physical / Streaming / Cinema.
-            # TMDB release date types:
-            #   3 = Theatrical   4 = Digital   5 = Physical   6 = TV (broadcast/cable)
-            # Type 6 covers TV movies and specials that never had a theatrical run;
-            # treat it the same as digital/streaming since those titles are now on
-            # streaming platforms.  If the movie is marked "Released" by TMDB but has
-            # no matching release date entries (common for older/obscure titles with
-            # incomplete TMDB data), default to "Streaming" rather than "Production".
-            try:
-                logger.info(f"External API Call: TMDB release_dates for movie {tmdb_id}")
-                resp = await client.get(
-                    f"https://api.themoviedb.org/3/movie/{tmdb_id}/release_dates",
-                    params={"api_key": tmdb_key},
-                )
-                resp.raise_for_status()
-                today = _date.today()
-                has_physical = has_digital = has_theatrical = False
-                for entry in resp.json().get("results", []):
-                    for rd in entry.get("release_dates", []):
-                        rtype = rd.get("type")
-                        date_str = (rd.get("release_date") or "")[:10]
-                        try:
-                            rdate = _date.fromisoformat(date_str)
-                        except (ValueError, TypeError):
-                            continue
-                        if rdate > today:
-                            continue
-                        if rtype == 5:
-                            has_physical = True
-                        elif rtype in (4, 6):   # digital or TV broadcast
-                            has_digital = True
-                        elif rtype == 3:
-                            has_theatrical = True
-
-                if has_physical:
-                    result = "Physical"
-                elif has_digital:
-                    result = "Streaming"
-                elif has_theatrical:
-                    result = "Cinema"
-                elif tmdb_status == "Released":
-                    # Released per TMDB but no release date records found —
-                    # incomplete TMDB data rather than genuinely unreleased.
-                    result = "Streaming"
-                else:
-                    result = "Production"
-            except Exception as exc:
-                logger.warning(f"fetch_release_status failed for {tmdb_id}: {exc}")
-                return None
+        info = await fetch_movie_release_info(client, tmdb_id, tmdb_key, tmdb_status)
+        result = (info or {}).get("status")
 
     if result:
         set_cached_release_status(cache_key, result)
@@ -1173,6 +1798,7 @@ def composite_logo(
     max_w_ratio: float = LOGO_MAX_W_RATIO,
     max_h_ratio: float = LOGO_MAX_H_RATIO,
     bottom_ratio: float = LOGO_BOTTOM_RATIO,
+    bottom_anchor: bool = False,
 ) -> None:
     width, height = image.size
 
@@ -1248,18 +1874,27 @@ def composite_logo(
             f"max_h={max_h} eff_max_h={eff_max_h:.0f} → final={int(new_w)}x{int(new_h)}"
         )
 
-    logo = logo.resize((max(1, int(new_w)), max(1, int(new_h))), Image.LANCZOS)
+    logo = logo.resize((max(1, int(new_w)), max(1, int(new_h))), Image.Resampling.LANCZOS)
 
     # ── Position ─────────────────────────────────────────────────────────────
-    # Centre every logo on a fixed vertical line rather than sharing a common
-    # bottom edge.  Bottom-anchoring made short single-line logos sit low and
-    # feel like they lacked presence next to tall multi-line logos.  The centre
-    # line is the midline of the tallest possible logo (the height cap plus its
-    # aspect flex), so the tallest logos still bottom out at the intended
-    # baseline while shorter logos float up to share that same centre.
-    logo_x   = round((width - logo.width) / 2)
-    centre_y = logo_centre_y(height, bottom_ratio)
-    logo_y   = int(centre_y - logo.height / 2)
+    # Two anchor modes:
+    #
+    # Centre (default): every logo shares a fixed vertical midline — the
+    # midpoint of the tallest possible logo zone.  Tall logos bottom out at the
+    # intended baseline; shorter logos float up to share the same centre.
+    # Visually consistent for centred designs where logo size varies a lot.
+    #
+    # Bottom anchor (legacy): every logo's bottom edge is pinned to the same
+    # baseline regardless of height, so logos only ever expand upward.  Useful
+    # when the logo is placed low and a centred expansion would spill the top
+    # edge into an overlay sitting above it.
+    logo_x = round((width - logo.width) / 2)
+    if bottom_anchor:
+        baseline = height - int(height * bottom_ratio)
+        logo_y   = baseline - logo.height
+    else:
+        centre_y = logo_centre_y(height, bottom_ratio)
+        logo_y   = int(centre_y - logo.height / 2)
 
     # ── Background-aware legibility adjustments ──────────────────────────────
     # Sample the poster region the logo will cover (pure poster, sampled before

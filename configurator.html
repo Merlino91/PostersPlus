@@ -205,6 +205,20 @@
     color: var(--gold);
     font-weight: bold;
   }
+  .whatsnew-body {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    max-height: 50vh;
+    overflow-y: auto;
+  }
+  .whatsnew-section-title {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--gold);
+  }
 
   .status-bar {
     display: flex;
@@ -359,6 +373,9 @@
     min-height: 0;
     overflow-y: auto;
     scrollbar-width: none;
+    /* Match the section-body fill so short tabs don't reveal a lighter strip
+       below their content — the field background spans the whole panel. */
+    background: var(--black);
   }
   #tab-host::-webkit-scrollbar { display: none; }
 
@@ -448,29 +465,9 @@
 
   .field-label-row .field-label { margin-bottom: 0; flex: 1; }
 
-  /* Server key badge */
-  .server-key-badge {
-    font-family: var(--mono);
-    font-size: 7px;
-    font-weight: 500;
-    letter-spacing: 0.15em;
-    padding: 2px 7px;
-    border: 1px solid var(--gold-dim);
-    color: var(--gold);
-    background: var(--gold-faint);
-    white-space: nowrap;
-    flex-shrink: 0;
-    text-transform: uppercase;
-  }
-
-  .server-key-badge.missing {
-    border-color: var(--silver-dim);
-    color: var(--silver);
-    background: var(--silver-faint);
-  }
-
   input[type="text"],
   input[type="number"],
+  textarea,
   select {
     width: 100%;
     background: var(--black2);
@@ -488,13 +485,50 @@
 
   input[type="text"]:focus,
   input[type="number"]:focus,
+  textarea:focus,
   select:focus {
     border-color: var(--gold-dim);
     background-color: var(--black3);
     box-shadow: inset 0 0 0 1px rgba(201,168,76,0.08);
   }
 
-  input[type="text"]::placeholder { color: var(--text-muted); }
+  input[type="text"]::placeholder,
+  textarea::placeholder { color: var(--text-muted); }
+
+  /* Inline colour-picker field: a full-width hex input (matching every other
+     control) with the swatch overlaid inside on the right edge. */
+  .color-field { position: relative; width: 100%; }
+  .color-field input[type="text"] {
+    width: 100%;
+    padding-right: 42px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  /* Keep the typed hex uppercase, but show the "Default" hint in normal case. */
+  .color-field input[type="text"]::placeholder { text-transform: none; letter-spacing: normal; }
+  .color-field input[type="color"] {
+    position: absolute;
+    top: 50%;
+    right: 5px;
+    transform: translateY(-50%);
+    width: 28px;
+    height: 22px;
+    padding: 2px;
+    border: 1px solid var(--border);
+    background: var(--black3);
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+  }
+  .color-field input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+  .color-field input[type="color"]::-webkit-color-swatch { border: none; }
+  .color-field input[type="color"]::-moz-color-swatch { border: none; }
+
+  textarea {
+    min-height: 94px;
+    line-height: 1.45;
+    resize: vertical;
+  }
 
   select {
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%238a6e2e'/%3E%3C/svg%3E");
@@ -749,6 +783,9 @@
     margin-top: 12px;
     padding-top: 14px;
   }
+  /* Breathing room after a toggle-row's separator before a following field
+     (e.g. the Reference Colour toggle above the Colour Saturation slider). */
+  .toggle-row + .field { margin-top: 14px; }
   /* Explicit separator for spots the adjacency rule can't reach (same-type
      dropdowns, or rows nested in a wrapper div).  !important so it wins over the
      same-type "no divider" rule which has higher specificity. */
@@ -760,6 +797,12 @@
   /* A separated toggle centres its content, so match bottom padding to the top
      so it sits evenly between its separator and its own bottom border. */
   .toggle-row.cfg-sep { padding-bottom: 14px !important; }
+  /* Hide Genre + the per-mode score-out-of-10 toggles close out the rating
+     section as one group: no divider between them, and no trailing border
+     under the last one (:last-child can't do it — the hidden rows for the
+     other modes are still in the DOM). */
+  #hide-genre-row { border-bottom: none; padding-bottom: 8px !important; }
+  .toggle-row.score10-row { border-top: none; border-bottom: none; padding-bottom: 0; }
   .toggle-row.weights-fallback-toggle {
     padding-bottom: 14px;
   }
@@ -1532,7 +1575,11 @@
       border: 1px solid var(--border);
       box-shadow: 0 16px 48px rgba(0,0,0,0.6);
       overflow: hidden;
-      transition: width 0.25s ease, height 0.25s ease;
+      transition: width 0.25s ease, height 0.25s ease, top 0.25s ease, bottom 0.25s ease;
+    }
+    .preview-panel.preview-at-top {
+      bottom: auto;
+      top: 12px;
     }
     .preview-panel .panel-header,
     .preview-panel .preview-meta,
@@ -1685,7 +1732,7 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
       <div class="notch"></div>
       <div class="panel-header">
         <span class="panel-title">Configuration</span>
-        <button type="button" class="panel-index whatsnew-version" id="whatsnew-version" onclick="openWhatsNew()" data-acked="true" title="What's new">v1.1.0</button>
+        <button type="button" class="panel-index whatsnew-version" id="whatsnew-version" onclick="openWhatsNew()" data-acked="true" title="What's new">v1.2-dev</button>
       </div>
       <div class="panel-body">
 
@@ -1788,6 +1835,14 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
               <input type="text" id="cfg-mdblist-key" placeholder="If blank uses server key." oninput="build(); queuePreviewReload(); saveApiKeys()">
               <div class="field-hint" id="mdblist-key-hint" style="display:none"></div>
             </div>
+            
+            <div class="field" id="trending-schedule-field" style="display:none; margin-top: 12px; padding: 10px; background: rgba(255,255,255,0.03); border-radius: 6px; border: 1px solid rgba(255,255,255,0.08);">
+              <label class="field-label" style="display:flex; align-items:center; gap:6px;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                Trending Refresh Schedule
+              </label>
+              <div class="field-hint" id="trending-schedule-hint" style="margin-top:4px;"></div>
+            </div>
             <div class="field">
               <label class="field-label">Primary Client</label>
               <select id="cfg-primary-client" onchange="onPrimaryClientChange()">
@@ -1800,11 +1855,15 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
               <label class="field-label">User Native Language</label>
               <select id="cfg-language" oninput="build(); queuePreviewReload(); saveApiKeys()">
                 <option value="en" selected>English ★</option>
-                <option value="es">Spanish</option>
+                <option value="es">Spanish ★</option>
+                <option value="es-es">Spanish (Spain) ★</option>
+                <option value="es-mx">Spanish (Mexico) ★</option>
                 <option value="fr">French ★</option>
+                <option value="fr-fr">French (France) ★</option>
                 <option value="de">German</option>
                 <option value="it">Italian ★</option>
                 <option value="pt">Portuguese ★</option>
+                <option value="pt-br">Portuguese (Brazil) ★</option>
                 <option value="ja">Japanese</option>
                 <option value="ko">Korean</option>
                 <option value="zh">Chinese</option>
@@ -1843,13 +1902,65 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
             </div>
             <div class="field" style="margin-top:6px;">
               <label class="field-label">Language Priority</label>
-              <select id="cfg-logo-priority" onchange="build(); queuePreviewReload()">
+              <select id="cfg-logo-priority" onchange="syncSecondaryLangVisibility(); build(); queuePreviewReload()">
                 <option value="native_original" selected>Native &gt; Original &gt; Text</option>
                 <option value="original_native">Original &gt; Native &gt; Text</option>
                 <option value="native_if_original_english">Native if Original, otherwise English &gt; Original &gt; Text</option>
-                <option value="native_text">Native Language &gt; Text</option>
+                <option value="native_text">Native &gt; English &gt; Neutral &gt; Text</option>
+                <option value="native_custom_text">Native &gt; Custom &gt; Text</option>
+                <option value="native_custom_original_text">Native &gt; Custom &gt; Original &gt; Text</option>
               </select>
-              <div class="field-hint">Original is the source language of the content, text is plain text.</div>
+              <div class="field-hint">Original is the source language of the content, text is plain text. Custom is your secondary language, below.</div>
+            </div>
+            <div class="field" id="secondary-lang-field" style="margin-top:6px; display:none;">
+              <label class="field-label">Secondary Language (Custom)</label>
+              <select id="cfg-language-secondary" oninput="build(); queuePreviewReload()">
+                <option value="" selected>None</option>
+                <option value="en">English ★</option>
+                <option value="es">Spanish ★</option>
+                <option value="es-es">Spanish (Spain) ★</option>
+                <option value="es-mx">Spanish (Mexico) ★</option>
+                <option value="fr">French ★</option>
+                <option value="fr-fr">French (France) ★</option>
+                <option value="de">German</option>
+                <option value="it">Italian ★</option>
+                <option value="pt">Portuguese ★</option>
+                <option value="pt-br">Portuguese (Brazil) ★</option>
+                <option value="ja">Japanese</option>
+                <option value="ko">Korean</option>
+                <option value="zh">Chinese</option>
+                <option value="ru">Russian</option>
+                <option value="tr">Turkish</option>
+                <option value="pl">Polish</option>
+                <option value="nl">Dutch</option>
+                <option value="sv">Swedish</option>
+                <option value="da">Danish</option>
+                <option value="fi">Finnish</option>
+                <option value="no">Norwegian</option>
+                <option value="el">Greek</option>
+                <option value="cs">Czech</option>
+                <option value="hu">Hungarian</option>
+                <option value="ro">Romanian</option>
+                <option value="uk">Ukrainian</option>
+                <option value="bg">Bulgarian</option>
+                <option value="hr">Croatian</option>
+                <option value="sk">Slovak</option>
+                <option value="ar">Arabic</option>
+                <option value="hi">Hindi</option>
+                <option value="bn">Bengali</option>
+                <option value="ta">Tamil</option>
+                <option value="te">Telugu</option>
+                <option value="ml">Malayalam</option>
+                <option value="ur">Urdu</option>
+                <option value="fa">Persian</option>
+                <option value="he">Hebrew</option>
+                <option value="id">Indonesian</option>
+                <option value="ms">Malay</option>
+                <option value="vi">Vietnamese</option>
+                <option value="sw">Swahili</option>
+                <option value="af">Afrikaans</option>
+              </select>
+              <div class="field-hint">Tried after your native language for the "Custom" priority modes above. ★ indicates the poster text is fully translated, not just the logo.</div>
             </div>
             <div class="field" style="margin-top:6px;">
               <label class="field-label">Fallback Poster Style</label>
@@ -1861,23 +1972,67 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
             </div>
             <div class="field cfg-sep">
               <label class="field-label">Top Vignette</label>
-              <select id="cfg-top-gradient" onchange="build(); queuePreviewReload()">
+              <select id="cfg-top-gradient" onchange="updateGradientFields(); build(); queuePreviewReload()">
                 <option value="off">Off</option>
                 <option value="low">Low</option>
                 <option value="medium" selected>Medium</option>
                 <option value="high">High</option>
+                <option value="custom">Custom</option>
               </select>
               <div class="field-hint">The power of the darkening applied to the top.</div>
             </div>
+            <div id="top-gradient-custom-fields" style="display:none; margin-bottom:14px;">
+              <div class="field">
+                <label class="field-label">Opacity</label>
+                <div class="range-row">
+                  <input type="range" id="cfg-tg-op" min="0" max="1" step="0.05" value="1.0" oninput="updateWeightRange(this,'rv-tg-op'); build(); queuePreviewReload()">
+                  <span class="range-val" id="rv-tg-op">100%</span>
+                </div>
+              </div>
+              <div class="field">
+                <label class="field-label">Height</label>
+                <div class="range-row">
+                  <input type="range" id="cfg-tg-ht" min="0" max="1" step="0.05" value="0.25" oninput="updateWeightRange(this,'rv-tg-ht'); build(); queuePreviewReload()">
+                  <span class="range-val" id="rv-tg-ht">25%</span>
+                </div>
+              </div>
+            </div>
             <div class="field">
               <label class="field-label">Bottom Vignette</label>
-              <select id="cfg-bottom-gradient" onchange="build(); queuePreviewReload()">
+              <select id="cfg-bottom-gradient" onchange="updateGradientFields(); build(); queuePreviewReload()">
                 <option value="off">Off</option>
                 <option value="low">Low</option>
                 <option value="medium">Medium</option>
                 <option value="high" selected>High</option>
+                <option value="custom">Custom</option>
               </select>
               <div class="field-hint">Lowering may hurt rating and logo legibility.</div>
+            </div>
+            <div id="bottom-gradient-custom-fields" style="display:none; margin-bottom:14px;">
+              <div class="field">
+                <label class="field-label">Opacity</label>
+                <div class="range-row">
+                  <input type="range" id="cfg-bg-op" min="0" max="1" step="0.05" value="1.0" oninput="updateWeightRange(this,'rv-bg-op'); build(); queuePreviewReload()">
+                  <span class="range-val" id="rv-bg-op">100%</span>
+                </div>
+              </div>
+              <div class="field">
+                <label class="field-label">Height</label>
+                <div class="range-row">
+                  <input type="range" id="cfg-bg-ht" min="0" max="1" step="0.05" value="0.25" oninput="updateWeightRange(this,'rv-bg-ht'); build(); queuePreviewReload()">
+                  <span class="range-val" id="rv-bg-ht">25%</span>
+                </div>
+              </div>
+            </div>
+            <div class="toggle-row">
+              <div>
+                <div class="toggle-label">Vignette Only On Sash</div>
+                <div class="field-hint" style="margin-top:2px;">Only draw the top vignette when a sash is visible.</div>
+              </div>
+              <label class="toggle-switch">
+                <input type="checkbox" id="tog-top-vignette-sash-only" onchange="build(); queuePreviewReload()">
+                <div class="toggle-track"><div class="toggle-thumb"></div></div>
+              </label>
             </div>
           </div>
         </div>
@@ -1903,12 +2058,19 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
             <div id="rating-alt-colors-toggle" style="margin-bottom:14px;">
               <div class="field">
                 <label class="field-label">Colour Palette</label>
-                <select id="cfg-score-color-mode" onchange="build(); queuePreviewReload()">
+                <select id="cfg-score-color-mode" onchange="updateCustomPaletteFields(); build(); queuePreviewReload()">
                   <option value="2" selected>Prestige</option>
                   <option value="0">Light</option>
                   <option value="1">Dark/light</option>
+                  <option value="3">Custom</option>
                 </select>
               </div>
+            </div>
+            <div class="field" id="score-custom-palette-field" style="display:none; margin-top:-2px; margin-bottom:14px;">
+              <label class="field-label">Custom Palette</label>
+              <textarea id="cfg-score-custom-palette" placeholder="0:#FF5050&#10;50:#FFD25A&#10;70:#78FFA0&#10;85:#BE8CFF" spellcheck="false"
+                        oninput="build(); queuePreviewReload()"></textarea>
+              <div class="field-hint">Use score:hex entries. The highest score threshold below the rating is used.</div>
             </div>
             <div id="rating-mode1-fields">
               <div class="field">
@@ -1919,6 +2081,31 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
                   <option value="2">Year + Info sash</option>
                 </select>
                 <div class="field-hint">Picks what to append after the genre.</div>
+              </div>
+              <div class="field" style="border-top:none; padding-top:0; margin-top:6px;">
+                <label class="field-label">Text Colour</label>
+                <div class="color-field">
+                  <input type="text" id="cfg-rtc-m1" placeholder="Default" maxlength="6"                         oninput="_syncRtcM(1); build(); queuePreviewReload()">
+                  <input type="color" id="cfg-rtcp-m1" value="#c8c8c8"                         oninput="document.getElementById('cfg-rtc-m1').value=this.value.slice(1).toUpperCase(); _setAllRtc(this.value.slice(1).toUpperCase()); build(); queuePreviewReload()">
+                </div>
+                <div class="field-hint">Hex colour for the genre/rating text. Leave blank for the mode default.</div>
+              </div>
+              <div class="field" style="border-top:none; padding-top:0; margin-top:6px;">
+                <label class="field-label">Glow Colour</label>
+                <select id="cfg-glow-color-mode" onchange="updateGlowColorField(); build(); queuePreviewReload()">
+                  <option value="white" selected>White</option>
+                  <option value="match">Match Bar Colour</option>
+                  <option value="custom">Custom</option>
+                </select>
+              </div>
+              <div class="field" id="glow-color-custom-field" style="display:none;">
+                <label class="field-label">Custom Glow Colour</label>
+                <div class="color-field">
+                  <input type="text" id="cfg-glow-color" placeholder="FFFFFF" maxlength="6"
+                         oninput="_syncGlowColorPicker(); build(); queuePreviewReload()">
+                  <input type="color" id="cfg-glow-color-picker" value="#ffffff"
+                         oninput="document.getElementById('cfg-glow-color').value=this.value.slice(1).toUpperCase(); build(); queuePreviewReload()">
+                </div>
               </div>
               <div class="field">
                 <label class="field-label">Font Size</label>
@@ -1943,14 +2130,13 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
               </div>
             </div>
             <div id="rating-mode2-fields" style="display:none;">
-              <div class="toggle-row cfg-sep">
-                <div>
-                  <div class="toggle-label">Display score out of 10</div>
+              <div class="field" style="border-top:none; padding-top:0; margin-top:6px;">
+                <label class="field-label">Text Colour</label>
+                <div class="color-field">
+                  <input type="text" id="cfg-rtc-m2" placeholder="Default" maxlength="6"                         oninput="_syncRtcM(2); build(); queuePreviewReload()">
+                  <input type="color" id="cfg-rtcp-m2" value="#c8c8c8"                         oninput="document.getElementById('cfg-rtc-m2').value=this.value.slice(1).toUpperCase(); _setAllRtc(this.value.slice(1).toUpperCase()); build(); queuePreviewReload()">
                 </div>
-                <label class="toggle-switch">
-                  <input type="checkbox" id="tog-score-out-of-10" onchange="build(); queuePreviewReload()">
-                  <div class="toggle-track"><div class="toggle-thumb"></div></div>
-                </label>
+                <div class="field-hint">Hex colour for the genre/rating text. Leave blank for the mode default.</div>
               </div>
               <div class="field" style="margin-top:10px;">
                 <label class="field-label">Font Size</label>
@@ -1976,6 +2162,14 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
                   <option value="2">Year + Rating</option>
                 </select>
                 <div class="field-hint">If rating is not chosen the seperator color will give an approximation.</div>
+              </div>
+              <div class="field" style="border-top:none; padding-top:0; margin-top:6px;">
+                <label class="field-label">Text Colour</label>
+                <div class="color-field">
+                  <input type="text" id="cfg-rtc-m3" placeholder="Default" maxlength="6"                         oninput="_syncRtcM(3); build(); queuePreviewReload()">
+                  <input type="color" id="cfg-rtcp-m3" value="#c8c8c8"                         oninput="document.getElementById('cfg-rtc-m3').value=this.value.slice(1).toUpperCase(); _setAllRtc(this.value.slice(1).toUpperCase()); build(); queuePreviewReload()">
+                </div>
+                <div class="field-hint">Hex colour for the genre/rating text. Leave blank for the mode default.</div>
               </div>
               <div class="field">
                 <label class="field-label">Font Size</label>
@@ -2013,13 +2207,14 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
               </div>
               <div class="field" id="bar-accent-field" style="display:none; margin-top:8px; margin-bottom:0;">
                 <label class="field-label">Rating Bar Colour</label>
-                <select id="cfg-bar-accent" onchange="build(); queuePreviewReload()">
+                <select id="cfg-bar-accent" onchange="updateCustomPaletteFields(); build(); queuePreviewReload()">
                   <option value="silver" selected>Pure Silver</option>
                   <option value="sample">Colour Sample</option>
                   <option value="gold">Pure Gold</option>
                   <option value="palette_2">Prestige</option>
                   <option value="palette_0">Light</option>
                   <option value="palette_1">Dark/Light</option>
+                  <option value="palette_custom">Custom</option>
                 </select>
               </div>
               <div class="field" style="margin-top:10px; margin-bottom:0;">
@@ -2031,24 +2226,13 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
                   <option value="sash">Info Sash</option>
                 </select>
               </div>
-              <div class="toggle-row">
-                <div>
-                  <div class="toggle-label">Display score out of 10</div>
+              <div class="field" style="border-top:none; padding-top:0; margin-top:6px;">
+                <label class="field-label">Text Colour</label>
+                <div class="color-field">
+                  <input type="text" id="cfg-rtc-m4" placeholder="Default" maxlength="6"                         oninput="_syncRtcM(4); build(); queuePreviewReload()">
+                  <input type="color" id="cfg-rtcp-m4" value="#c8c8c8"                         oninput="document.getElementById('cfg-rtc-m4').value=this.value.slice(1).toUpperCase(); _setAllRtc(this.value.slice(1).toUpperCase()); build(); queuePreviewReload()">
                 </div>
-                <label class="toggle-switch">
-                  <input type="checkbox" id="tog-bar-score-10" onchange="build(); queuePreviewReload()">
-                  <div class="toggle-track"><div class="toggle-thumb"></div></div>
-                </label>
-              </div>
-              <div class="toggle-row" id="bar-match-notch-row" style="display:none;">
-                <div>
-                  <div class="toggle-label">Match Notch Colour</div>
-                  <div class="field-hint" style="margin-top:2px;">Valid if sash is set to notch mode.</div>
-                </div>
-                <label class="toggle-switch">
-                  <input type="checkbox" id="tog-bar-match-notch" checked onchange="build(); queuePreviewReload()">
-                  <div class="toggle-track"><div class="toggle-thumb"></div></div>
-                </label>
+                <div class="field-hint">Hex colour for the genre/rating text. Leave blank for the mode default.</div>
               </div>
               <div class="field" style="margin-top:10px;">
                 <label class="field-label">Bar Height</label>
@@ -2069,6 +2253,23 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
                 <div class="range-row">
                   <input type="range" id="cfg-bar-frost" min="0.0" max="1.0" step="0.05" value="0.85" oninput="updateRange(this,'rng-bo5'); build(); queuePreviewReload()">
                   <span class="range-val" id="rng-bo5">0.85</span>
+                </div>
+              </div>
+              <div class="toggle-row" id="bar-reference-row">
+                <div>
+                  <div class="toggle-label">Reference Colour</div>
+                  <div class="field-hint" style="margin-top:2px;">Match the poster's true colour instead of the saturation tint.</div>
+                </div>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="tog-bar-frost-reference" onchange="onFrostReferenceChange(this)">
+                  <div class="toggle-track"><div class="toggle-thumb"></div></div>
+                </label>
+              </div>
+              <div class="field" id="bar-saturation-field">
+                <label class="field-label">Colour Saturation</label>
+                <div class="range-row">
+                  <input type="range" id="cfg-bar-frost-sat" min="0.0" max="2.0" step="0.05" value="1.20" oninput="updateRange(this,'rng-bsat'); build(); queuePreviewReload()">
+                  <span class="range-val" id="rng-bsat">1.20</span>
                 </div>
               </div>
               <div class="field">
@@ -2101,6 +2302,46 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
                   <span class="range-val" id="rng-ga">40</span>
                 </div>
               </div>
+            </div>
+            <div class="toggle-row cfg-sep" id="hide-genre-row">
+              <div>
+                <div class="toggle-label">Hide Genre</div>
+                <div class="field-hint" style="margin-top:2px;">Removes the genre text and associated spacers.</div>
+              </div>
+              <label class="toggle-switch">
+                <input type="checkbox" id="tog-hide-genre" onchange="build(); queuePreviewReload()">
+                <div class="toggle-track"><div class="toggle-thumb"></div></div>
+              </label>
+            </div>
+            <!-- Score-out-of-10 toggles: one per rating mode that prints a
+                 numeric score. Grouped here rather than inside each mode's
+                 own block so every mode-agnostic toggle sits together. -->
+            <div class="toggle-row score10-row" id="numeric-score10-row" style="display:none;">
+              <div>
+                <div class="toggle-label">Display score out of 10</div>
+              </div>
+              <label class="toggle-switch">
+                <input type="checkbox" id="tog-score-out-of-10" onchange="build(); queuePreviewReload()">
+                <div class="toggle-track"><div class="toggle-thumb"></div></div>
+              </label>
+            </div>
+            <div class="toggle-row score10-row" id="minimalist-score10-row" style="display:none;">
+              <div>
+                <div class="toggle-label">Display score out of 10</div>
+              </div>
+              <label class="toggle-switch">
+                <input type="checkbox" id="tog-minimalist-score-10" onchange="build(); queuePreviewReload()">
+                <div class="toggle-track"><div class="toggle-thumb"></div></div>
+              </label>
+            </div>
+            <div class="toggle-row score10-row" id="bar-score10-row" style="display:none;">
+              <div>
+                <div class="toggle-label">Display score out of 10</div>
+              </div>
+              <label class="toggle-switch">
+                <input type="checkbox" id="tog-bar-score-10" onchange="build(); queuePreviewReload()">
+                <div class="toggle-track"><div class="toggle-thumb"></div></div>
+              </label>
             </div>
           </div>
         </div>
@@ -2164,6 +2405,16 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
                 <span class="range-val" id="rng-lb">0.28</span>
               </div>
             </div>
+            <div class="toggle-row" style="border-bottom:none;">
+              <div>
+                <div class="toggle-label">Bottom Anchor</div>
+                <div class="field-hint">Logos only expand upwards, ideal for bottom logo placement. By default logos share a midline, expanding in both directions vertically. Configure this using a horizontal logo, for example 2022 "Let the Right one in". </div>
+              </div>
+              <label class="toggle-switch">
+                <input type="checkbox" id="tog-logo-bottom-anchor" onchange="build(); queuePreviewReload()">
+                <div class="toggle-track"><div class="toggle-thumb"></div></div>
+              </label>
+            </div>
             </div>
           </div>
         </div>
@@ -2193,6 +2444,16 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
                 <option value="gold">Black, Gold Trim</option>
               </select>
             </div>
+            <div class="field" id="sash-text-color-field" style="display:none; border-top:none; padding-top:0; margin-top:6px;">
+              <label class="field-label">Text Colour</label>
+              <div class="color-field">
+                <input type="text" id="cfg-sash-text-color" placeholder="Default" maxlength="6"
+                       oninput="_syncSashColorPicker(); build(); queuePreviewReload()">
+                <input type="color" id="cfg-sash-text-color-picker" value="#e1e1e1"
+                       oninput="document.getElementById('cfg-sash-text-color').value=this.value.slice(1).toUpperCase(); build(); queuePreviewReload()">
+              </div>
+              <div class="field-hint">Hex colour for the sash/notch text. Leave blank for the mode default.</div>
+            </div>
             <div class="toggle-row">
               <div>
                 <div class="toggle-label">Greyscale Poster if Unavailable</div>
@@ -2206,10 +2467,21 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
             <div class="toggle-row" id="sash-release-cinema-only-row">
               <div>
                 <div class="toggle-label">Release Status: Unavailable Only</div>
-                <div class="field-hint">Only show the release status sash when a title is in cinemas or in production.</div>
+                <div class="field-hint">Only show the release status sash when a title is in cinemas or in production. Leave off to also show Streaming / Physical / Airing / Ended / Cancelled — enabling this suppresses those regardless of their position in the sash order.</div>
               </div>
               <label class="toggle-switch">
-                <input type="checkbox" id="tog-release-cinema-only" checked onchange="build(); queuePreviewReload()">
+                <input type="checkbox" id="tog-release-cinema-only" onchange="build(); queuePreviewReload()">
+                <div class="toggle-track"><div class="toggle-thumb"></div></div>
+              </label>
+            </div>
+
+            <div class="toggle-row">
+              <div>
+                <div class="toggle-label">Winner Star</div>
+                <div class="field-hint">Prefix a ★ before award winners.</div>
+              </div>
+              <label class="toggle-switch">
+                <input type="checkbox" id="tog-sash-winner-star" onchange="build(); queuePreviewReload()">
                 <div class="toggle-track"><div class="toggle-thumb"></div></div>
               </label>
             </div>
@@ -2269,6 +2541,23 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
                 <div class="range-row">
                   <input type="range" id="cfg-sash-badge-frost-opacity" min="0.00" max="1.00" step="0.01" value="0.75" oninput="updateRange(this,'rng-sbfo'); build(); queuePreviewReload()">
                   <span class="range-val" id="rng-sbfo">0.75</span>
+                </div>
+              </div>
+              <div class="toggle-row" id="sash-reference-row" style="display:none;">
+                <div>
+                  <div class="toggle-label">Reference Colour</div>
+                  <div class="field-hint" style="margin-top:2px;">Match the poster's true colour instead of the saturation tint.</div>
+                </div>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="tog-sash-frost-reference" onchange="onFrostReferenceChange(this)">
+                  <div class="toggle-track"><div class="toggle-thumb"></div></div>
+                </label>
+              </div>
+              <div class="field" id="sash-badge-saturation-field" style="display:none;">
+                <label class="field-label">Colour Saturation</label>
+                <div class="range-row">
+                  <input type="range" id="cfg-sash-badge-frost-sat" min="0.00" max="2.00" step="0.05" value="1.20" oninput="updateRange(this,'rng-sbsat'); build(); queuePreviewReload()">
+                  <span class="range-val" id="rng-sbsat">1.20</span>
                 </div>
               </div>
             </div>
@@ -2602,22 +2891,43 @@ function onPrimaryClientChange({ rebuild = true } = {}) {
 const TMDB_IMG = 'https://image.tmdb.org/t/p/w92';
 
 const SASH_SLOTS = [
-  { id:'wins',       label:'Best Picture / Major Emmy Win',     color:'#c9a84c' },
-  { id:'gg_wins',    label:'Golden Globe Win',                  color:'#c9a84c' },
-  { id:'festival',   label:'Festival Winner',                   color:'#c9a84c' },
-  { id:'pic_noms',   label:'Best Picture / Major Emmy Nom',     color:'#9a9a9a' },
-  { id:'gg_noms',    label:'Golden Globe Nom',                  color:'#9a9a9a' },
-  { id:'studio',     label:'Notable Studio Name',               color:'#9060cc' },
-  { id:'director',   label:'Notable Director Name',             color:'#9060cc' },
-  { id:'cast',       label:'Notable Cast Name',                 color:'#4ab87a' },
-  { id:'trending',   label:'TMDB Trending Top 40',              color:'#5aaaff' },
-  { id:'cult',       label:'Cult Classic',                      color:'#5aaaff' },
-  { id:'foreign',    label:'Foreign Language',                  color:'#3ab0a8' },
-  { id:'new_release', label:'Newly Streaming (New)',                              color:'#e05555' },
-  { id:'metacritic', label:'Metacritic Must-See',               color:'#9a9a9a' },
-  { id:'true_story', label:'True Story',                        color:'#3ab0a8' },
-  { id:'structural',     label:'Short / Mini / Binge',              color:'#3ab0a8' },
-  { id:'release_status', label:'Release Status (extra API call)',    color:'#e05555' },
+  // Prestige — rare and timeless, so they outrank everything else.
+  { id:'wins',           label:'Best Picture / Major Emmy Win',     color:'#c9a84c' },
+  { id:'gg_wins',        label:'Major Golden Globe Win',            color:'#c9a84c' },
+  { id:'festival',       label:'Festival Winner',                   color:'#c9a84c' },
+  { id:'pic_noms',       label:'Best Picture / Major Emmy Nom',     color:'#9a9a9a' },
+  { id:'metacritic',     label:'Metacritic Must-See',               color:'#9a9a9a' },
+  { id:'gg_noms',        label:'Major Golden Globe Nom',            color:'#9a9a9a' },
+  // Timely — narrow, time-boxed windows. Above the curated lists below so a
+  // notable-cast match can't bury "this is new right now".
+  { id:'trending',       label:'TMDB Trending Top {{TRENDING_FETCH_COUNT}}', color:'#5aaaff' },
+  { id:'trending_broad', label:'TMDB Trending {{TRENDING_FETCH_COUNT_PLUS_ONE}}-{{TRENDING_BROAD_FETCH_COUNT}}', color:'#5aaaff' },
+  { id:'premiere',       label:'Premiere',                          color:'#e05555' },
+  { id:'new_release',    label:'Newly Streaming (New)',             color:'#e05555' },
+  { id:'just_added',     label:'Just Added',                        color:'#e05555' },
+  { id:'new_season',     label:'New Season',                        color:'#e05555' },
+  { id:'season_finale',  label:'Season Finale',                     color:'#e05555' },
+  // Curated taste — common matches, so they sit under the timely tier.
+  { id:'studio',         label:'Notable Studio Name',               color:'#9060cc' },
+  { id:'director',       label:'Notable Director Name',             color:'#9060cc' },
+  { id:'cast',           label:'Notable Cast Name',                 color:'#4ab87a' },
+  // Static flavour — always true, never urgent.
+  { id:'cult',           label:'Cult Classic',                      color:'#5aaaff' },
+  { id:'foreign',        label:'Foreign Language',                  color:'#3ab0a8' },
+  { id:'true_story',     label:'True Story',                        color:'#3ab0a8' },
+  { id:'short_film',     label:'Short Film',                        color:'#3ab0a8' },
+  { id:'mini_series',    label:'Miniseries',                        color:'#3ab0a8' },
+  { id:'binge_ready',    label:'Binge Ready',                       color:'#3ab0a8' },
+  // Broad lifecycle / release-status fallbacks — match almost everything, so
+  // they sit last and only surface when nothing above did.
+  { id:'returning',      label:'Returning',                         color:'#e05555' },
+  { id:'airing',         label:'Airing',                            color:'#e05555' },
+  { id:'cancelled',      label:'Cancelled',                         color:'#e05555' },
+  { id:'ended',          label:'Ended',                             color:'#e05555' },
+  { id:'physical',       label:'Physical',                          color:'#e05555' },
+  { id:'streaming',      label:'Streaming',                         color:'#e05555' },
+  { id:'cinema',         label:'Cinema',                            color:'#e05555' },
+  { id:'production',     label:'Production',                        color:'#e05555' },
 ];
 
 // All sash slots are enabled by default.  "release_status" sits last in the
@@ -2706,6 +3016,17 @@ previewPanel.addEventListener('click', () => {
 document.getElementById('preview-frame').addEventListener('click', () => {
   if (previewPanel.classList.contains('expanded')) collapsePreview();
 });
+
+window.addEventListener('scroll', () => {
+  if (!_isMobileViewport()) return;
+  // When scrolled to the bottom (with a 50px buffer), move preview to top right
+  const scrolledToBottom = window.innerHeight + window.scrollY >= document.body.offsetHeight - 50;
+  if (scrolledToBottom && !previewPanel.classList.contains('expanded')) {
+    previewPanel.classList.add('preview-at-top');
+  } else {
+    previewPanel.classList.remove('preview-at-top');
+  }
+}, { passive: true });
 
 function showTab(tab) {
   document.querySelectorAll('.section').forEach(s => {
@@ -2827,23 +3148,39 @@ async function fetchServerCaps() {
     serverCaps = await resp.json();
     serverCapsLoaded = true;
     updateKeyBadges();
+    
+    if (serverCaps.trending_fetch_count) {
+      const trSash = SASH_SLOTS.find(s => s.id === 'trending');
+      if (trSash) trSash.label = `TMDB Trending Top ${serverCaps.trending_fetch_count}`;
+      buildSashList();
+    }
+    
+    const trField = document.getElementById('trending-schedule-field');
+    const trHint = document.getElementById('trending-schedule-hint');
+    if (trField && trHint) {
+      if (serverCaps.trending_fetch_time) {
+        trField.style.display = '';
+        const t = serverCaps.trending_fetch_time;
+        const tz = serverCaps.trending_fetch_timezone || 'UTC';
+        const hr = serverCaps.trending_next_refresh_hours;
+        trHint.innerHTML = `Refreshes occur at <strong>${t}</strong> (${tz}).<br>Next refresh is in <strong>${hr} hours</strong>.`;
+      } else {
+        trField.style.display = 'none';
+      }
+    }
   } catch(e) {}
 }
 
 function updateKeyBadges() {
-  const tmdbBadge = document.getElementById('tmdb-key-badge');
-  const mdbBadge  = document.getElementById('mdblist-key-badge');
   const tmdbHint  = document.getElementById('tmdb-key-hint');
   const mdbHint   = document.getElementById('mdblist-key-hint');
   const tmdbInput = document.getElementById('cfg-tmdb-key');
   const mdbInput  = document.getElementById('cfg-mdblist-key');
 
   if (serverCaps.tmdb_key_set) {
-    tmdbBadge.style.display = ''; tmdbBadge.textContent = 'Server Key Set'; tmdbBadge.className = 'server-key-badge';
     tmdbHint.style.display = ''; tmdbHint.textContent = 'Server-side TMDB key configured. Your key (if entered) takes priority.';
     tmdbInput.placeholder = 'Optional — server key used if blank';
   } else {
-    tmdbBadge.style.display = ''; tmdbBadge.textContent = 'No Server Key'; tmdbBadge.className = 'server-key-badge missing';
     tmdbHint.style.display = 'none';
     tmdbInput.placeholder = 'Required — no server key configured';
   }
@@ -3425,6 +3762,29 @@ function escHtml(s) {
   return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+function normaliseCustomPalette(raw = vEl('cfg-score-custom-palette')) {
+  return raw
+    .split(/[\n,;]+/)
+    .map(part => {
+      const m = part.trim().match(/^([0-9]{1,3}(?:\.[0-9]+)?)\s*:\s*#?([0-9a-fA-F]{6})$/);
+      if (!m) return '';
+      const score = Math.max(0, Math.min(100, Math.round(parseFloat(m[1]))));
+      return `${score}:${m[2].toUpperCase()}`;
+    })
+    .filter(Boolean)
+    .join(',');
+}
+
+// The secondary-language picker is only meaningful for the "Custom" priority
+// modes, so only reveal it then.
+function syncSecondaryLangVisibility() {
+  const lp    = vEl('cfg-logo-priority') || 'native_original';
+  const field = document.getElementById('secondary-lang-field');
+  if (!field) return;
+  const show  = (lp === 'native_custom_text' || lp === 'native_custom_original_text');
+  field.style.display = show ? '' : 'none';
+}
+
 function build() {
   const url = buildPreviewUrl();
   if (_SHOW_URL_BOX) {
@@ -3464,11 +3824,23 @@ function buildBaseParams({ usePlaceholders = false, domainOverride = null } = {}
   if (userTmdbKey)    params.set('tmdb_key',     usePlaceholders ? '{tmdb_key}'    : userTmdbKey);
   if (userMdblistKey) params.set('mdblist_key',  usePlaceholders ? '{mdblist_key}' : userMdblistKey);
   params.set('top_gradient',    vEl('cfg-top-gradient')    || 'high');
+  if (vEl('cfg-top-gradient') === 'custom') {
+    params.set('top_gradient_opacity', document.getElementById('cfg-tg-op').value);
+    params.set('top_gradient_height', document.getElementById('cfg-tg-ht').value);
+  }
   params.set('bottom_gradient', vEl('cfg-bottom-gradient') || 'high');
+  if (vEl('cfg-bottom-gradient') === 'custom') {
+    params.set('bottom_gradient_opacity', document.getElementById('cfg-bg-op').value);
+    params.set('bottom_gradient_height', document.getElementById('cfg-bg-ht').value);
+  }
+  if (c('tog-top-vignette-sash-only')) params.set('top_vignette_sash_only', 'true');
+  if (c('tog-hide-genre')) params.set('hide_genre', 'true');
   params.set('fallback_to_imdb', c('tog-fallback-imdb') ? 'true' : 'false');
 
   // ── Rating / Genre Label ───────────────────────────────────────────────────
   params.set('rating_display_mode', ratingMode);
+  // Global frosted colour mode (bar, notch and sash share it).
+  if (c('tog-bar-frost-reference')) params.set('frost_reference', 'true');
   if (ratingMode !== 0) {
     // Colour palette: exposed for the modes whose pip/score colour visibly uses it
     if (ratingMode === 1 || ratingMode === 3) {
@@ -3482,6 +3854,10 @@ function buildBaseParams({ usePlaceholders = false, domainOverride = null } = {}
       params.set('score_glow_threshold', ni('cfg-glow-thresh'));
       params.set('score_glow_blur',      ni('cfg-glow-blur'));
       params.set('score_glow_alpha',     ni('cfg-glow-alpha'));
+      const _glowMode = vEl('cfg-glow-color-mode');
+      if (_glowMode === 'match') params.set('score_glow_color', 'match');
+      else if (_glowMode === 'custom' && /^[0-9a-fA-F]{6}$/.test(vEl('cfg-glow-color')))
+        params.set('score_glow_color', vEl('cfg-glow-color'));
     } else if (ratingMode === 2) {
       params.set('numeric_score_font_size_ratio', n('cfg-font-mode2').toFixed(3));
       params.set('numeric_score_y_offset',        n('cfg-y-mode2').toFixed(2));
@@ -3491,6 +3867,7 @@ function buildBaseParams({ usePlaceholders = false, domainOverride = null } = {}
       params.set('minimalist_mode_font_size_ratio', n('cfg-font-mode3').toFixed(3));
       params.set('minimalist_mode_font_x_offset',   n('cfg-x-mode3').toFixed(3));
       params.set('minimalist_mode_font_y_offset',   n('cfg-y-mode3').toFixed(3));
+      params.set('minimalist_score_out_of_10',      c('tog-minimalist-score-10') ? 'true' : 'false');
     } else if (ratingMode === 4) {
       params.set('bar_style',           vEl('cfg-bar-style') || 'frosted');
       const _bs = vEl('cfg-bar-style') || '';
@@ -3498,13 +3875,22 @@ function buildBaseParams({ usePlaceholders = false, domainOverride = null } = {}
         params.set('bar_accent', vEl('cfg-bar-accent') || 'silver');
       params.set('bar_append',          vEl('cfg-bar4-append') || 'rating_year');
       params.set('bar_score_out_of_10', c('tog-bar-score-10') ? 'true' : 'false');
-      if (_bs === 'frosted' || _bs === 'rating_frosted')
-        params.set('bar_match_notch', c('tog-bar-match-notch') ? 'true' : 'false');
       params.set('bar_height_ratio',    n('cfg-bar-height').toFixed(3));
       params.set('bar_font_size_ratio', n('cfg-bar-font').toFixed(2));
       params.set('bar_frost_opacity',   n('cfg-bar-frost').toFixed(2));
+      params.set('bar_frost_saturation', n('cfg-bar-frost-sat').toFixed(2));
       params.set('bar_bottom_inset',    n('cfg-bar-inset').toFixed(3));
     }
+    const _usesCustomPalette =
+      ((ratingMode === 1 || ratingMode === 3) && ni('cfg-score-color-mode') === 3) ||
+      (ratingMode === 4 &&
+       (vEl('cfg-bar-style') === 'rating_black' || vEl('cfg-bar-style') === 'rating_frosted') &&
+       vEl('cfg-bar-accent') === 'palette_custom');
+    const _customPalette = normaliseCustomPalette();
+    if (_usesCustomPalette && _customPalette) params.set('score_custom_palette', _customPalette);
+    const _rtcEl = document.getElementById('cfg-rtc-m' + ratingMode);
+    const _rtc = _rtcEl ? _rtcEl.value.trim() : '';
+    if (/^[0-9a-fA-F]{6}$/i.test(_rtc)) params.set('rating_text_color', _rtc);
     // Rating weights only affect the displayed score
     const mw = getWeights('movie-weights', MOVIE_SOURCES);
     const tw = getWeights('tv-weights',    TV_SOURCES);
@@ -3518,25 +3904,41 @@ function buildBaseParams({ usePlaceholders = false, domainOverride = null } = {}
   params.set('original_art_source',   vEl('cfg-original-art-source') || 'primary');
   params.set('logo_language',         logoLanguage);
   params.set('logo_priority',         vEl('cfg-logo-priority') || 'native_original');
+  {
+    // Only emit the secondary language for the priority modes that consult it,
+    // so unrelated URLs stay clean and cache keys don't needlessly diverge.
+    const _lp  = vEl('cfg-logo-priority') || 'native_original';
+    const _sec = vEl('cfg-language-secondary') || '';
+    if (_sec && (_lp === 'native_custom_text' || _lp === 'native_custom_original_text')) {
+      params.set('logo_language_secondary', _sec);
+    }
+  }
   params.set('fallback_bg_style',     vEl('cfg-fallback-bg-style') || 'minimal');
   params.set('logo_max_w_ratio',      n('cfg-logo-w').toFixed(2));
-  params.set('logo_max_h_ratio',  n('cfg-logo-h').toFixed(2));
-  params.set('logo_bottom_ratio', n('cfg-logo-bottom').toFixed(2));
+  params.set('logo_max_h_ratio',      n('cfg-logo-h').toFixed(2));
+  params.set('logo_bottom_ratio',     n('cfg-logo-bottom').toFixed(2));
+  if (c('tog-logo-bottom-anchor')) params.set('logo_bottom_anchor', 'true');
 
   // ── Info Sash ──────────────────────────────────────────────────────────────
   params.set('sash_mode', sashMode);
   params.set('cinema_greyscale', c('tog-cinema-greyscale') ? 'true' : 'false');
   params.set('cinema_greyscale_skip_if_available', c('tog-cinema-greyscale-skip') ? 'true' : 'false');
   params.set('release_status_cinema_only', c('tog-release-cinema-only') ? 'true' : 'false');
+
   if (showSash) {
+    if (c('tog-sash-winner-star')) params.set('sash_winner_star', 'true');
+    const _stc = document.getElementById('cfg-sash-text-color').value.trim();
+    if (/^[0-9a-fA-F]{6}$/i.test(_stc)) params.set('sash_text_color', _stc);
     if (sashMode === 'notch') {
       params.set('sash_badge_style',         vEl('cfg-sash-badge-style') || 'silver');
       params.set('sash_badge_size_w',        n('cfg-sash-badge-size-w').toFixed(2));
       params.set('sash_badge_size_h',        n('cfg-sash-badge-size-h').toFixed(2));
       params.set('sash_badge_inset',         n('cfg-sash-badge-inset').toFixed(3));
       params.set('sash_badge_font_ratio',    n('cfg-sash-badge-font-ratio').toFixed(2));
-      if (vEl('cfg-sash-badge-style') === 'frosted')
+      if (vEl('cfg-sash-badge-style') === 'frosted') {
         params.set('sash_badge_frost_opacity', n('cfg-sash-badge-frost-opacity').toFixed(2));
+        params.set('sash_badge_frost_saturation', n('cfg-sash-badge-frost-sat').toFixed(2));
+      }
     } else {  // diagonal sash
       params.set('muted',              c('tog-muted') ? 'true' : 'false');
       params.set('sash_poster_color',  c('tog-sash-poster-color') ? 'true' : 'false');
@@ -3621,7 +4023,7 @@ function resetDefaults() {
   // pre-existing bug for textless / muted / sash-badge / award-sash.
   document.querySelectorAll('[id^="cfg-"],[id^="tog-"]').forEach(el => {
     if (preserve.has(el.id)) return;
-    if (el.type === 'range' || el.type === 'number' || el.type === 'text') {
+    if (el.type === 'range' || el.type === 'number' || el.type === 'text' || el.tagName === 'TEXTAREA') {
       el.value = el.defaultValue;
       if (el.type === 'range') el.dispatchEvent(new Event('input', { bubbles: true }));
     }
@@ -3719,11 +4121,29 @@ function updateSashBadgeFields() {
   // Release-status-only filter does nothing when no sash is drawn.
   document.getElementById('sash-release-cinema-only-row').style.display = shown ? '' : 'none';
   document.getElementById('sash-style-field').style.display      = isNotch ? '' : 'none';
+  document.getElementById('sash-text-color-field').style.display = shown ? '' : 'none';
   document.getElementById('sash-muted-row').style.display        = isBand ? '' : 'none';
   document.getElementById('sash-poster-color-row').style.display = isBand ? '' : 'none';
   document.getElementById('sash-badge-offsets').style.display    = isNotch ? '' : 'none';
   document.getElementById('sash-size-fields').style.display      = isBand ? '' : 'none';
   if (isNotch) { initCustomMobileSliders(); updateBadgeStyleFields(); }
+}
+
+function _syncSashColorPicker() {
+  const hex = document.getElementById('cfg-sash-text-color').value.trim();
+  if (/^[0-9a-fA-F]{6}$/.test(hex))
+    document.getElementById('cfg-sash-text-color-picker').value = '#' + hex;
+}
+
+function _syncGlowColorPicker() {
+  const hex = document.getElementById('cfg-glow-color').value.trim();
+  if (/^[0-9a-fA-F]{6}$/.test(hex))
+    document.getElementById('cfg-glow-color-picker').value = '#' + hex;
+}
+
+function updateGlowColorField() {
+  document.getElementById('glow-color-custom-field').style.display =
+    vEl('cfg-glow-color-mode') === 'custom' ? '' : 'none';
 }
 
 function onSashModeChange() {
@@ -3735,7 +4155,25 @@ function onSashModeChange() {
 
 function updateBadgeStyleFields() {
   const isFrosted = vEl('cfg-sash-badge-style') === 'frosted';
+  const ref = c('tog-sash-frost-reference');
   document.getElementById('sash-badge-opacity-field').style.display = isFrosted ? '' : 'none';
+  document.getElementById('sash-reference-row').style.display = isFrosted ? '' : 'none';
+  document.getElementById('sash-badge-saturation-field').style.display = (isFrosted && !ref) ? '' : 'none';
+  // A frosted notch takes over the colour controls, so refresh the Rating
+  // section's own toggle/slider (they hide while a frosted notch is shown).
+  _updateBarRatingRows();
+}
+
+// Reference Colour is one global setting shown in whichever panel owns the
+// saturation control (Rating, or Sash for a frosted notch). Keep both toggles in
+// sync and refresh which saturation slider is visible.
+function onFrostReferenceChange(el) {
+  const on = el.checked;
+  _setEl('tog-bar-frost-reference',  on ? 'true' : 'false');
+  _setEl('tog-sash-frost-reference', on ? 'true' : 'false');
+  updateBadgeStyleFields();
+  build();
+  queuePreviewReload();
 }
 
 function updateOriginalArt() {
@@ -3762,9 +4200,29 @@ function _updateBarRatingRows() {
   const cur = vEl('cfg-bar-accent') || '';
   const visible = [...document.querySelectorAll('#cfg-bar-accent option')].filter(o => o.style.display !== 'none');
   if (visible.length && !visible.find(o => o.value === cur)) _setEl('cfg-bar-accent', visible[0].value);
-  // Match Notch Colour only applies to frosted-bodied styles.
-  document.getElementById('bar-match-notch-row').style.display =
-    (s === 'frosted' || s === 'rating_frosted') ? '' : 'none';
+  updateCustomPaletteFields();
+  // A frosted notch owns the frosted colour controls (its own toggle + slider),
+  // so they live in the Sash panel then and hide here. Otherwise they live in
+  // Rating. The saturation slider also hides when Reference Colour is on.
+  const frostedNotch = vEl('cfg-sash-mode') === 'notch' && vEl('cfg-sash-badge-style') === 'frosted';
+  const ref = c('tog-bar-frost-reference');
+  document.getElementById('bar-reference-row').style.display = frostedNotch ? 'none' : '';
+  document.getElementById('bar-saturation-field').style.display = (frostedNotch || ref) ? 'none' : '';
+}
+
+function updateCustomPaletteFields() {
+  const mode = parseInt(document.getElementById('cfg-rating-mode').value);
+  const scoreCustom = (mode === 1 || mode === 3) && ni('cfg-score-color-mode') === 3;
+  const barCustom = mode === 4
+    && (vEl('cfg-bar-style') === 'rating_black' || vEl('cfg-bar-style') === 'rating_frosted')
+    && vEl('cfg-bar-accent') === 'palette_custom';
+  const field = document.getElementById('score-custom-palette-field');
+  if (field) field.style.display = (scoreCustom || barCustom) ? '' : 'none';
+}
+
+function updateGradientFields() {
+  document.getElementById('top-gradient-custom-fields').style.display = document.getElementById('cfg-top-gradient').value === 'custom' ? 'block' : 'none';
+  document.getElementById('bottom-gradient-custom-fields').style.display = document.getElementById('cfg-bottom-gradient').value === 'custom' ? 'block' : 'none';
 }
 
 function updateRatingFields() {
@@ -3775,7 +4233,27 @@ function updateRatingFields() {
   document.getElementById('rating-mode4-fields').style.display      = mode === 4 ? '' : 'none';
   document.getElementById('rating-glow-fields').style.display       = mode === 1 ? '' : 'none';
   document.getElementById('rating-alt-colors-toggle').style.display = (mode === 1 || mode === 3) ? '' : 'none';
+  document.getElementById('numeric-score10-row').style.display      = mode === 2 ? '' : 'none';
+  document.getElementById('minimalist-score10-row').style.display   = mode === 3 ? '' : 'none';
+  document.getElementById('bar-score10-row').style.display          = mode === 4 ? '' : 'none';
   if (mode === 4) _updateBarRatingRows();
+  updateCustomPaletteFields();
+}
+
+function _setAllRtc(val) {
+  for (const m of [1, 2, 3, 4]) {
+    const inp = document.getElementById('cfg-rtc-m' + m);
+    const pic = document.getElementById('cfg-rtcp-m' + m);
+    if (inp) inp.value = val;
+    if (pic && /^[0-9a-fA-F]{6}$/i.test(val)) pic.value = '#' + val;
+  }
+}
+
+function _syncRtcM(mode) {
+  const hex = document.getElementById('cfg-rtc-m' + mode).value.trim();
+  if (/^[0-9a-fA-F]{6}$/.test(hex))
+    document.getElementById('cfg-rtcp-m' + mode).value = '#' + hex;
+  _setAllRtc(hex);
 }
 
 // ---------------------------------------------------------------------------
@@ -3805,70 +4283,70 @@ const PRESETS = [
     name: 'Prestige Rating Bar',
     description: 'Classic Posters+ design featuring a score bar using the prestige score palette, which uses grey, bronze and gold. Paired with the info sash and horizontal badge row.',
     screenshot: '/static/presets/prestige_rating_bar.jpg',
-    params: 'http://postersplus:8000/poster?tmdb_id={tmdb_id}&imdb_id={imdb_id}&type={type}&primary_client=stremio_tv_nuvio&top_gradient=medium&bottom_gradient=high&fallback_to_imdb=true&rating_display_mode=1&score_color_mode=2&accent_bar_font_size_ratio=0.080&accent_bar_y_offset=0.90&accent_bar_append_mode=0&accent_bar_bottom_ratio=0.040&score_glow_threshold=85&score_glow_blur=1&score_glow_alpha=40&movie_weights=letterboxd%3A0.99%2Ctrakt%3A0.01%2Ctomatoes%3A0.00%2Cpopcorn%3A0.00%2Cimdb%3A0.00%2Cmetacritic%3A0.00%2Cmetacriticuser%3A0.00%2Ctmdb%3A0.00%2Crogerebert%3A0.00%2Cmyanimelist%3A0.00&tv_weights=trakt%3A0.80%2Ctomatoes%3A0.20%2Cpopcorn%3A0.00%2Cimdb%3A0.00%2Cmetacritic%3A0.00%2Cmetacriticuser%3A0.00%2Ctmdb%3A0.00%2Cmyanimelist%3A0.00&textless=false&use_original_art=false&original_art_source=primary&logo_language=en&logo_priority=native_original&fallback_bg_style=photoreal&logo_max_w_ratio=0.75&logo_max_h_ratio=0.25&logo_bottom_ratio=0.28&sash_mode=sash&cinema_greyscale=true&cinema_greyscale_skip_if_available=false&release_status_cinema_only=true&muted=false&sash_poster_color=false&sash_length_ratio=1.20&sash_height_ratio=0.135&sash_priority=wins%2Cgg_wins%2Cfestival%2Cpic_noms%2Cgg_noms%2Cstudio%2Cdirector%2Ccast%2Ctrending%2Ccult%2Cforeign%2Cnew_release%2Cmetacritic%2Ctrue_story%2Cstructural%2Crelease_status&badge_display_mode=5&badge_height=28&badge_anchor_x=0.060&badge_anchor_y=0.045&badge_min_score=5',
+    params: 'http://postersplus:8000/poster?tmdb_id={tmdb_id}&imdb_id={imdb_id}&type={type}&primary_client=stremio_tv_nuvio&top_gradient=medium&bottom_gradient=high&fallback_to_imdb=true&rating_display_mode=1&score_color_mode=2&accent_bar_font_size_ratio=0.080&accent_bar_y_offset=0.90&accent_bar_append_mode=0&accent_bar_bottom_ratio=0.040&score_glow_threshold=85&score_glow_blur=1&score_glow_alpha=40&movie_weights=letterboxd%3A0.99%2Ctrakt%3A0.01%2Ctomatoes%3A0.00%2Cpopcorn%3A0.00%2Cimdb%3A0.00%2Cmetacritic%3A0.00%2Cmetacriticuser%3A0.00%2Ctmdb%3A0.00%2Crogerebert%3A0.00%2Cmyanimelist%3A0.00&tv_weights=trakt%3A0.80%2Ctomatoes%3A0.20%2Cpopcorn%3A0.00%2Cimdb%3A0.00%2Cmetacritic%3A0.00%2Cmetacriticuser%3A0.00%2Ctmdb%3A0.00%2Cmyanimelist%3A0.00&textless=false&use_original_art=false&original_art_source=primary&logo_language=en&logo_priority=native_original&fallback_bg_style=photoreal&logo_max_w_ratio=0.75&logo_max_h_ratio=0.25&logo_bottom_ratio=0.28&sash_mode=sash&cinema_greyscale=true&cinema_greyscale_skip_if_available=false&release_status_cinema_only=false&muted=false&sash_poster_color=false&sash_length_ratio=1.20&sash_height_ratio=0.135&sash_priority=wins%2Cgg_wins%2Cfestival%2Cpic_noms%2Cmetacritic%2Cgg_noms%2Ctrending%2Ctrending_broad%2Cpremiere%2Cnew_release%2Cjust_added%2Cnew_season%2Cseason_finale%2Cstudio%2Cdirector%2Ccast%2Ccult%2Cforeign%2Ctrue_story%2Cshort_film%2Cmini_series%2Cbinge_ready%2Creturning%2Cairing%2Ccancelled%2Cended%2Cphysical%2Cstreaming%2Ccinema%2Cproduction&badge_display_mode=5&badge_height=28&badge_anchor_x=0.060&badge_anchor_y=0.045&badge_min_score=5&top_vignette_sash_only=true',
   },
   {
     id: 'light_rating_bar',
     name: 'Light Rating Bar',
     description: 'Featuring a score bar using a light score palette of red, yellow, green and purple. Info is displayed as a frosted notch at the top of the poster.',
     screenshot: '/static/presets/light_rating_bar.jpg',
-    params: 'primary_client=stremio_tv_nuvio&top_gradient=medium&bottom_gradient=high&fallback_to_imdb=true&rating_display_mode=1&score_color_mode=0&accent_bar_font_size_ratio=0.080&accent_bar_y_offset=0.90&accent_bar_append_mode=0&accent_bar_bottom_ratio=0.040&score_glow_threshold=85&score_glow_blur=1&score_glow_alpha=40&movie_weights=letterboxd%3A0.99%2Ctrakt%3A0.01%2Ctomatoes%3A0.00%2Cpopcorn%3A0.00%2Cimdb%3A0.00%2Cmetacritic%3A0.00%2Cmetacriticuser%3A0.00%2Ctmdb%3A0.00%2Crogerebert%3A0.00%2Cmyanimelist%3A0.00&tv_weights=trakt%3A0.80%2Ctomatoes%3A0.20%2Cpopcorn%3A0.00%2Cimdb%3A0.00%2Cmetacritic%3A0.00%2Cmetacriticuser%3A0.00%2Ctmdb%3A0.00%2Cmyanimelist%3A0.00&textless=false&use_original_art=false&original_art_source=primary&logo_language=en&logo_priority=native_original&fallback_bg_style=photoreal&logo_max_w_ratio=0.75&logo_max_h_ratio=0.25&logo_bottom_ratio=0.28&sash_mode=notch&cinema_greyscale=true&cinema_greyscale_skip_if_available=false&release_status_cinema_only=true&sash_badge_style=frosted&sash_badge_size_w=1.40&sash_badge_size_h=1.20&sash_badge_font_ratio=0.43&sash_badge_frost_opacity=0.75&sash_priority=wins%2Cgg_wins%2Cfestival%2Cpic_noms%2Cgg_noms%2Cstudio%2Cdirector%2Ccast%2Ctrending%2Ccult%2Cforeign%2Cnew_release%2Cmetacritic%2Ctrue_story%2Cstructural%2Crelease_status&badge_display_mode=4&badge_height=20&badge_anchor_x=0.060&badge_anchor_y=0.045&badge_min_score=5',
+    params: 'primary_client=stremio_tv_nuvio&top_gradient=medium&bottom_gradient=high&fallback_to_imdb=true&rating_display_mode=1&score_color_mode=0&accent_bar_font_size_ratio=0.080&accent_bar_y_offset=0.90&accent_bar_append_mode=0&accent_bar_bottom_ratio=0.040&score_glow_threshold=85&score_glow_blur=1&score_glow_alpha=40&movie_weights=letterboxd%3A0.99%2Ctrakt%3A0.01%2Ctomatoes%3A0.00%2Cpopcorn%3A0.00%2Cimdb%3A0.00%2Cmetacritic%3A0.00%2Cmetacriticuser%3A0.00%2Ctmdb%3A0.00%2Crogerebert%3A0.00%2Cmyanimelist%3A0.00&tv_weights=trakt%3A0.80%2Ctomatoes%3A0.20%2Cpopcorn%3A0.00%2Cimdb%3A0.00%2Cmetacritic%3A0.00%2Cmetacriticuser%3A0.00%2Ctmdb%3A0.00%2Cmyanimelist%3A0.00&textless=false&use_original_art=false&original_art_source=primary&logo_language=en&logo_priority=native_original&fallback_bg_style=photoreal&logo_max_w_ratio=0.75&logo_max_h_ratio=0.25&logo_bottom_ratio=0.28&sash_mode=notch&cinema_greyscale=true&cinema_greyscale_skip_if_available=false&release_status_cinema_only=false&sash_badge_style=frosted&sash_badge_size_w=1.40&sash_badge_size_h=1.20&sash_badge_font_ratio=0.43&sash_badge_frost_opacity=0.75&sash_priority=wins%2Cgg_wins%2Cfestival%2Cpic_noms%2Cmetacritic%2Cgg_noms%2Ctrending%2Ctrending_broad%2Cpremiere%2Cnew_release%2Cjust_added%2Cnew_season%2Cseason_finale%2Cstudio%2Cdirector%2Ccast%2Ccult%2Cforeign%2Ctrue_story%2Cshort_film%2Cmini_series%2Cbinge_ready%2Creturning%2Cairing%2Ccancelled%2Cended%2Cphysical%2Cstreaming%2Ccinema%2Cproduction&badge_display_mode=4&badge_height=20&badge_anchor_x=0.060&badge_anchor_y=0.045&badge_min_score=5&top_vignette_sash_only=true',
   },
   {
     id: 'clean_sash',
     name: 'Clean Sash',
     description: 'Genre and rating at the bottom in text, quality displayed as an age rating.',
     screenshot: '/static/presets/clean_sash.jpg',
-    params: 'primary_client=stremio_tv_nuvio&top_gradient=medium&bottom_gradient=high&fallback_to_imdb=true&rating_display_mode=2&numeric_score_font_size_ratio=0.100&numeric_score_y_offset=0.90&score_out_of_10=false&movie_weights=letterboxd%3A0.99%2Ctrakt%3A0.01%2Ctomatoes%3A0.00%2Cpopcorn%3A0.00%2Cimdb%3A0.00%2Cmetacritic%3A0.00%2Cmetacriticuser%3A0.00%2Ctmdb%3A0.00%2Crogerebert%3A0.00%2Cmyanimelist%3A0.00&tv_weights=trakt%3A0.80%2Ctomatoes%3A0.20%2Cpopcorn%3A0.00%2Cimdb%3A0.00%2Cmetacritic%3A0.00%2Cmetacriticuser%3A0.00%2Ctmdb%3A0.00%2Cmyanimelist%3A0.00&textless=false&use_original_art=false&original_art_source=primary&logo_language=en&logo_priority=native_original&fallback_bg_style=photoreal&logo_max_w_ratio=0.75&logo_max_h_ratio=0.25&logo_bottom_ratio=0.28&sash_mode=sash&cinema_greyscale=true&cinema_greyscale_skip_if_available=false&release_status_cinema_only=true&muted=false&sash_poster_color=false&sash_length_ratio=1.20&sash_height_ratio=0.135&sash_priority=wins%2Cgg_wins%2Cfestival%2Cpic_noms%2Cgg_noms%2Cstudio%2Cdirector%2Ccast%2Ctrending%2Ccult%2Cforeign%2Cnew_release%2Cmetacritic%2Ctrue_story%2Cstructural%2Crelease_status&badge_display_mode=1&badge_height=36&badge_anchor_x=0.060&badge_anchor_y=0.055&badge_min_score=2',
+    params: 'primary_client=stremio_tv_nuvio&top_gradient=medium&bottom_gradient=high&fallback_to_imdb=true&rating_display_mode=2&numeric_score_font_size_ratio=0.100&numeric_score_y_offset=0.90&score_out_of_10=false&movie_weights=letterboxd%3A0.99%2Ctrakt%3A0.01%2Ctomatoes%3A0.00%2Cpopcorn%3A0.00%2Cimdb%3A0.00%2Cmetacritic%3A0.00%2Cmetacriticuser%3A0.00%2Ctmdb%3A0.00%2Crogerebert%3A0.00%2Cmyanimelist%3A0.00&tv_weights=trakt%3A0.80%2Ctomatoes%3A0.20%2Cpopcorn%3A0.00%2Cimdb%3A0.00%2Cmetacritic%3A0.00%2Cmetacriticuser%3A0.00%2Ctmdb%3A0.00%2Cmyanimelist%3A0.00&textless=false&use_original_art=false&original_art_source=primary&logo_language=en&logo_priority=native_original&fallback_bg_style=photoreal&logo_max_w_ratio=0.75&logo_max_h_ratio=0.25&logo_bottom_ratio=0.28&sash_mode=sash&cinema_greyscale=true&cinema_greyscale_skip_if_available=false&release_status_cinema_only=false&muted=false&sash_poster_color=false&sash_length_ratio=1.20&sash_height_ratio=0.135&sash_priority=wins%2Cgg_wins%2Cfestival%2Cpic_noms%2Cmetacritic%2Cgg_noms%2Ctrending%2Ctrending_broad%2Cpremiere%2Cnew_release%2Cjust_added%2Cnew_season%2Cseason_finale%2Cstudio%2Cdirector%2Ccast%2Ccult%2Cforeign%2Ctrue_story%2Cshort_film%2Cmini_series%2Cbinge_ready%2Creturning%2Cairing%2Ccancelled%2Cended%2Cphysical%2Cstreaming%2Ccinema%2Cproduction&badge_display_mode=1&badge_height=36&badge_anchor_x=0.060&badge_anchor_y=0.055&badge_min_score=2&top_vignette_sash_only=true',
   },
   {
     id: 'clean_notch',
     name: 'Clean Notch',
     description: 'Genre and rating at the bottom in text, with a frosted notch at the top.',
     screenshot: '/static/presets/clean_notch.jpg',
-    params: 'top_gradient=medium&bottom_gradient=high&fallback_to_imdb=true&rating_display_mode=2&numeric_score_font_size_ratio=0.100&numeric_score_y_offset=0.90&score_out_of_10=false&movie_weights=letterboxd%3A0.99%2Ctrakt%3A0.01%2Ctomatoes%3A0.00%2Cpopcorn%3A0.00%2Cimdb%3A0.00%2Cmetacritic%3A0.00%2Cmetacriticuser%3A0.00%2Ctmdb%3A0.00%2Crogerebert%3A0.00%2Cmyanimelist%3A0.00&tv_weights=trakt%3A0.80%2Ctomatoes%3A0.20%2Cpopcorn%3A0.00%2Cimdb%3A0.00%2Cmetacritic%3A0.00%2Cmetacriticuser%3A0.00%2Ctmdb%3A0.00%2Cmyanimelist%3A0.00&textless=false&use_original_art=false&original_art_source=primary&logo_language=en&logo_priority=native_original&fallback_bg_style=photoreal&logo_max_w_ratio=0.75&logo_max_h_ratio=0.25&logo_bottom_ratio=0.28&show_award_sash=true&sash_badge=true&sash_badge_style=frosted&sash_badge_size_w=1.40&sash_badge_size_h=1.20&sash_badge_font_ratio=0.43&sash_badge_frost_opacity=0.75&sash_priority=wins%2Cgg_wins%2Cfestival%2Cpic_noms%2Cgg_noms%2Cstudio%2Cdirector%2Ccast%2Ctrending%2Ccult%2Cforeign%2Cnew_release%2Cmetacritic%2Ctrue_story%2Cstructural%2Crelease_status&badge_display_mode=0&cinema_greyscale=true&release_status_cinema_only=true',
+    params: 'top_gradient=medium&bottom_gradient=high&fallback_to_imdb=true&rating_display_mode=2&numeric_score_font_size_ratio=0.100&numeric_score_y_offset=0.90&score_out_of_10=false&movie_weights=letterboxd%3A0.99%2Ctrakt%3A0.01%2Ctomatoes%3A0.00%2Cpopcorn%3A0.00%2Cimdb%3A0.00%2Cmetacritic%3A0.00%2Cmetacriticuser%3A0.00%2Ctmdb%3A0.00%2Crogerebert%3A0.00%2Cmyanimelist%3A0.00&tv_weights=trakt%3A0.80%2Ctomatoes%3A0.20%2Cpopcorn%3A0.00%2Cimdb%3A0.00%2Cmetacritic%3A0.00%2Cmetacriticuser%3A0.00%2Ctmdb%3A0.00%2Cmyanimelist%3A0.00&textless=false&use_original_art=false&original_art_source=primary&logo_language=en&logo_priority=native_original&fallback_bg_style=photoreal&logo_max_w_ratio=0.75&logo_max_h_ratio=0.25&logo_bottom_ratio=0.28&show_award_sash=true&sash_badge=true&sash_badge_style=frosted&sash_badge_size_w=1.40&sash_badge_size_h=1.20&sash_badge_font_ratio=0.43&sash_badge_frost_opacity=0.75&sash_priority=wins%2Cgg_wins%2Cfestival%2Cpic_noms%2Cmetacritic%2Cgg_noms%2Ctrending%2Ctrending_broad%2Cpremiere%2Cnew_release%2Cjust_added%2Cnew_season%2Cseason_finale%2Cstudio%2Cdirector%2Ccast%2Ccult%2Cforeign%2Ctrue_story%2Cshort_film%2Cmini_series%2Cbinge_ready%2Creturning%2Cairing%2Ccancelled%2Cended%2Cphysical%2Cstreaming%2Ccinema%2Cproduction&badge_display_mode=0&cinema_greyscale=true&release_status_cinema_only=false&top_vignette_sash_only=true',
   },  
   {
     id: 'mini',
     name: 'Minimalist',
     description: 'Very compact mode. The separator color conveys rating using the light palette. In the top left you can find a small notch that reflects the quality.',
     screenshot: '/static/presets/mini.jpg',
-    params: 'primary_client=stremio_tv_nuvio&top_gradient=medium&bottom_gradient=high&fallback_to_imdb=true&rating_display_mode=3&score_color_mode=0&minimalist_append_mode=0&minimalist_mode_font_size_ratio=0.056&minimalist_mode_font_x_offset=0.065&minimalist_mode_font_y_offset=0.920&movie_weights=letterboxd%3A0.99%2Ctrakt%3A0.01%2Ctomatoes%3A0.00%2Cpopcorn%3A0.00%2Cimdb%3A0.00%2Cmetacritic%3A0.00%2Cmetacriticuser%3A0.00%2Ctmdb%3A0.00%2Crogerebert%3A0.00%2Cmyanimelist%3A0.00&tv_weights=trakt%3A0.80%2Ctomatoes%3A0.20%2Cpopcorn%3A0.00%2Cimdb%3A0.00%2Cmetacritic%3A0.00%2Cmetacriticuser%3A0.00%2Ctmdb%3A0.00%2Cmyanimelist%3A0.00&textless=false&use_original_art=false&original_art_source=primary&logo_language=en&logo_priority=native_original&fallback_bg_style=photoreal&logo_max_w_ratio=0.75&logo_max_h_ratio=0.25&logo_bottom_ratio=0.28&sash_mode=sash&cinema_greyscale=true&cinema_greyscale_skip_if_available=false&release_status_cinema_only=true&muted=false&sash_poster_color=false&sash_length_ratio=1.15&sash_height_ratio=0.120&sash_priority=wins%2Cgg_wins%2Cfestival%2Cpic_noms%2Cgg_noms%2Cstudio%2Cdirector%2Ccast%2Ctrending%2Ccult%2Cforeign%2Cnew_release%2Cmetacritic%2Ctrue_story%2Cstructural%2Crelease_status&badge_display_mode=5&badge_height=28&badge_anchor_x=0.060&badge_anchor_y=0.045&badge_min_score=5',
+    params: 'primary_client=stremio_tv_nuvio&top_gradient=medium&bottom_gradient=high&fallback_to_imdb=true&rating_display_mode=3&score_color_mode=0&minimalist_append_mode=0&minimalist_mode_font_size_ratio=0.056&minimalist_mode_font_x_offset=0.065&minimalist_mode_font_y_offset=0.920&movie_weights=letterboxd%3A0.99%2Ctrakt%3A0.01%2Ctomatoes%3A0.00%2Cpopcorn%3A0.00%2Cimdb%3A0.00%2Cmetacritic%3A0.00%2Cmetacriticuser%3A0.00%2Ctmdb%3A0.00%2Crogerebert%3A0.00%2Cmyanimelist%3A0.00&tv_weights=trakt%3A0.80%2Ctomatoes%3A0.20%2Cpopcorn%3A0.00%2Cimdb%3A0.00%2Cmetacritic%3A0.00%2Cmetacriticuser%3A0.00%2Ctmdb%3A0.00%2Cmyanimelist%3A0.00&textless=false&use_original_art=false&original_art_source=primary&logo_language=en&logo_priority=native_original&fallback_bg_style=photoreal&logo_max_w_ratio=0.75&logo_max_h_ratio=0.25&logo_bottom_ratio=0.28&sash_mode=sash&cinema_greyscale=true&cinema_greyscale_skip_if_available=false&release_status_cinema_only=false&muted=false&sash_poster_color=false&sash_length_ratio=1.15&sash_height_ratio=0.120&sash_priority=wins%2Cgg_wins%2Cfestival%2Cpic_noms%2Cmetacritic%2Cgg_noms%2Ctrending%2Ctrending_broad%2Cpremiere%2Cnew_release%2Cjust_added%2Cnew_season%2Cseason_finale%2Cstudio%2Cdirector%2Ccast%2Ccult%2Cforeign%2Ctrue_story%2Cshort_film%2Cmini_series%2Cbinge_ready%2Creturning%2Cairing%2Ccancelled%2Cended%2Cphysical%2Cstreaming%2Ccinema%2Cproduction&badge_display_mode=5&badge_height=28&badge_anchor_x=0.060&badge_anchor_y=0.045&badge_min_score=5&top_vignette_sash_only=true',
   },
   {
     id: 'frosted_notch',
     name: 'Frosted',
     description: 'Both the bar and notch will reflect the poster\'s color, resulting in some beautifully colorful designs. Maintains a low footprint to show off as much of the art as possible.',
     screenshot: '/static/presets/frosted_notch.jpg',
-    params: 'top_gradient=medium&bottom_gradient=high&fallback_to_imdb=true&rating_display_mode=4&bar_style=frosted&bar_append=rating_year&bar_score_out_of_10=false&bar_match_notch=true&bar_height_ratio=0.080&bar_font_size_ratio=0.55&bar_frost_opacity=0.85&movie_weights=letterboxd%3A0.99%2Ctrakt%3A0.01%2Ctomatoes%3A0.00%2Cpopcorn%3A0.00%2Cimdb%3A0.00%2Cmetacritic%3A0.00%2Cmetacriticuser%3A0.00%2Ctmdb%3A0.00%2Crogerebert%3A0.00%2Cmyanimelist%3A0.00&tv_weights=trakt%3A0.80%2Ctomatoes%3A0.20%2Cpopcorn%3A0.00%2Cimdb%3A0.00%2Cmetacritic%3A0.00%2Cmetacriticuser%3A0.00%2Ctmdb%3A0.00%2Cmyanimelist%3A0.00&textless=false&use_original_art=false&original_art_source=primary&logo_language=en&logo_priority=native_original&fallback_bg_style=photoreal&logo_max_w_ratio=0.75&logo_max_h_ratio=0.25&logo_bottom_ratio=0.28&show_award_sash=true&cinema_greyscale=true&release_status_cinema_only=true&sash_badge=true&sash_badge_style=frosted&sash_badge_size_w=1.40&sash_badge_size_h=1.20&sash_badge_font_ratio=0.43&sash_badge_frost_opacity=0.75&sash_priority=wins%2Cgg_wins%2Cfestival%2Cpic_noms%2Cgg_noms%2Cstudio%2Cdirector%2Ccast%2Ctrending%2Ccult%2Cforeign%2Cnew_release%2Cmetacritic%2Ctrue_story%2Cstructural%2Crelease_status&badge_display_mode=0',
+    params: 'top_gradient=medium&bottom_gradient=high&fallback_to_imdb=true&rating_display_mode=4&bar_style=frosted&bar_append=rating_year&bar_score_out_of_10=false&bar_height_ratio=0.080&bar_font_size_ratio=0.55&bar_frost_opacity=0.85&movie_weights=letterboxd%3A0.99%2Ctrakt%3A0.01%2Ctomatoes%3A0.00%2Cpopcorn%3A0.00%2Cimdb%3A0.00%2Cmetacritic%3A0.00%2Cmetacriticuser%3A0.00%2Ctmdb%3A0.00%2Crogerebert%3A0.00%2Cmyanimelist%3A0.00&tv_weights=trakt%3A0.80%2Ctomatoes%3A0.20%2Cpopcorn%3A0.00%2Cimdb%3A0.00%2Cmetacritic%3A0.00%2Cmetacriticuser%3A0.00%2Ctmdb%3A0.00%2Cmyanimelist%3A0.00&textless=false&use_original_art=false&original_art_source=primary&logo_language=en&logo_priority=native_original&fallback_bg_style=photoreal&logo_max_w_ratio=0.75&logo_max_h_ratio=0.25&logo_bottom_ratio=0.28&show_award_sash=true&cinema_greyscale=true&release_status_cinema_only=false&sash_badge=true&sash_badge_style=frosted&sash_badge_size_w=1.40&sash_badge_size_h=1.20&sash_badge_font_ratio=0.43&sash_badge_frost_opacity=0.75&sash_priority=wins%2Cgg_wins%2Cfestival%2Cpic_noms%2Cmetacritic%2Cgg_noms%2Ctrending%2Ctrending_broad%2Cpremiere%2Cnew_release%2Cjust_added%2Cnew_season%2Cseason_finale%2Cstudio%2Cdirector%2Ccast%2Ccult%2Cforeign%2Ctrue_story%2Cshort_film%2Cmini_series%2Cbinge_ready%2Creturning%2Cairing%2Ccancelled%2Cended%2Cphysical%2Cstreaming%2Ccinema%2Cproduction&badge_display_mode=0&top_vignette_sash_only=true',
   },
   {
     id: 'black_rating_bar_light_notch',
     name: 'Black Rating Bar',
     description: 'A black bar displaying genre, rating and year with an adaptive rating bar that uses red, yellow, green and purple.',
     screenshot: '/static/presets/black_rating_bar_light_notch.jpg',
-    params: 'top_gradient=medium&bottom_gradient=high&fallback_to_imdb=true&rating_display_mode=4&bar_style=rating_black&bar_accent=palette_0&bar_append=rating_year&bar_score_out_of_10=false&bar_height_ratio=0.080&bar_font_size_ratio=0.55&bar_frost_opacity=0.85&movie_weights=letterboxd%3A0.99%2Ctrakt%3A0.01%2Ctomatoes%3A0.00%2Cpopcorn%3A0.00%2Cimdb%3A0.00%2Cmetacritic%3A0.00%2Cmetacriticuser%3A0.00%2Ctmdb%3A0.00%2Crogerebert%3A0.00%2Cmyanimelist%3A0.00&tv_weights=trakt%3A0.80%2Ctomatoes%3A0.20%2Cpopcorn%3A0.00%2Cimdb%3A0.00%2Cmetacritic%3A0.00%2Cmetacriticuser%3A0.00%2Ctmdb%3A0.00%2Cmyanimelist%3A0.00&textless=false&use_original_art=false&original_art_source=primary&logo_language=en&logo_priority=native_original&fallback_bg_style=photoreal&logo_max_w_ratio=0.75&logo_max_h_ratio=0.25&logo_bottom_ratio=0.28&show_award_sash=true&sash_badge=true&sash_badge_style=frosted&sash_badge_size_w=1.40&sash_badge_size_h=1.20&sash_badge_font_ratio=0.43&sash_badge_frost_opacity=0.75&sash_priority=wins%2Cgg_wins%2Cfestival%2Cpic_noms%2Cgg_noms%2Cstudio%2Cdirector%2Ccast%2Ctrending%2Ccult%2Cforeign%2Cnew_release%2Cmetacritic%2Ctrue_story%2Cstructural%2Crelease_status&badge_display_mode=0&cinema_greyscale=true&release_status_cinema_only=true',
+    params: 'top_gradient=medium&bottom_gradient=high&fallback_to_imdb=true&rating_display_mode=4&bar_style=rating_black&bar_accent=palette_0&bar_append=rating_year&bar_score_out_of_10=false&bar_height_ratio=0.080&bar_font_size_ratio=0.55&bar_frost_opacity=0.85&movie_weights=letterboxd%3A0.99%2Ctrakt%3A0.01%2Ctomatoes%3A0.00%2Cpopcorn%3A0.00%2Cimdb%3A0.00%2Cmetacritic%3A0.00%2Cmetacriticuser%3A0.00%2Ctmdb%3A0.00%2Crogerebert%3A0.00%2Cmyanimelist%3A0.00&tv_weights=trakt%3A0.80%2Ctomatoes%3A0.20%2Cpopcorn%3A0.00%2Cimdb%3A0.00%2Cmetacritic%3A0.00%2Cmetacriticuser%3A0.00%2Ctmdb%3A0.00%2Cmyanimelist%3A0.00&textless=false&use_original_art=false&original_art_source=primary&logo_language=en&logo_priority=native_original&fallback_bg_style=photoreal&logo_max_w_ratio=0.75&logo_max_h_ratio=0.25&logo_bottom_ratio=0.28&show_award_sash=true&sash_badge=true&sash_badge_style=frosted&sash_badge_size_w=1.40&sash_badge_size_h=1.20&sash_badge_font_ratio=0.43&sash_badge_frost_opacity=0.75&sash_priority=wins%2Cgg_wins%2Cfestival%2Cpic_noms%2Cmetacritic%2Cgg_noms%2Ctrending%2Ctrending_broad%2Cpremiere%2Cnew_release%2Cjust_added%2Cnew_season%2Cseason_finale%2Cstudio%2Cdirector%2Ccast%2Ccult%2Cforeign%2Ctrue_story%2Cshort_film%2Cmini_series%2Cbinge_ready%2Creturning%2Cairing%2Ccancelled%2Cended%2Cphysical%2Cstreaming%2Ccinema%2Cproduction&badge_display_mode=0&cinema_greyscale=true&release_status_cinema_only=false&top_vignette_sash_only=true',
   },
   {
     id: 'black_rating_bar_oa',
     name: 'Black Rating Bar OA',
     description: 'Black rating bar that swaps between red, yellow, green and purple based on score. Ideal preset if you enjoy the original art, rather than textless with a logo overlay. Uses very low vignette for maximum brightness.',
     screenshot: '/static/presets/black_rating_bar_oa.jpg',
-    params: 'top_gradient=off&bottom_gradient=low&fallback_to_imdb=true&rating_display_mode=4&bar_style=rating_black&bar_accent=palette_0&bar_append=rating_year&bar_score_out_of_10=false&bar_height_ratio=0.080&bar_font_size_ratio=0.55&bar_frost_opacity=0.85&movie_weights=letterboxd%3A0.99%2Ctrakt%3A0.01%2Ctomatoes%3A0.00%2Cpopcorn%3A0.00%2Cimdb%3A0.00%2Cmetacritic%3A0.00%2Cmetacriticuser%3A0.00%2Ctmdb%3A0.00%2Crogerebert%3A0.00%2Cmyanimelist%3A0.00&tv_weights=trakt%3A0.80%2Ctomatoes%3A0.20%2Cpopcorn%3A0.00%2Cimdb%3A0.00%2Cmetacritic%3A0.00%2Cmetacriticuser%3A0.00%2Ctmdb%3A0.00%2Cmyanimelist%3A0.00&textless=false&use_original_art=true&original_art_source=primary&logo_language=en&logo_priority=native_original&fallback_bg_style=photoreal&logo_max_w_ratio=0.75&logo_max_h_ratio=0.25&logo_bottom_ratio=0.28&show_award_sash=true&sash_badge=false&muted=false&sash_length_ratio=1.15&sash_height_ratio=0.120&sash_priority=wins%2Cgg_wins%2Cfestival%2Cpic_noms%2Cgg_noms%2Cstudio%2Cdirector%2Ccast%2Ctrending%2Ccult%2Cforeign%2Cnew_release%2Cmetacritic%2Ctrue_story%2Cstructural%2Crelease_status&badge_display_mode=0&cinema_greyscale=true&release_status_cinema_only=true',
+    params: 'top_gradient=off&bottom_gradient=low&fallback_to_imdb=true&rating_display_mode=4&bar_style=rating_black&bar_accent=palette_0&bar_append=rating_year&bar_score_out_of_10=false&bar_height_ratio=0.080&bar_font_size_ratio=0.55&bar_frost_opacity=0.85&movie_weights=letterboxd%3A0.99%2Ctrakt%3A0.01%2Ctomatoes%3A0.00%2Cpopcorn%3A0.00%2Cimdb%3A0.00%2Cmetacritic%3A0.00%2Cmetacriticuser%3A0.00%2Ctmdb%3A0.00%2Crogerebert%3A0.00%2Cmyanimelist%3A0.00&tv_weights=trakt%3A0.80%2Ctomatoes%3A0.20%2Cpopcorn%3A0.00%2Cimdb%3A0.00%2Cmetacritic%3A0.00%2Cmetacriticuser%3A0.00%2Ctmdb%3A0.00%2Cmyanimelist%3A0.00&textless=false&use_original_art=true&original_art_source=primary&logo_language=en&logo_priority=native_original&fallback_bg_style=photoreal&logo_max_w_ratio=0.75&logo_max_h_ratio=0.25&logo_bottom_ratio=0.28&show_award_sash=true&sash_badge=false&muted=false&sash_length_ratio=1.15&sash_height_ratio=0.120&sash_priority=wins%2Cgg_wins%2Cfestival%2Cpic_noms%2Cmetacritic%2Cgg_noms%2Ctrending%2Ctrending_broad%2Cpremiere%2Cnew_release%2Cjust_added%2Cnew_season%2Cseason_finale%2Cstudio%2Cdirector%2Ccast%2Ccult%2Cforeign%2Ctrue_story%2Cshort_film%2Cmini_series%2Cbinge_ready%2Creturning%2Cairing%2Ccancelled%2Cended%2Cphysical%2Cstreaming%2Ccinema%2Cproduction&badge_display_mode=0&cinema_greyscale=true&release_status_cinema_only=false&top_vignette_sash_only=true',
   },
   {
     id: 'frosted_rating_bar_oa',
     name: 'Frosted Rating Bar OA',
     description: 'Frosted bar with a silver rating accent bar. Displays the genre, info sash and rating in one place while taking up the least amount of space. Uses the original art with very low vignette for maximum brightness.',
     screenshot: '/static/presets/frosted_rating_bar_oa.jpg',
-    params: 'top_gradient=off&bottom_gradient=low&fallback_to_imdb=true&rating_display_mode=4&bar_style=rating_frosted&bar_accent=silver&bar_append=sash&bar_score_out_of_10=false&bar_height_ratio=0.080&bar_font_size_ratio=0.55&bar_frost_opacity=0.85&movie_weights=letterboxd%3A0.99%2Ctrakt%3A0.01%2Ctomatoes%3A0.00%2Cpopcorn%3A0.00%2Cimdb%3A0.00%2Cmetacritic%3A0.00%2Cmetacriticuser%3A0.00%2Ctmdb%3A0.00%2Crogerebert%3A0.00%2Cmyanimelist%3A0.00&tv_weights=trakt%3A0.80%2Ctomatoes%3A0.20%2Cpopcorn%3A0.00%2Cimdb%3A0.00%2Cmetacritic%3A0.00%2Cmetacriticuser%3A0.00%2Ctmdb%3A0.00%2Cmyanimelist%3A0.00&textless=false&use_original_art=true&original_art_source=primary&logo_language=en&logo_priority=native_original&fallback_bg_style=photoreal&logo_max_w_ratio=0.75&logo_max_h_ratio=0.25&logo_bottom_ratio=0.28&show_award_sash=false&sash_priority=wins%2Cgg_wins%2Cfestival%2Cpic_noms%2Cgg_noms%2Cstudio%2Cdirector%2Ccast%2Ctrending%2Ccult%2Cforeign%2Cnew_release%2Cmetacritic%2Ctrue_story%2Cstructural%2Crelease_status&badge_display_mode=0&cinema_greyscale=true&release_status_cinema_only=true',
+    params: 'top_gradient=off&bottom_gradient=low&fallback_to_imdb=true&rating_display_mode=4&bar_style=rating_frosted&bar_accent=silver&bar_append=sash&bar_score_out_of_10=false&bar_height_ratio=0.080&bar_font_size_ratio=0.55&bar_frost_opacity=0.85&movie_weights=letterboxd%3A0.99%2Ctrakt%3A0.01%2Ctomatoes%3A0.00%2Cpopcorn%3A0.00%2Cimdb%3A0.00%2Cmetacritic%3A0.00%2Cmetacriticuser%3A0.00%2Ctmdb%3A0.00%2Crogerebert%3A0.00%2Cmyanimelist%3A0.00&tv_weights=trakt%3A0.80%2Ctomatoes%3A0.20%2Cpopcorn%3A0.00%2Cimdb%3A0.00%2Cmetacritic%3A0.00%2Cmetacriticuser%3A0.00%2Ctmdb%3A0.00%2Cmyanimelist%3A0.00&textless=false&use_original_art=true&original_art_source=primary&logo_language=en&logo_priority=native_original&fallback_bg_style=photoreal&logo_max_w_ratio=0.75&logo_max_h_ratio=0.25&logo_bottom_ratio=0.28&show_award_sash=false&sash_priority=wins%2Cgg_wins%2Cfestival%2Cpic_noms%2Cmetacritic%2Cgg_noms%2Ctrending%2Ctrending_broad%2Cpremiere%2Cnew_release%2Cjust_added%2Cnew_season%2Cseason_finale%2Cstudio%2Cdirector%2Ccast%2Ccult%2Cforeign%2Ctrue_story%2Cshort_film%2Cmini_series%2Cbinge_ready%2Creturning%2Cairing%2Ccancelled%2Cended%2Cphysical%2Cstreaming%2Ccinema%2Cproduction&badge_display_mode=0&cinema_greyscale=true&release_status_cinema_only=false&top_vignette_sash_only=true',
   },
   {
     id: 'mini_oa',
     name: 'Minimalist OA',
     description: 'Minimalist mode and sash allow maximum compatibility with busy original art posters. The separator color conveys the approximate rating.',
     screenshot: '/static/presets/mini_oa.jpg',
-    params: 'primary_client=stremio_tv_nuvio&top_gradient=medium&bottom_gradient=high&fallback_to_imdb=true&rating_display_mode=3&score_color_mode=0&minimalist_append_mode=0&minimalist_mode_font_size_ratio=0.056&minimalist_mode_font_x_offset=0.065&minimalist_mode_font_y_offset=0.920&movie_weights=letterboxd%3A0.99%2Ctrakt%3A0.01%2Ctomatoes%3A0.00%2Cpopcorn%3A0.00%2Cimdb%3A0.00%2Cmetacritic%3A0.00%2Cmetacriticuser%3A0.00%2Ctmdb%3A0.00%2Crogerebert%3A0.00%2Cmyanimelist%3A0.00&tv_weights=trakt%3A0.80%2Ctomatoes%3A0.20%2Cpopcorn%3A0.00%2Cimdb%3A0.00%2Cmetacritic%3A0.00%2Cmetacriticuser%3A0.00%2Ctmdb%3A0.00%2Cmyanimelist%3A0.00&textless=false&use_original_art=true&original_art_source=primary&logo_language=en&logo_priority=native_original&fallback_bg_style=photoreal&logo_max_w_ratio=0.75&logo_max_h_ratio=0.25&logo_bottom_ratio=0.28&sash_mode=sash&cinema_greyscale=true&cinema_greyscale_skip_if_available=false&release_status_cinema_only=true&muted=false&sash_poster_color=false&sash_length_ratio=1.15&sash_height_ratio=0.120&sash_priority=wins%2Cgg_wins%2Cfestival%2Cpic_noms%2Cgg_noms%2Cstudio%2Cdirector%2Ccast%2Ctrending%2Ccult%2Cforeign%2Cnew_release%2Cmetacritic%2Ctrue_story%2Cstructural%2Crelease_status&badge_display_mode=0',
+    params: 'primary_client=stremio_tv_nuvio&top_gradient=medium&bottom_gradient=high&fallback_to_imdb=true&rating_display_mode=3&score_color_mode=0&minimalist_append_mode=0&minimalist_mode_font_size_ratio=0.056&minimalist_mode_font_x_offset=0.065&minimalist_mode_font_y_offset=0.920&movie_weights=letterboxd%3A0.99%2Ctrakt%3A0.01%2Ctomatoes%3A0.00%2Cpopcorn%3A0.00%2Cimdb%3A0.00%2Cmetacritic%3A0.00%2Cmetacriticuser%3A0.00%2Ctmdb%3A0.00%2Crogerebert%3A0.00%2Cmyanimelist%3A0.00&tv_weights=trakt%3A0.80%2Ctomatoes%3A0.20%2Cpopcorn%3A0.00%2Cimdb%3A0.00%2Cmetacritic%3A0.00%2Cmetacriticuser%3A0.00%2Ctmdb%3A0.00%2Cmyanimelist%3A0.00&textless=false&use_original_art=true&original_art_source=primary&logo_language=en&logo_priority=native_original&fallback_bg_style=photoreal&logo_max_w_ratio=0.75&logo_max_h_ratio=0.25&logo_bottom_ratio=0.28&sash_mode=sash&cinema_greyscale=true&cinema_greyscale_skip_if_available=false&release_status_cinema_only=false&muted=false&sash_poster_color=false&sash_length_ratio=1.15&sash_height_ratio=0.120&sash_priority=wins%2Cgg_wins%2Cfestival%2Cpic_noms%2Cmetacritic%2Cgg_noms%2Ctrending%2Ctrending_broad%2Cpremiere%2Cnew_release%2Cjust_added%2Cnew_season%2Cseason_finale%2Cstudio%2Cdirector%2Ccast%2Ccult%2Cforeign%2Ctrue_story%2Cshort_film%2Cmini_series%2Cbinge_ready%2Creturning%2Cairing%2Ccancelled%2Cended%2Cphysical%2Cstreaming%2Ccinema%2Cproduction&badge_display_mode=0&top_vignette_sash_only=true',
   },
 ];
 
@@ -3954,7 +4432,7 @@ function applyImport() {
 // Bump WHATS_NEW_VERSION whenever the modal content changes — existing users
 // will see the unread dot on the chip until they open and acknowledge it.
 // The chip itself stays visible so users can re-open the list whenever.
-const WHATS_NEW_VERSION = '1.1.0';
+const WHATS_NEW_VERSION = '1.2-dev';
 
 function openWhatsNew() {
   document.getElementById('whatsnew-modal').classList.add('open');
@@ -4043,25 +4521,46 @@ function importUrl(urlStr, { silent = false, settingsOnly = false, preserveClien
     _setEl('cfg-logo-priority',
            (p.get('logo_native_fallback') === 'false') ? 'native_text' : 'native_original');
   }
+  if (p.has('logo_language_secondary')) _setEl('cfg-language-secondary', p.get('logo_language_secondary'));
+  syncSecondaryLangVisibility();
   if (p.has('fallback_bg_style')) _setEl('cfg-fallback-bg-style', p.get('fallback_bg_style'));
   if (p.has('top_gradient')) {
     // Accept legacy boolean values from pre-v1.0.4 URLs
     let _tg = (p.get('top_gradient') || '').toLowerCase();
     if (_tg === 'true'  || _tg === '1' || _tg === 'yes') _tg = 'high';
     if (_tg === 'false' || _tg === '0' || _tg === 'no')  _tg = 'off';
-    if (['off','low','medium','high'].includes(_tg)) _setEl('cfg-top-gradient', _tg);
+    if (['off','low','medium','high','custom'].includes(_tg)) _setEl('cfg-top-gradient', _tg);
+    if (_tg === 'custom') {
+      if (p.has('top_gradient_opacity')) { const el = document.getElementById('cfg-tg-op'); el.value = p.get('top_gradient_opacity'); updateWeightRange(el, 'rv-tg-op'); }
+      if (p.has('top_gradient_height')) { const el = document.getElementById('cfg-tg-ht'); el.value = p.get('top_gradient_height'); updateWeightRange(el, 'rv-tg-ht'); }
+    }
   }
   if (p.has('bottom_gradient')) {
     const _bg = (p.get('bottom_gradient') || '').toLowerCase();
-    if (['off','low','medium','high'].includes(_bg)) _setEl('cfg-bottom-gradient', _bg);
+    if (['off','low','medium','high','custom'].includes(_bg)) _setEl('cfg-bottom-gradient', _bg);
+    if (_bg === 'custom') {
+      if (p.has('bottom_gradient_opacity')) { const el = document.getElementById('cfg-bg-op'); el.value = p.get('bottom_gradient_opacity'); updateWeightRange(el, 'rv-bg-op'); }
+      if (p.has('bottom_gradient_height')) { const el = document.getElementById('cfg-bg-ht'); el.value = p.get('bottom_gradient_height'); updateWeightRange(el, 'rv-bg-ht'); }
+    }
   }
+  if (p.has('top_vignette_sash_only')) _setEl('tog-top-vignette-sash-only', p.get('top_vignette_sash_only'));
+  if (p.has('hide_genre')) _setEl('tog-hide-genre', p.get('hide_genre'));
+  updateGradientFields();
   if (p.has('fallback_to_imdb')) _setEl('tog-fallback-imdb', p.get('fallback_to_imdb'));
 
   // ── Sash ────────────────────────────────────────────────────────────────
   if (p.has('sash_poster_color')) _setEl('tog-sash-poster-color', p.get('sash_poster_color'));
+  if (p.has('sash_text_color')) {
+    const _stcVal = p.get('sash_text_color').replace('#', '').toUpperCase();
+    document.getElementById('cfg-sash-text-color').value = _stcVal;
+    if (/^[0-9A-F]{6}$/.test(_stcVal))
+      document.getElementById('cfg-sash-text-color-picker').value = '#' + _stcVal;
+  }
+  if (p.has('sash_winner_star')) _setEl('tog-sash-winner-star',  p.get('sash_winner_star'));
   if (p.has('cinema_greyscale')) _setEl('tog-cinema-greyscale', p.get('cinema_greyscale'));
   if (p.has('cinema_greyscale_skip_if_available')) _setEl('tog-cinema-greyscale-skip', p.get('cinema_greyscale_skip_if_available'));
   if (p.has('release_status_cinema_only')) _setEl('tog-release-cinema-only', p.get('release_status_cinema_only'));
+
   if (p.has('muted'))           _setEl('tog-muted',         p.get('muted'));
   // sash_mode supersedes the legacy show_award_sash + sash_badge bools.
   if (p.has('sash_mode'))                _setEl('cfg-sash-mode', p.get('sash_mode'));
@@ -4073,21 +4572,37 @@ function importUrl(urlStr, { silent = false, settingsOnly = false, preserveClien
   if (!preserveClientInsets && p.has('sash_badge_inset')) _setEl('cfg-sash-badge-inset', p.get('sash_badge_inset'));
   if (p.has('sash_badge_font_ratio'))    _setEl('cfg-sash-badge-font-ratio',    p.get('sash_badge_font_ratio'));
   if (p.has('sash_badge_frost_opacity')) _setEl('cfg-sash-badge-frost-opacity', p.get('sash_badge_frost_opacity'));
+  if (p.has('sash_badge_frost_saturation')) _setEl('cfg-sash-badge-frost-sat', p.get('sash_badge_frost_saturation'));
   if (p.has('sash_length_ratio')) _setEl('cfg-sash-length',      p.get('sash_length_ratio'));
   if (p.has('sash_height_ratio')) _setEl('cfg-sash-height',      p.get('sash_height_ratio'));
   updateSashBadgeFields();
 
   if (p.has('sash_priority')) {
-    const tokens = p.get('sash_priority').split(',').map(s => s.trim()).filter(Boolean);
+    const rawTokens = p.get('sash_priority').split(',').map(s => s.trim()).filter(Boolean);
     const known  = new Set(SASH_SLOTS.map(s => s.id));
-    // Tokens with a leading '-' are explicit exclusions
-    const newDisabled = new Set(
-      tokens.filter(t => t.startsWith('-') && known.has(t.slice(1))).map(t => t.slice(1))
-    );
-    const active  = tokens.filter(t => !t.startsWith('-') && known.has(t));
-    const missing = SASH_SLOTS.map(s => s.id).filter(id => !active.includes(id) && !newDisabled.has(id));
-    sashDisabled = newDisabled;
-    sashOrder    = [...active, ...missing];
+    // Back-compat: the legacy combined "structural" token expands, in place, to
+    // its granular slots in the same priority order it used internally
+    // (short_film > mini_series > binge_ready) so importing an old URL keeps the
+    // same behaviour instead of silently dropping the sash.
+    const LEGACY_EXPANSIONS = { structural: ['short_film', 'mini_series', 'binge_ready'] };
+    const tokens = [];
+    for (const t of rawTokens) {
+      const neg  = t.startsWith('-');
+      const bare = neg ? t.slice(1) : t;
+      if (LEGACY_EXPANSIONS[bare]) {
+        LEGACY_EXPANSIONS[bare].forEach(g => tokens.push((neg ? '-' : '') + g));
+      } else {
+        tokens.push(t);
+      }
+    }
+    // Only the slots explicitly listed (leading '-' tokens are exclusions) are
+    // enabled. Anything absent from the imported config — including sashes added
+    // in a newer version — is treated as disabled rather than force-enabled, so
+    // it lands in the disabled list ready for the user to opt into.
+    const active   = tokens.filter(t => !t.startsWith('-') && known.has(t));
+    const disabled = SASH_SLOTS.map(s => s.id).filter(id => !active.includes(id));
+    sashDisabled = new Set(disabled);
+    sashOrder    = active;
     saveSashOrder();
     buildSashList();
   }
@@ -4105,27 +4620,41 @@ function importUrl(urlStr, { silent = false, settingsOnly = false, preserveClien
   if (p.has('minimalist_mode_font_size_ratio'))_setEl('cfg-font-mode3',   p.get('minimalist_mode_font_size_ratio'));
   if (p.has('minimalist_mode_font_x_offset'))  _setEl('cfg-x-mode3',      p.get('minimalist_mode_font_x_offset'));
   if (p.has('minimalist_mode_font_y_offset'))  _setEl('cfg-y-mode3',      p.get('minimalist_mode_font_y_offset'));
+  if (p.has('minimalist_score_out_of_10'))     _setEl('tog-minimalist-score-10', p.get('minimalist_score_out_of_10'));
   if (p.has('bar_style'))           { _setEl('cfg-bar-style',  p.get('bar_style')); _updateBarRatingRows(); }
   if (p.has('bar_accent'))            _setEl('cfg-bar-accent', p.get('bar_accent'));
   if (p.has('bar_append'))            _setEl('cfg-bar4-append', p.get('bar_append'));
   if (p.has('bar_score_out_of_10'))   _setEl('tog-bar-score-10',  p.get('bar_score_out_of_10'));
-  if (p.has('bar_match_notch'))       _setEl('tog-bar-match-notch', p.get('bar_match_notch'));
   if (p.has('bar_height_ratio'))    _setEl('cfg-bar-height', p.get('bar_height_ratio'));
   if (p.has('bar_font_size_ratio')) _setEl('cfg-bar-font',   p.get('bar_font_size_ratio'));
   if (p.has('bar_frost_opacity'))   _setEl('cfg-bar-frost',  p.get('bar_frost_opacity'));
+  if (p.has('bar_frost_saturation')) _setEl('cfg-bar-frost-sat', p.get('bar_frost_saturation'));
+  { const _ref = p.has('frost_reference') ? p.get('frost_reference') : 'false';
+    _setEl('tog-bar-frost-reference', _ref); _setEl('tog-sash-frost-reference', _ref);
+    updateBadgeStyleFields(); }  // refresh which saturation slider hides
   if (!preserveClientInsets && p.has('bar_bottom_inset')) _setEl('cfg-bar-inset', p.get('bar_bottom_inset'));
   if (p.has('score_glow_threshold'))           _setEl('cfg-glow-thresh',  p.get('score_glow_threshold'));
   if (p.has('score_glow_blur'))                _setEl('cfg-glow-blur',    p.get('score_glow_blur'));
   if (p.has('score_glow_alpha'))               _setEl('cfg-glow-alpha',   p.get('score_glow_alpha'));
+  { const _gc = (p.get('score_glow_color') || '').trim();
+    if (_gc.toLowerCase() === 'match') { _setEl('cfg-glow-color-mode', 'match'); }
+    else if (/^[0-9a-fA-F]{6}$/.test(_gc)) { _setEl('cfg-glow-color-mode', 'custom'); _setEl('cfg-glow-color', _gc.toUpperCase()); }
+    else { _setEl('cfg-glow-color-mode', 'white'); }
+    updateGlowColorField(); }
   if (p.has('score_color_mode'))               _setEl('cfg-score-color-mode', p.get('score_color_mode'));
+  if (p.has('score_custom_palette'))           _setEl('cfg-score-custom-palette', p.get('score_custom_palette'));
+  if (p.has('rating_text_color')) {
+    _setAllRtc(p.get('rating_text_color').replace('#', '').toUpperCase());
+  }
   updateRatingFields();
   updateOriginalArt();
 
   // ── Logo ────────────────────────────────────────────────────────────────
-  if (p.has('logo_max_w_ratio'))   _setEl('cfg-logo-w',      p.get('logo_max_w_ratio'));
-  if (p.has('logo_max_h_ratio'))   _setEl('cfg-logo-h',      p.get('logo_max_h_ratio'));
-  if (p.has('logo_bottom_ratio'))  _setEl('cfg-logo-bottom', p.get('logo_bottom_ratio'));
-  if (p.has('textless'))           _setEl('tog-textless',    p.get('textless'));
+  if (p.has('logo_max_w_ratio'))     _setEl('cfg-logo-w',              p.get('logo_max_w_ratio'));
+  if (p.has('logo_max_h_ratio'))     _setEl('cfg-logo-h',              p.get('logo_max_h_ratio'));
+  if (p.has('logo_bottom_ratio'))    _setEl('cfg-logo-bottom',         p.get('logo_bottom_ratio'));
+  if (p.has('logo_bottom_anchor'))   _setEl('tog-logo-bottom-anchor',  p.get('logo_bottom_anchor'));
+  if (p.has('textless'))             _setEl('tog-textless',            p.get('textless'));
   if (p.has('use_original_art'))   _setEl('tog-original-art', p.get('use_original_art'));
   if (p.has('original_art_source')) _setEl('cfg-original-art-source', p.get('original_art_source'));
 
@@ -4220,6 +4749,8 @@ function _resetFormToDefaults() {
       // mid-init.  The range-display setup loop below picks up the new value.
     } else if (el.type === 'checkbox') {
       el.checked = el.defaultChecked;
+    } else if (el.tagName === 'TEXTAREA') {
+      el.value = el.defaultValue;
     } else if (el.tagName === 'SELECT') {
       for (const opt of el.options) opt.selected = opt.defaultSelected;
     }
@@ -4232,8 +4763,11 @@ buildWeightSection('movie-weights', MOVIE_SOURCES, DEFAULT_MOVIE_W);
 buildWeightSection('tv-weights',    TV_SOURCES,    DEFAULT_TV_W);
 
 document.querySelectorAll('input[type="range"]').forEach(el => {
-  const m = el.getAttribute('oninput')?.match(/updateRange\(this,'([^']+)'\)/);
-  if (m && document.getElementById(m[1])) updateRange(el, m[1]);
+  const m = el.getAttribute('oninput')?.match(/update(?:Weight)?Range\(this,'([^']+)'\)/);
+  if (m && document.getElementById(m[1])) {
+    if (m[0].includes('Weight')) updateWeightRange(el, m[1]);
+    else updateRange(el, m[1]);
+  }
   else {
     const pct = ((parseFloat(el.value) - parseFloat(el.min)) / (parseFloat(el.max) - parseFloat(el.min)) * 100).toFixed(1) + '%';
     el.style.setProperty('--pct', pct);
@@ -4247,6 +4781,7 @@ if (!localStorage.getItem('postersplus_selection')) applyDefaultSelection();
 // Re-apply the user's persisted settings on top of the freshly-reset defaults
 // (Core Config — keys / language / selection — is left untouched).
 restoreSettings();
+syncSecondaryLangVisibility();
 updateRatingFields();
 updateOriginalArt();
 updateBadgeModeHint();
@@ -4348,18 +4883,31 @@ initCustomMobileSliders();
 
 <div class="import-modal" id="whatsnew-modal" onclick="if(event.target===this)closeWhatsNew()">
   <div class="import-modal-box">
-    <div class="import-modal-title">What's new in v1.1.0</div>
-    <ul class="whatsnew-list">
-      <li>New Frosted Bar poster layout, with frosted, black, silver, gold, and rating-focused styles</li>
-      <li>Rebuilt textless-poster detection around a new OCR model, with background scanning and load controls for live installations</li>
-      <li>Smarter TMDB poster selection: a tiny number of votes can no longer promote a badly rated poster over substantially better artwork</li>
-      <li>Expanded artwork selection: original-art controls, language-aware poster matching, improved logo fallback, and face- and saliency-aware cropping</li>
-      <li>New notch sash style, plus release-status sashes for BluRay, Streaming, Cinema, and Production</li>
-      <li>Backdrop fallback and genre-tinted fallback canvas when no poster or textless art is available</li>
-      <li>MDBList rate-limit cooldown: automatic global pause on 429 to prevent cascade failures</li>
-      <li>New preset gallery and a reorganized, mobile-friendly tabbed configurator</li>
-      <li>New poster-output translations for French, Portuguese, and Italian</li>
-    </ul>
+    <div class="import-modal-title">What's new</div>
+    <div class="whatsnew-body">
+      <div>
+        <div class="whatsnew-section-title">v1.2-dev</div>
+        <ul class="whatsnew-list">
+          <li>Award sash labels are now clearer: "Globe Winner" / "Globe Nominee" replace the ambiguous "Golden Globe" label, matching the Oscar/Emmy naming pattern</li>
+          <li>New toggle to show a star icon instead of win/nominee text on award sashes</li>
+          <li>Background cache pre-warming: proactively refreshes posters, logos, and metadata for trending/popular titles ahead of requests, with configurable TMDB/MDBList budgets and an optional (off by default) quality-badge pre-fetch for self-hosted instances</li>
+        </ul>
+      </div>
+      <div>
+        <div class="whatsnew-section-title">v1.1.0</div>
+        <ul class="whatsnew-list">
+          <li>New Frosted Bar poster layout, with frosted, black, silver, gold, and rating-focused styles</li>
+          <li>Rebuilt textless-poster detection around a new OCR model, with background scanning and load controls for live installations</li>
+          <li>Smarter TMDB poster selection: a tiny number of votes can no longer promote a badly rated poster over substantially better artwork</li>
+          <li>Expanded artwork selection: original-art controls, language-aware poster matching, improved logo fallback, and face- and saliency-aware cropping</li>
+          <li>New notch sash style, plus release-status sashes for BluRay, Streaming, Cinema, and Production</li>
+          <li>Backdrop fallback and genre-tinted fallback canvas when no poster or textless art is available</li>
+          <li>MDBList rate-limit cooldown: automatic global pause on 429 to prevent cascade failures</li>
+          <li>New preset gallery and a reorganized, mobile-friendly tabbed configurator</li>
+          <li>New poster-output translations for French, Portuguese, and Italian</li>
+        </ul>
+      </div>
+    </div>
     <div class="import-modal-btns">
       <button class="btn btn-primary" onclick="closeWhatsNew()">Got it</button>
     </div>

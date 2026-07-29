@@ -28,6 +28,11 @@
   },
   "sashLabels": {
     "trendingToday": "#{rank} Oggi",
+    "New Season": "Nuova stagione",
+    "Returning": "Di ritorno",
+    "Premiere": "Prima",
+    "Just Added": "Appena aggiunto",
+    "Season Finale": "Finale stagione",
     "New": "Nuovo",
     "Must-See": "Da non perdere",
     "Cult Classic": "Cult",
@@ -58,9 +63,11 @@
     "Romanian": "Rumeno",
     "Hungarian": "Ungherese",
     "Czech": "Ceco",
-    "Best Picture": "Miglior film",
+    "Oscar Winner": "Miglior film",
+    "Oscar Nominee": "Candidato all'Oscar",
     "Emmy Winner": "Vincitore Emmy",
     "Emmy Nominee": "Candidato agli Emmy",
-    "Golden Globe": "Golden Globe"
+    "Globe Winner": "Vincitore Golden Globe",
+    "Globe Nominee": "Candidato al Globo"
   }
 }

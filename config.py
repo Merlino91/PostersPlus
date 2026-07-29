@@ -33,6 +33,40 @@ SERVER_TMDB_KEY       = os.environ.get("TMDB_API_KEY", "").strip()
 SERVER_MDBLIST_KEY    = os.environ.get("MDBLIST_API_KEY", "").strip()
 SERVER_MDBLIST_KEY_2  = os.environ.get("MDBLIST_API_KEY_2", "").strip()
 
+# TheTVDB v4 API key.  Optional — when empty, every TVDB code path is skipped
+# and behaviour is identical to TMDB-only.  TVDB is used strictly as a fallback
+# source of art (logos, backdrops, optionally textless posters) for titles where
+# TMDB returns nothing usable, to reduce fallbacks to text titles / genre canvas.
+# Unlike TMDB/MDBList (api key per request), TVDB v4 requires a one-month bearer
+# token obtained from POST /login; the key is exchanged for a token internally.
+SERVER_TVDB_KEY       = os.environ.get("TVDB_API_KEY", "").strip()
+# Only required for user-supported ("subscriber") TVDB keys; blank for company keys.
+TVDB_SUBSCRIBER_PIN   = os.environ.get("TVDB_SUBSCRIBER_PIN", "").strip()
+
+def _tvdb_flag(key: str, default: bool) -> bool:
+    raw = os.environ.get(key, "").strip().lower()
+    if raw == "":
+        return default
+    return raw in ("1", "true", "yes")
+
+# Per-asset feature toggles.  Logos/backdrops default on (low regression risk —
+# pure fallback); posters default off because TVDB posters usually carry burned-in
+# title text and must be vetted by text detection before use.
+TVDB_USE_LOGOS        = _tvdb_flag("TVDB_USE_LOGOS",     True)
+TVDB_USE_BACKDROPS    = _tvdb_flag("TVDB_USE_BACKDROPS", True)
+TVDB_USE_POSTERS      = _tvdb_flag("TVDB_USE_POSTERS",   False)
+# Where a TVDB clearlogo sits in the logo source chain:
+#   1 = TVDB first      — beats both TMDB and the Metahub CDN
+#   2 = TVDB mid        — after TMDB's own logos, but before Metahub
+#   3 = TVDB last       — only when TMDB and Metahub both have nothing (default;
+#                         zero change to existing output)
+# TVDB clearlogos are often higher quality than TMDB/Metahub, so 1 or 2 generally
+# improves results — at the cost of altering logos that currently come from those
+# sources.  Ignored entirely when no TVDB key is set.
+TVDB_LOGO_PRIORITY    = max(1, min(3, int(os.environ.get("TVDB_LOGO_PRIORITY", "3"))))
+# Caps concurrent TVDB API calls so a burst of uncached misses can't stampede it.
+TVDB_CONCURRENCY      = max(1, int(os.environ.get("TVDB_CONCURRENCY", "3")))
+
 # Ordered list of all configured server-side MDBList keys (primary first).
 # Used by the key-rotation logic in main.py to fall back when a key is exhausted.
 SERVER_MDBLIST_KEYS: list[str] = [k for k in [SERVER_MDBLIST_KEY, SERVER_MDBLIST_KEY_2] if k]
@@ -42,8 +76,19 @@ SERVER_MDBLIST_KEYS: list[str] = [k for k in [SERVER_MDBLIST_KEY, SERVER_MDBLIST
 # Cache-Control: public header so Cloudflare (or any CDN) caches them at the
 # edge. Set to 0 to disable (e.g. when running without a CDN).
 CDN_CACHE_TTL         = int(os.environ.get("CDN_CACHE_TTL", "0"))
-# JPEG output quality for composited posters (70–95). Higher = better quality, larger files.
+# Image format for composited posters (webp or jpeg). webp is recommended.
+IMAGE_FORMAT          = os.environ.get("IMAGE_FORMAT", "webp").lower()
+# Normalise the common "jpg" alias to the canonical "jpeg" that PIL's save()
+# registry and the image/* media type both expect — "JPG" is not a valid PIL
+# format string and would crash every render.
+if IMAGE_FORMAT == "jpg":
+    IMAGE_FORMAT = "jpeg"
+if IMAGE_FORMAT not in ("webp", "jpeg"):
+    IMAGE_FORMAT = "webp"
+# JPEG output quality for composited posters (70-95). Higher = better quality, larger files.
 JPEG_QUALITY          = max(70, min(95, int(os.environ.get("JPEG_QUALITY", "85"))))
+# WebP output quality for composited posters (70-95).
+WEBP_QUALITY          = max(70, min(95, int(os.environ.get("WEBP_QUALITY", "85"))))
 
 # Feature Defaults 
 
@@ -75,7 +120,7 @@ SCORE_GLOW_ALPHA     = 40   # alpha of the glow applied
 LOGO_MAX_W_RATIO  = 0.75   # target/max width of logo — the span every logo normalises to
 LOGO_MAX_H_RATIO  = 0.25   # max height of logo (paired with LOGO_ABS_MAX_H px cap)
 LOGO_BOTTOM_RATIO = 0.28   # distance of logo from the bottom
-DEFAULT_LOGO_LANGUAGE = os.environ.get("DEFAULT_LOGO_LANGUAGE", "en")
+DEFAULT_LOGO_LANGUAGE = os.environ.get("DEFAULT_LOGO_LANGUAGE", os.environ.get("TMDB_LANGUAGE", "en"))
 
 # Quality Badge Defaults
 
@@ -89,11 +134,28 @@ BADGE_ANCHOR_Y_RATIO = 0.050   # y offset from top
 
 TMDB_POSTER_CACHE_DURATION   = 60
 TMDB_LOGO_CACHE_DURATION     = 60
+# +/- half this many days of deterministic per-key jitter applied to the
+# poster/logo durations above, so a large batch cached at once (e.g. an
+# initial pre-warm) doesn't all expire on the same day. 10 -> spread of
+# 55-65 days for a 60-day base duration. Same cache_key always gets the
+# same jitter.
+TMDB_IMAGE_CACHE_JITTER_DAYS = int(os.environ.get("TMDB_IMAGE_CACHE_JITTER_DAYS", "10"))
 TMDB_METADATA_CACHE_DURATION = 7    # re-check textless status / logos weekly
+# TVDB artwork listings change slowly; cache the per-title artwork index and the
+# resolved TVDB id for a fortnight.  Negative results (no TVDB match / no art) are
+# cached for a shorter window so newly-added TVDB art is picked up reasonably soon.
+TVDB_ARTWORK_CACHE_DURATION  = int(os.environ.get("TVDB_ARTWORK_CACHE_DURATION", "14"))   # days
+TVDB_NEG_CACHE_DURATION      = int(os.environ.get("TVDB_NEG_CACHE_DURATION", "3"))         # days
+# Artwork-type catalogue (/artwork/types) almost never changes — cache it long.
+TVDB_TYPES_CACHE_DURATION    = int(os.environ.get("TVDB_TYPES_CACHE_DURATION", "30"))      # days
 DAYS_CONSIDERED_NEW          = 14
 NEW_CACHE_DURATION           = 1
 OLD_CACHE_DURATION           = 14
 TRENDING_CACHE_DURATION      = 1
+TRENDING_FETCH_TIME          = os.environ.get("TRENDING_FETCH_TIME", "").strip()
+TRENDING_FETCH_TIMEZONE      = os.environ.get("TRENDING_FETCH_TIMEZONE", "UTC").strip()
+TRENDING_FETCH_COUNT         = int(os.environ.get("TRENDING_FETCH_COUNT", "40"))
+TRENDING_BROAD_FETCH_COUNT   = int(os.environ.get("TRENDING_BROAD_FETCH_COUNT", "100"))
 # Quality (AIOStreams) TTL — separate from rating TTL because stream availability
 # for older titles is very stable.  New content keeps the 1-day window so fresh
 # encodes are picked up quickly; old content is cached for much longer.
@@ -113,6 +175,64 @@ QUALITY_WAIT_TIMEOUT         = float(os.environ.get("QUALITY_WAIT_TIMEOUT", "30"
 # apparent per-key concurrency limit while still allowing good parallelism.
 MDBLIST_CONCURRENCY          = int(os.environ.get("MDBLIST_CONCURRENCY", "3"))
 
+# Cache warming — proactively populate the TMDB metadata cache (logos, posters,
+# credits) and the MDBList rating/award cache for currently-trending titles, so
+# the first real requests for them are fast and don't all hit upstream APIs at
+# once. Off by default — enable explicitly once the server keys' quotas are
+# understood. Each budget is a ceiling on actual API calls (cache hits don't
+# count), so steady-state runs after the first one are typically far cheaper
+# than the configured budgets.
+CACHE_WARM_ENABLED           = os.environ.get("CACHE_WARM_ENABLED", "false").strip().lower() == "true"
+CACHE_WARM_TMDB_BUDGET       = int(os.environ.get("CACHE_WARM_TMDB_BUDGET", "2000"))
+CACHE_WARM_MDBLIST_BUDGET    = int(os.environ.get("CACHE_WARM_MDBLIST_BUDGET", "500"))
+CACHE_WARM_INTERVAL_HOURS    = float(os.environ.get("CACHE_WARM_INTERVAL_HOURS", "24"))
+
+# Optionally align steady-state cache-warm cycles to a fixed local hour of day
+# (e.g. "4" or "4:30" for 4:00am / 4:30am), instead of running exactly
+# CACHE_WARM_INTERVAL_HOURS after the previous cycle finished. Useful for
+# scheduling the (CPU-heavy, OCR-driven) warm cycle for off-peak hours.
+# "Local" means the container's TZ — set TZ in your compose/.env if needed
+# (defaults to UTC otherwise). Unset/empty = old behaviour (every
+# CACHE_WARM_INTERVAL_HOURS). The very first cycle ever still runs after
+# CACHE_WARM_STARTUP_GRACE_SECS regardless, so a fresh install pre-warms
+# immediately.
+CACHE_WARM_AT_HOUR: float | None = None
+_cache_warm_at_raw = os.environ.get("CACHE_WARM_AT_HOUR", "").strip()
+if _cache_warm_at_raw:
+    try:
+        if ":" in _cache_warm_at_raw:
+            _hh, _mm = _cache_warm_at_raw.split(":", 1)
+            CACHE_WARM_AT_HOUR = (int(_hh) + int(_mm) / 60.0) % 24
+        else:
+            CACHE_WARM_AT_HOUR = float(_cache_warm_at_raw) % 24
+    except ValueError:
+        CACHE_WARM_AT_HOUR = None
+
+# Also pre-fetch quality badge data (resolution/source/HDR tokens) for each
+# warmed title via the configured quality source (AIOStreams or scraper).
+# Series default to S01E01. Off by default: this is a *per-title* request
+# against your scraper/debrid-backed addon, separate from TMDB/MDBList, and
+# at a budget of a couple thousand it can mean thousands of scrape requests
+# in a short window. WARNING: if your quality source is a public Stremio
+# addon (rather than your own self-hosted instance), this volume of traffic
+# in a short period can get your server's IP rate-limited or blocked by that
+# addon. Only enable this if you understand and accept that risk.
+CACHE_WARM_QUALITY_ENABLED   = os.environ.get("CACHE_WARM_QUALITY_ENABLED", "false").strip().lower() == "true"
+
+# Optionally pre-warm specific Stremio catalogs in addition to TMDB
+# trending/popular — useful when a user has a particular addon catalog
+# (e.g. a custom list) that they want fast on first load. Comma-separated
+# list of addon manifest URLs (the same install links pasted into Stremio).
+# Each catalog the manifest exposes is fetched (with pagination) and its
+# items are resolved to TMDB ids and warmed first, ahead of trending/popular,
+# within the same TMDB/MDBList budgets above.
+CACHE_WARM_CATALOG_URLS = [
+    u.strip() for u in os.environ.get("CACHE_WARM_CATALOG_URLS", "").split(",") if u.strip()
+]
+# Max items pre-warmed per catalog (across pagination), so a single large
+# catalog can't consume the entire warm budget.
+CACHE_WARM_CATALOG_MAX_ITEMS = int(os.environ.get("CACHE_WARM_CATALOG_MAX_ITEMS", "100"))
+
 # Digital release (r/movieleaks) scraper settings
 DIGITAL_RELEASE_MIN_AGE_DAYS = 1    # ignore posts younger than this (mods still cleaning up)
 DIGITAL_RELEASE_MAX_AGE_DAYS = 30   # expire entries older than this from the cache
@@ -123,13 +243,28 @@ DIGITAL_RELEASE_MAX_AGE_DAYS = 30   # expire entries older than this from the ca
 # so changing settings immediately produces a fresh render on next request.
 # Override with COMPOSITE_CACHE_TTL=X in your .env file.
 COMPOSITE_CACHE_TTL        = int(os.environ.get("COMPOSITE_CACHE_TTL", "604800"))   # 7 days
+# +/- half this many seconds of deterministic per-key jitter applied to
+# COMPOSITE_CACHE_TTL, so a large batch of composites rendered around the
+# same time don't all expire (and get re-rendered) at once. Default 2 days ->
+# spread of 6-8 days for the default 7-day TTL. Same cache_key always gets
+# the same jitter.
+COMPOSITE_CACHE_TTL_JITTER = int(os.environ.get("COMPOSITE_CACHE_TTL_JITTER", str(2 * 86400)))
 # Maximum number of composite cache entries. When exceeded the oldest entries are
 # evicted on each insert to keep the table at this size. 0 = no cap (rely on TTL alone).
 COMPOSITE_MAX_ENTRIES      = int(os.environ.get("COMPOSITE_MAX_ENTRIES", "0"))
+# Number of fully-rendered composites kept in the in-memory LRU (L1) cache.
+# These are served without any SQLite read, keeping the hot working set off the
+# OS page cache.  Each entry is roughly 100-300 KB; 500 entries ≈ 50-150 MB.
+# Set to 0 to disable L1 entirely (fall through to SQLite for every request).
+COMPOSITE_MEM_ENTRIES      = int(os.environ.get("COMPOSITE_MEM_ENTRIES", "500"))
 # Set to any truthy value (1, true, yes) to skip composite cache reads and writes
 # entirely. Every request re-renders from scratch. Useful during development when
 # iterating on rendering changes and you don't want stale renders served.
 DISABLE_COMPOSITE_CACHE    = os.environ.get("DISABLE_COMPOSITE_CACHE", "").strip().lower() in ("1", "true", "yes")
+# Movies with only a theatrical release date older than this many years are treated
+# as "Streaming" rather than "Cinema" — guards against stale TMDB data where a
+# physical/digital date was never added.  Set to 0 to disable the gate entirely.
+CINEMA_MAX_AGE_YEARS       = max(0, int(os.environ.get("CINEMA_MAX_AGE_YEARS", "3")))
 
 def _parse_bool_env(key: str, default: bool = False) -> bool:
     val = os.environ.get(key, "").strip().lower()
@@ -291,21 +426,44 @@ SCORE_NORMALISERS = {
 
 # Default Sash Priority
 
+# Kept in sync with SASH_SLOTS in configurator.html — the configurator's
+# default order and every bundled preset use this same sequence.
 SASH_PRIORITY: list[str] = [
+    # Prestige — rare and timeless, so they outrank everything else.
     "wins",
     "gg_wins",
     "festival",
     "pic_noms",
+    "metacritic",
     "gg_noms",
+    # Timely — narrow, time-boxed windows.  Above the curated lists below so a
+    # notable-cast match can't bury "this is new right now".
+    "trending",
+    "trending_broad",
+    "premiere",
+    "new_release",
+    "just_added",
+    "new_season",
+    "season_finale",
+    # Curated taste — common matches, so they sit under the timely tier.
     "studio",
     "director",
     "cast",
-    "trending",
+    # Static flavour — always true, never urgent.
     "cult",
     "foreign",
-    "new_release",
-    "metacritic",
     "true_story",
-    "structural",
-    "release_status",
+    "short_film",
+    "mini_series",
+    "binge_ready",
+    # Broad lifecycle / release-status fallbacks — match almost everything, so
+    # they sit last and only surface when nothing above did.
+    "returning",
+    "airing",
+    "cancelled",
+    "ended",
+    "physical",
+    "streaming",
+    "cinema",
+    "production",
 ]
