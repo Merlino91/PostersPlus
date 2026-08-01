@@ -858,6 +858,14 @@ class RequestConfig:
     rating_text_color: tuple[int, int, int] | None = None
     sash_text_color:   tuple[int, int, int] | None = None
 
+    # --- TUE VARIABILI CUSTOM ---
+    frosted_glass_intensity: int = 90
+    gradient_top_intensity: int = 50
+    gradient_bottom_intensity: int = 70
+    grad_color_top: str = "black"  
+    grad_color_bot: str = "global"  
+    use_global_ui_color: bool = False
+    text_drop_shadow: bool = True
 
 def _parse_bool(val: str | None, default: bool) -> bool:
     if val is None:
@@ -1028,7 +1036,7 @@ def build_request_config(params: dict) -> RequestConfig:
     cfg.sash_badge_size_w       = _f("sash_badge_size_w",       cfg.sash_badge_size_w,       0.5, 2.0)
     cfg.sash_badge_size_h       = _f("sash_badge_size_h",       cfg.sash_badge_size_h,       0.5, 2.0)
     _style_raw = params.get("sash_badge_style", cfg.sash_badge_style)
-    if _style_raw in ("silver", "gold", "frosted", "black"):
+    if _style_raw in ("silver", "gold", "frosted", "black", "minimal_pill"):
         cfg.sash_badge_style = _style_raw
     cfg.sash_length_ratio       = _f("sash_length_ratio",      cfg.sash_length_ratio,      0.8, 1.5)
     cfg.sash_height_ratio       = _f("sash_height_ratio",      cfg.sash_height_ratio,      0.06, 0.20)
@@ -1305,7 +1313,8 @@ def _draw_combined_text_badge(
     """
     token_set = set(tokens)
 
-    if tokens and _score_points(tokens) < min_score:
+    # Se non c'è ITA e il punteggio è troppo basso, non disegniamo nulla
+    if tokens and "ITA" not in token_set and _score_points(tokens) < min_score:
         return
 
     if "4K" in token_set:
@@ -1320,7 +1329,9 @@ def _draw_combined_text_badge(
     elif "WEBDL" in token_set:
         sep_color = (192, 192, 200)   # silver
     else:
-        return
+        # Se la sorgente è sconosciuta, applichiamo l'argento di default 
+        # invece di interrompere il disegno.
+        sep_color = (192, 192, 200)
 
     if "DV" in token_set:
         fmt = "DV"
@@ -1331,8 +1342,11 @@ def _draw_combined_text_badge(
     else:
         fmt = "SDR"
 
+    # Verifichiamo la presenza della lingua italiana
+    is_ita = "ITA" in token_set
+    
     try:
-        font = ImageFont.truetype(os.path.join(_FONTS_DIR, "Inter-Bold.ttf"), font_size)
+        font = ImageFont.truetype(os.path.join(_FONTS_DIR, "Ubuntu-Bold.ttf"), font_size)
     except IOError:
         font = ImageFont.load_default()
 
@@ -1359,11 +1373,18 @@ def _draw_combined_text_badge(
 
         # Horizontal rule — v_gap below the actual glyph bottom
         ly = y + h_res + v_gap
-        draw.rounded_rectangle(
-            [x, ly, x + total_w, ly + line_h],
-            radius=line_h // 2,
-            fill=sep_color,
-        )
+        if is_ita:
+            # Dividiamo la larghezza in 3 e disegniamo la bandiera in orizzontale
+            w_third = total_w / 3.0
+            draw.rectangle([x, ly, x + int(w_third), ly + line_h], fill=(0, 146, 70))             # Verde
+            draw.rectangle([x + int(w_third), ly, x + int(w_third * 2), ly + line_h], fill=(255, 255, 255))   # Bianco
+            draw.rectangle([x + int(w_third * 2), ly, x + total_w, ly + line_h], fill=(206, 43, 55))          # Rosso
+        else:
+            draw.rounded_rectangle(
+                [x, ly, x + total_w, ly + line_h],
+                radius=line_h // 2,
+                fill=sep_color,
+            )
 
         # Visual tag — v_gap below the rule, aligned to its own visual top
         fmt_x = x + (total_w - w_fmt) // 2 - b_fmt[0]
@@ -1379,7 +1400,17 @@ def _draw_combined_text_badge(
         cx = x
         draw.text((cx, y), res, font=font, fill=ink)
         cx += round(draw.textlength(res, font=font)) + pip_gap
-        _draw_solid_pip(image, x=cx, y_center=pip_cy, width=pip_w, height=pip_h, color=sep_color)
+        
+        if is_ita:
+            # Dividiamo l'altezza in 3 e disegniamo la bandiera in verticale
+            top_y = pip_cy - pip_h // 2
+            h_third = pip_h / 3.0
+            draw.rectangle([cx, top_y, cx + pip_w, top_y + int(h_third)], fill=(0, 146, 70))              # Verde
+            draw.rectangle([cx, top_y + int(h_third), cx + pip_w, top_y + int(h_third * 2)], fill=(255, 255, 255))    # Bianco
+            draw.rectangle([cx, top_y + int(h_third * 2), cx + pip_w, top_y + pip_h], fill=(206, 43, 55))           # Rosso
+        else:
+            _draw_solid_pip(image, x=cx, y_center=pip_cy, width=pip_w, height=pip_h, color=sep_color)
+            
         cx += pip_w + pip_gap
         draw.text((cx, y), fmt, font=font, fill=ink)
 
@@ -1551,10 +1582,12 @@ def build_poster(
             )
 
     elif mode == 2:
-        allowed_tokens  = {"4K", "1080P", "REMUX", "WEBDL", "DV", "HDR10+", "HDR10"}
+        # 1. Aggiungiamo "ITA" ai token consentiti per lo stile a riga
+        allowed_tokens  = {"4K", "1080P", "REMUX", "WEBDL", "DV", "HDR10+", "HDR10", "ITA"}
         filtered_tokens = [t for t in tokens if t in allowed_tokens]
 
-        if filtered_tokens and _score_points(tokens) >= cfg.badge_min_score:
+        # 2. Bypass del punteggio: se c'è "ITA", stampiamo i badge a prescindere dal punteggio minimo
+        if filtered_tokens and ("ITA" in tokens or _score_points(tokens) >= cfg.badge_min_score):
             bx = int(width  * cfg.badge_anchor_x)
             by = int(height * cfg.badge_anchor_y)
 
@@ -1977,6 +2010,38 @@ def build_poster(
         _is_star  = cfg.sash_winner_star and sash_type == "win"
         _label_tr = translate_sash(label, cfg.logo_language)
         if cfg.sash_mode == "notch":
+            if getattr(cfg, 'text_drop_shadow', False):
+                from PIL import ImageFilter
+                
+                # 1. Creiamo un livello vuoto e disegniamo la forma della tacca
+                shadow_layer = Image.new("RGBA", image.size, (0,0,0,0))
+                shadow_layer = draw_award_badge(
+                    shadow_layer, _label_tr, sash_type=sash_type, 
+                    size_ratio_w=cfg.sash_badge_size_w, size_ratio_h=cfg.sash_badge_size_h, 
+                    notch_style="black", notch_inset=cfg.sash_badge_inset, 
+                    font_size_ratio=cfg.sash_badge_font_ratio, frost_opacity=1.0, 
+                    tint_rgb=(0,0,0), star=_is_star
+                )
+                
+                # 2. Estraiamo ESCLUSIVAMENTE il canale Alpha e lo sfochiamo
+                alpha_mask = shadow_layer.split()[3]
+                alpha_mask = alpha_mask.filter(ImageFilter.GaussianBlur(radius=4)) 
+                
+                # 3. Rendiamo l'ombra più leggera riducendone l'opacità globale al 40%
+                alpha_mask = alpha_mask.point(lambda p: int(p * 0.40))
+                
+                # 4. Applichiamo la maschera a un livello di nero puro
+                pure_shadow = Image.new("RGBA", image.size, (0, 0, 0, 255))
+                pure_shadow.putalpha(alpha_mask)
+                
+                # 5. Spostiamo l'ombra in basso e la incolliamo USANDO LA MASCHERA
+                shifted_shadow = Image.new("RGBA", image.size, (0,0,0,0))
+                shifted_shadow.paste(pure_shadow, (0, 3), pure_shadow)
+                
+                # 6. Uniamo l'ombra all'immagine principale
+                image = Image.alpha_composite(image.convert("RGBA"), shifted_shadow)
+
+            # Il resto del codice originale per disegnare la vera tacca colorata
             image = draw_award_badge(image, _label_tr, sash_type=sash_type,
                                      size_ratio_w=cfg.sash_badge_size_w,
                                      size_ratio_h=cfg.sash_badge_size_h,
@@ -3224,8 +3289,58 @@ async def get_poster(
     if _cfg.ACCESS_KEY and not hmac.compare_digest(access_key, _cfg.ACCESS_KEY):
         raise HTTPException(status_code=403, detail="Unauthorized, your access key is not valid for this instance.")
 
+    # =======================================================================
+    # --- NUOVO: PONTE DI SALVATAGGIO (BYPASS PER WATCHLY / RPDB) ---
+    # =======================================================================
+    
+    # 1. Filtro "Graffe": Se Watchly invia le variabili non compilate, le consideriamo nulle.
+    if "{" in tmdb_id:
+        tmdb_id = ""
+    if "{" in imdb_id:
+        imdb_id = ""
+
+    # 2. Ponte API: Se manca il TMDB ID ma abbiamo un IMDB ID valido, chiediamo a TheMovieDB.
+    # Questo bypassa completamente il problema dei client che inviano solo ID incompleti.
+    if not tmdb_id and imdb_id:
+        effective_tmdb_key = _resolve_tmdb_key(tmdb_key)
+        if effective_tmdb_key and _HTTP_CLIENT:
+            try:
+                find_resp = await _HTTP_CLIENT.get(
+                    f"https://api.themoviedb.org/3/find/{imdb_id}",
+                    params={"api_key": effective_tmdb_key, "external_source": "imdb_id"}
+                )
+                if find_resp.status_code == 200:
+                    find_data = find_resp.json()
+                    
+                    # Cerca in automatico il tipo di media e ne estrae il VERO ID numerico.
+                    if find_data.get("movie_results"):
+                        tmdb_id = str(find_data["movie_results"][0]["id"])
+                        type = "movie"
+                    elif find_data.get("tv_results"):
+                        tmdb_id = str(find_data["tv_results"][0]["id"])
+                        type = "tv"
+                    elif find_data.get("tv_episode_results"):
+                        tmdb_id = str(find_data["tv_episode_results"][0]["show_id"])
+                        type = "tv"
+                    elif find_data.get("tv_season_results"):
+                        tmdb_id = str(find_data["tv_season_results"][0]["show_id"])
+                        type = "tv"
+            except Exception as e:
+                logger.error(f"Ponte IMDB->TMDB fallito per {imdb_id}: {e}")
+
+    # 3. Controllo finale: se dopo tutti i tentativi non abbiamo ottenuto un TMDB ID valido, blocchiamo.
+    if not tmdb_id:
+        raise HTTPException(status_code=400, detail="Missing valid tmdb_id and mapping via imdb_id failed")
+    
+    # =======================================================================
+
+    # Adesso passiamo ai controlli rigidi. A questo punto arriveranno solo ID corretti.
     _check_tmdb_id(tmdb_id)
-    _check_imdb_id(imdb_id)
+    
+    # Controlliamo l'imdb_id rigorosamente solo se esiste ancora (se non lo abbiamo svuotato al punto 1)
+    if imdb_id:
+        _check_imdb_id(imdb_id)
+        
     _check_type(type)
 
     # -----------------------------------------------------------------------
@@ -4211,6 +4326,29 @@ async def get_poster(
             if rcfg.release_status_cinema_only and _release_status not in ("Cinema", "Production"):
                 _release_status = None
 
+
+ # --- CHIAMATA API EXTRA IN TEMPO REALE PER SERIE TV ---
+        # Poiché i dati cachati da tmdb.py eliminano il nodo next_episode_to_air,
+        # effettuiamo una chiamata diretta per recuperare la data esatta.
+        if type in ("tv", "series") and "next_episode" in rcfg.sash_priority:
+            try:
+                _resp = await client.get(
+                    f"https://api.themoviedb.org/3/tv/{tmdb_id}",
+                    params={"api_key": effective_tmdb_key}
+                )
+                if _resp.status_code == 200:
+                    _data = _resp.json()
+                    
+                    tmdb_data = dict(tmdb_data)
+                    tmdb_data["status"] = _data.get("status")
+                    
+                    _ep_data = _data.get("next_episode_to_air")
+                    if isinstance(_ep_data, dict) and _ep_data.get("air_date"):
+                        tmdb_data["next_episode_to_air"] = {"air_date": _ep_data.get("air_date")}
+            except Exception as e:
+                logger.warning(f"Impossibile scaricare dati extra TMDB per {tmdb_id}: {e}")
+
+
         if type not in ("tv", "series") and "just_added" in rcfg.sash_priority:
             _recent_digital_release_date = await fetch_recent_movie_digital_release_date(
                 client, tmdb_id, effective_tmdb_key,
@@ -4226,7 +4364,8 @@ async def get_poster(
             award_wins=award_wins,
             award_noms=award_noms,
             trending_rank=trending_rank,
-            release_date=rel,
+            # Salvagente: se MDBlist è vuoto (rel), peschiamo la data o l'anno da TMDB
+            release_date=rel or tmdb_data.get("release_date") or (str(release_year) if release_year else None),
             keywords=keywords if not rating_already_cached else [],
             festival_label_override=festival_label,
             is_cult_override=is_cult,
