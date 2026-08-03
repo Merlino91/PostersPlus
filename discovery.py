@@ -573,24 +573,29 @@ def extract_discovery_meta(
         if name in studios:
             meta.matched_studios.append(studios[name])
 
-    # --- Credits ---
+   # --- Credits ---
     credits = tmdb_data.get("credits", {})
 
     for crew_member in credits.get("crew", []):
-        if crew_member.get("job") == "Director":
-            name = crew_member.get("name", "")
+        # 1. Estraiamo SUBITO sia il ruolo che il nome per questo membro della crew
+        job = crew_member.get("job", "")
+        name = crew_member.get("name", "")
+
+        # 2. Controllo per i Registi
+        if job == "Director":
             if name in directors:
                 label = directors[name]
                 if label not in meta.matched_directors:
                     meta.matched_directors.append(label)
 
-    # Cerca i Mangaka e Autori originali
+        # 3. Controllo per i Mangaka e Autori originali
         elif job in ("Comic Book", "Original Series Creator", "Writer", "Novel", "Author", "Creator", "Original Concept", "Manga"):
             if name in NOTABLE_CREATORS:
                 label = NOTABLE_CREATORS[name]
                 if label not in meta.matched_creators:
                     meta.matched_creators.append(label)
 
+    # --- Cast ---
     for cast_member in credits.get("cast", [])[:10]:
         name = cast_member.get("name", "")
         if name in cast_list:
