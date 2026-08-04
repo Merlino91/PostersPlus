@@ -3884,11 +3884,11 @@ function buildBaseParams({ usePlaceholders = false, domainOverride = null } = {}
   if (userTmdbKey)    params.set('tmdb_key',     usePlaceholders ? '{tmdb_key}'    : userTmdbKey);
   if (userMdblistKey) params.set('mdblist_key',  usePlaceholders ? '{mdblist_key}' : userMdblistKey);
   // ── Variabili Grafiche Custom ──
-  addP('frosted_glass_intensity', n('cfg-glass-int').toFixed(0), '90');
-  addP('grad_color_top', vEl('cfg-grad-top-color'), 'black');
-  addP('grad_color_bot', vEl('cfg-grad-bot-color'), 'global');
-  addP('use_global_ui_color', c('tog-global-ui') ? 'true' : 'false', 'false');
-  addP('text_drop_shadow', c('tog-text-shadow') ? 'true' : 'false', 'true');
+          params.set('frosted_glass_intensity', n('cfg-glass-int').toFixed(0));
+          params.set('grad_color_top', vEl('cfg-grad-top-color') || 'black');
+          params.set('grad_color_bot', vEl('cfg-grad-bot-color') || 'global');
+          params.set('use_global_ui_color', c('tog-global-ui') ? 'true' : 'false');
+          params.set('text_drop_shadow', c('tog-text-shadow') ? 'true' : 'false');
   
   params.set('top_gradient',    vEl('cfg-top-gradient')    || 'high');
   if (vEl('cfg-top-gradient') === 'custom') {
