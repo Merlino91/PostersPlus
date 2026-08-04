@@ -1980,7 +1980,18 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
                 <option value="custom">Custom</option>
               </select>
               <div class="field-hint">The power of the darkening applied to the top.</div>
+              
+              <!-- LA TUA MODIFICA: Top Color Source -->
+              <div style="margin-top:8px;">
+                <label class="field-label" style="font-size:10px; opacity:0.8;">Top Color Source</label>
+                <select id="cfg-grad-top-color" onchange="build(); queuePreviewReload()">
+                  <option value="black" selected>Black (Default)</option>
+                  <option value="local">Local Color (Sky/Top)</option>
+                  <option value="global">Global Dominant Color</option>
+                </select>
+              </div>
             </div>
+
             <div id="top-gradient-custom-fields" style="display:none; margin-bottom:14px;">
               <div class="field">
                 <label class="field-label">Opacity</label>
@@ -1997,7 +2008,8 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
                 </div>
               </div>
             </div>
-            <div class="field">
+
+            <div class="field cfg-sep">
               <label class="field-label">Bottom Vignette</label>
               <select id="cfg-bottom-gradient" onchange="updateGradientFields(); build(); queuePreviewReload()">
                 <option value="off">Off</option>
@@ -2007,7 +2019,18 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
                 <option value="custom">Custom</option>
               </select>
               <div class="field-hint">Lowering may hurt rating and logo legibility.</div>
+              
+              <!-- LA TUA MODIFICA: Bottom Color Source -->
+              <div style="margin-top:8px;">
+                <label class="field-label" style="font-size:10px; opacity:0.8;">Bottom Color Source</label>
+                <select id="cfg-grad-bot-color" onchange="build(); queuePreviewReload()">
+                  <option value="black">Black (Default)</option>
+                  <option value="local">Local Color (Ground/Bot)</option>
+                  <option value="global" selected>Global Dominant Color</option>
+                </select>
+              </div>
             </div>
+
             <div id="bottom-gradient-custom-fields" style="display:none; margin-bottom:14px;">
               <div class="field">
                 <label class="field-label">Opacity</label>
@@ -2024,6 +2047,16 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
                 </div>
               </div>
             </div>
+
+            <!-- LA TUA MODIFICA: Frosted Glass Intensity -->
+            <div class="field cfg-sep">
+              <label class="field-label">Frosted Glass Intensity (Blur)</label>
+              <div class="range-row">
+                <input type="range" id="cfg-glass-int" min="0" max="250" step="1" value="90" oninput="updateRange(this,'rng-glass'); build(); queuePreviewReload()">
+                <span class="range-val" id="rng-glass">90</span>
+              </div>
+            </div>
+
             <div class="toggle-row">
               <div>
                 <div class="toggle-label">Vignette Only On Sash</div>
@@ -2034,7 +2067,29 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
                 <div class="toggle-track"><div class="toggle-thumb"></div></div>
               </label>
             </div>
-          </div>
+
+            <!-- LA TUA MODIFICA: UI Enhancement Toggles -->
+            <div class="field cfg-sep" style="margin-bottom:0;">
+              <label class="field-label">UI Enhancement (Your Custom Settings)</label>
+              <div class="toggle-row">
+                <div>
+                  <div class="toggle-label">Use Global Color for Notch & Bar</div>
+                </div>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="tog-global-ui" onchange="build(); queuePreviewReload()">
+                  <div class="toggle-track"><div class="toggle-thumb"></div></div>
+                </label>
+              </div>
+              <div class="toggle-row">
+                <div>
+                  <div class="toggle-label">Notch Drop Shadow</div>
+                </div>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="tog-text-shadow" checked onchange="build(); queuePreviewReload()">
+                  <div class="toggle-track"><div class="toggle-thumb"></div></div>
+                </label>
+              </div>
+            </div>
         </div>
 
         <!-- 2. RATING / GENRE LABEL -->
@@ -2439,6 +2494,7 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
               <label class="field-label">Style</label>
               <select id="cfg-sash-badge-style" onchange="updateBadgeStyleFields(); build(); queuePreviewReload()">
                 <option value="frosted" selected>Frosted</option>
+                <option value="minimal_pill">Minimal Pill</option>
                 <option value="black">Pure Black</option>
                 <option value="silver">Black, Silver Trim</option>
                 <option value="gold">Black, Gold Trim</option>
@@ -2892,6 +2948,8 @@ const TMDB_IMG = 'https://image.tmdb.org/t/p/w92';
 
 const SASH_SLOTS = [
   // Prestige — rare and timeless, so they outrank everything else.
+  { id:'next_episode',   label:'Prossimo Episodio (Data)',          color:'#5aaaff' },
+  { id:'canceled',       label:'Serie Cancellata',                  color:'#3ab0a8' },
   { id:'wins',           label:'Best Picture / Major Emmy Win',     color:'#c9a84c' },
   { id:'gg_wins',        label:'Major Golden Globe Win',            color:'#c9a84c' },
   { id:'festival',       label:'Festival Winner',                   color:'#c9a84c' },
@@ -2910,6 +2968,7 @@ const SASH_SLOTS = [
   // Curated taste — common matches, so they sit under the timely tier.
   { id:'studio',         label:'Notable Studio Name',               color:'#9060cc' },
   { id:'director',       label:'Notable Director Name',             color:'#9060cc' },
+  { id:'creator',        label:'Notable Creator / Mangaka',         color:'#9060cc' },
   { id:'cast',           label:'Notable Cast Name',                 color:'#4ab87a' },
   // Static flavour — always true, never urgent.
   { id:'cult',           label:'Cult Classic',                      color:'#5aaaff' },
@@ -3823,6 +3882,13 @@ function buildBaseParams({ usePlaceholders = false, domainOverride = null } = {}
   if (accKey)         params.set('access_key',  accKey);
   if (userTmdbKey)    params.set('tmdb_key',     usePlaceholders ? '{tmdb_key}'    : userTmdbKey);
   if (userMdblistKey) params.set('mdblist_key',  usePlaceholders ? '{mdblist_key}' : userMdblistKey);
+  // ── Variabili Grafiche Custom ──
+  addP('frosted_glass_intensity', n('cfg-glass-int').toFixed(0), '90');
+  addP('grad_color_top', vEl('cfg-grad-top-color'), 'black');
+  addP('grad_color_bot', vEl('cfg-grad-bot-color'), 'global');
+  addP('use_global_ui_color', c('tog-global-ui') ? 'true' : 'false', 'false');
+  addP('text_drop_shadow', c('tog-text-shadow') ? 'true' : 'false', 'true');
+  
   params.set('top_gradient',    vEl('cfg-top-gradient')    || 'high');
   if (vEl('cfg-top-gradient') === 'custom') {
     params.set('top_gradient_opacity', document.getElementById('cfg-tg-op').value);
