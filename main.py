@@ -1850,6 +1850,8 @@ def build_poster(
 
         elif cfg.rating_display_mode == 2:
             font_size = int(width * cfg.numeric_score_font_size_ratio)
+            # Riduciamo la grandezza dell'icona del 15% rispetto al testo
+            icon_size = max(10, int(font_size * 0.85))
             # Score formatting:
             #   out of 100 (default): "87", "100", "N/A"
             #   out of 10:            "8.7", "8.0" (always one decimal), "10"
@@ -1863,67 +1865,98 @@ def build_poster(
             rating_cy = height * cfg.numeric_score_y_offset
 
             try:
-                font_meta = ImageFont.truetype(os.path.join(_FONTS_DIR, "Inter-Bold.ttf"), font_size)
+                font_meta = ImageFont.truetype(os.path.join(_FONTS_DIR, "Ubuntu-Bold.ttf"), font_size)
+                font_icon = ImageFont.truetype(os.path.join(_FONTS_DIR, "Font Awesome 7 Free-Solid-900.otf"), icon_size)
             except IOError:
                 font_meta = ImageFont.load_default()
+                font_icon = ImageFont.load_default()
+                icon_size = font_size
 
-            tx, ty = _text_center(draw, label, font_meta, width / 2, rating_cy)  # type: ignore
-            draw.text(
-                (tx, ty - int(font_size * 0.10)),
-                label,
-                font=font_meta,
-                fill=(*cfg.rating_text_color, 255) if cfg.rating_text_color else (200, 200, 200, 255),
-            )
+            star_icon = "\uf005"
+            
+            len_genre = draw.textlength(f"{genre_label}  ", font=font_meta) 
+            len_icon = draw.textlength(f"{star_icon} ", font=font_icon)     
+            len_score = draw.textlength(_score_text, font=font_meta)
+            
+            total_width = len_genre + len_icon + len_score
+            ox = (width - total_width) // 2
+            
+            _, ty = _text_center(draw, genre_label, font_meta, width / 2, rating_cy)
+            adjusted_oy = ty - int(font_size * 0.10)
+            
+            # Compensazione Y per mantenere la stella piccola perfettamente centrata al testo
+            icon_oy = adjusted_oy + (font_size - icon_size) // 2 
+            
+            draw.text((ox, adjusted_oy), f"{genre_label}  ", font=font_meta, fill=(200, 200, 200, 255))
+            draw.text((ox + len_genre, icon_oy), f"{star_icon} ", font=font_icon, fill=(200, 200, 200, 255))
+            draw.text((ox + len_genre + len_icon, adjusted_oy), _score_text, font=font_meta, fill=(200, 200, 200, 255))
 
-        elif cfg.rating_display_mode == 3:
+
+elif cfg.rating_display_mode == 3:
             font_size = int(width * cfg.minimalist_mode_font_size_ratio)
+            # Riduciamo la grandezza dell'icona del 15%
+            icon_size = max(10, int(font_size * 0.85))
 
             try:
-                font_meta = ImageFont.truetype(os.path.join(_FONTS_DIR, "Inter-Bold.ttf"), font_size)
+                # LA TUA MODIFICA: Caricamento font personalizzati e icone
+                font_meta = ImageFont.truetype(os.path.join(_FONTS_DIR, "Ubuntu-Bold.ttf"), font_size)
+                font_icon = ImageFont.truetype(os.path.join(_FONTS_DIR, "Font Awesome 7 Free-Solid-900.otf"), icon_size)
             except IOError:
                 font_meta = ImageFont.load_default()
+                font_icon = ImageFont.load_default()
+                icon_size = font_size
 
             y = round(height * cfg.minimalist_mode_font_y_offset)
             right_edge = width - int(width * cfg.minimalist_mode_font_x_offset)
+            
+            # Manteniamo la logica originale per supportare il colore testo dalla UI, con il tuo fallback
             _ink = (*cfg.rating_text_color, 255) if cfg.rating_text_color else (235, 235, 235, 255)
 
-            # Segments, each tagged with the SEPARATOR that precedes it:
-            #   "pip"  — silver vertical pip (before the year)
-            #   "star" — ★ glyph (before the rating/score)
-            #   "rpip" — pip COLOURED by score (mode 0 only: the rating shown
-            #            purely by colour, no number)
-            # Mode 0 ("Year"): genre [rating-pip] year
-            # Mode 1 ("Rating"): genre ★ score
-            # Mode 2 ("Year + Rating"): genre [pip] year ★ score
             _has_score = score not in ("N/A", None)
-            # Score formatting matches the other modes: out of 100 by default,
-            # one decimal out of 10 ("8.7"), with a bare "10" at the top.
-            if _has_score and cfg.minimalist_score_out_of_10:
-                _score_str = "10" if int(score) >= 100 else f"{int(score) / 10:.1f}"
+
+            if _has_score:
+                if cfg.minimalist_score_out_of_10:
+                    _score_str = "10" if int(score) >= 100 else f"{int(score) / 10:.1f}"
+                else:
+                    _score_str = str(score)
+
+                # LA TUA MODIFICA: Estrazione colore in base alla palette (aggiornata alla nuova funzione di backend!)
+                try:
+                    star_color = score_color_for_mode(
+                        int(score),
+                        cfg.score_color_mode,
+                        cfg.score_custom_palette
+                    )[0]
+                except ValueError:
+                    star_color = _ink
             else:
-                _score_str = str(score)
+                _score_str = "N/A"
+                star_color = _ink
+
             parts = [(genre_label, None)] if genre_label else []
             if cfg.minimalist_append_mode == 0:
                 if release_year:
-                    parts.append((str(release_year), "rpip" if parts else None))
+                    # LA TUA MODIFICA: Forza l'inserimento del "rpip"
+                    parts.append((str(release_year), "rpip"))
             elif cfg.minimalist_append_mode == 1:
                 if _has_score:
-                    parts.append((_score_str, "star" if parts else None))
+                    parts.append((_score_str, "star"))
             else:  # 2 — Year + Rating
                 if release_year:
-                    parts.append((str(release_year), "pip" if parts else None))
+                    parts.append((str(release_year), "pip"))
                 if _has_score:
-                    parts.append((_score_str, "star" if parts else None))
+                    parts.append((_score_str, "star"))
 
+            # LA TUA MODIFICA: Costanti e calcoli per la stella Awesome Font
+            star_glyph = "\uf005"
             pip_gap = int(font_size * 0.55)
             pip_w   = max(4, int(font_size * 0.18))
             pip_h   = int(font_size * 1.4)
             pip_cy  = round(y + font_size * 0.60)
-            star_w  = draw.textlength("★", font=font_meta)
+            star_w  = draw.textlength(star_glyph, font=font_icon)
 
-            # Lay out right-to-left: each segment, with its separator to its left.
             cursor = right_edge
-            ops    = []   # (kind, x[, text]); kind in text|pip|rpip|star
+            ops    = []   
             for i in range(len(parts) - 1, -1, -1):
                 seg, sep = parts[i]
                 seg_x = int(cursor - draw.textlength(seg, font=font_meta))
@@ -1936,12 +1969,16 @@ def build_poster(
                     ops.append((sep, sep_x))
                     cursor = sep_x - pip_gap
 
+            # LA TUA MODIFICA: Calcolo per centrare verticalmente l'icona
+            icon_y_offset = (font_size - icon_size) // 2
+
             for op in ops:
                 kind, ox = op[0], op[1]
                 if kind == "text":
                     draw.text((ox, y), op[2], font=font_meta, fill=_ink)
                 elif kind == "star":
-                    draw.text((ox, y), "★", font=font_meta, fill=_ink)
+                    # LA TUA MODIFICA: Disegna la stella con il SUO COLORE calcolato dalla palette e la centra
+                    draw.text((ox, y + icon_y_offset), star_glyph, font=font_icon, fill=star_color)
                 elif kind == "rpip":
                     draw_score_bar_vertical(image, score, x=ox, y_center=pip_cy,
                                             height=pip_h, width=pip_w,
@@ -1953,7 +1990,7 @@ def build_poster(
 
         elif cfg.rating_display_mode == 4:
             # Frosted bar — centred dot-separated label at the bottom.
-            # Format: Year · Genre · ★ Rating  (omit any missing field)
+            # Format: Year · Genre · IMDb Rating  (omit any missing field)
             _has_score = score not in ("N/A", None)
             if _has_score:
                 if cfg.bar_score_out_of_10:
@@ -1964,16 +2001,21 @@ def build_poster(
                 _score_str = ""
             _year_str  = str(release_year) if release_year else ""
             _bar_sash, _ = sash_result if sash_result else (None, None)
+            
+            # LA TUA MODIFICA: Sostituzione della stella testuale con "IMDb"
             if cfg.bar_append == "rating_year":
-                _parts = [_year_str, genre_label or "", f"★ {_score_str}" if _score_str else ""]
+                _parts = [_year_str, genre_label or "", f"IMDb {_score_str}" if _score_str else ""]
             elif cfg.bar_append == "rating":
-                _parts = [genre_label or "", f"★ {_score_str}" if _score_str else ""]
+                _parts = [genre_label or "", f"IMDb {_score_str}" if _score_str else ""]
             elif cfg.bar_append == "year":
                 _parts = [_year_str, genre_label or ""]
             else:  # "sash"
                 _parts = [genre_label or "", translate_sash(_bar_sash, cfg.logo_language) if _bar_sash else ""]
+            
             _parts = [p for p in _parts if p]
             _sep = "  ·  " if len(_parts) <= 2 else " · "
+            
+            # Utilizzo della funzione draw_frosted_bar ORIGINALE per mantenere tutte le nuove funzionalità
             image = draw_frosted_bar(
                 image,
                 left_text   = "",
