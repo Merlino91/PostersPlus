@@ -1892,7 +1892,7 @@ def build_poster(
             draw.text((ox + len_genre + len_icon, adjusted_oy), _score_text, font=font_meta, fill=(200, 200, 200, 255))
 
 
-elif cfg.rating_display_mode == 3:
+        elif cfg.rating_display_mode == 3:
             font_size = int(width * cfg.minimalist_mode_font_size_ratio)
             # Riduciamo la grandezza dell'icona del 15%
             icon_size = max(10, int(font_size * 0.85))
