@@ -1538,8 +1538,8 @@ def build_poster(
         except Exception:
             smart_top_color = global_dom_color
 
-        local_top_color = sample_frosted_sash_rgb(image)
-        local_bot_color = sample_frosted_bar_rgb(image, getattr(cfg, 'bar_height_ratio', 0.080), getattr(cfg, 'bar_bottom_inset', 0.0))
+         local_top_color = smart_top_color
+        local_bot_color = dominant_frost_rgb(_frost_color_src)
 
         if cfg.grad_color_top == "global": top_color = global_dom_color
         elif cfg.grad_color_top == "local": top_color = local_top_color
