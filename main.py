@@ -1019,6 +1019,17 @@ def build_request_config(params: dict) -> RequestConfig:
         except ValueError: pass
     cfg.hide_genre = _b("hide_genre", cfg.hide_genre)
 
+    cfg.frosted_glass_intensity = _i("frosted_glass_intensity", cfg.frosted_glass_intensity, 0, 250)
+    _gct = (params.get("grad_color_top") or "").strip().lower()
+    if _gct in ("black", "local", "global"):
+        cfg.grad_color_top = _gct
+    _gcb = (params.get("grad_color_bot") or "").strip().lower()
+    if _gcb in ("black", "local", "global"):
+        cfg.grad_color_bot = _gcb
+    cfg.use_global_ui_color = _b("use_global_ui_color", cfg.use_global_ui_color)
+    cfg.text_drop_shadow = _b("text_drop_shadow", cfg.text_drop_shadow)
+
+
     cfg.sash_badge              = _b("sash_badge",              cfg.sash_badge)
     # sash_mode supersedes the legacy sash_badge bool; fall back to it for old
     # URLs/presets (sash_badge=true → notch, false → diagonal sash).
@@ -1488,6 +1499,56 @@ def build_poster(
     # colour to grey (e.g. a blue sky reads as white behind the notch).
     _frost_color_src = image.copy()
 
+    # --- ESTRAZIONE COLORI LOCAL / GLOBAL ---
+    top_color = (0, 0, 0)
+    bot_color = (0, 0, 0)
+
+    if cfg.grad_color_top in ("local", "global") or cfg.grad_color_bot in ("local", "global"):
+        global_dom_color = (100, 100, 100)
+        try:
+            small_img = image.copy()
+            small_img.thumbnail((50, 50))
+            colors = small_img.convert("RGB").getcolors(25000)
+            if colors:
+                colors.sort(key=lambda t: t[0], reverse=True)
+                for count, col in colors:
+                    lum = 0.299 * col[0] + 0.587 * col[1] + 0.114 * col[2]
+                    if 15 < lum < 215:
+                        global_dom_color = col
+                        break
+                else:
+                    global_dom_color = colors[0][1]
+        except Exception:
+            pass
+
+        try:
+            small_top = image.crop((width - int(width * 0.4), 0, width, int(height * 0.2)))
+            small_top.thumbnail((50, 50))
+            top_colors = small_top.convert("RGB").getcolors(25000)
+            smart_top_color = (100, 100, 100)
+            if top_colors:
+                top_colors.sort(key=lambda t: t[0], reverse=True)
+                for count, col in top_colors:
+                    lum = 0.299 * col[0] + 0.587 * col[1] + 0.114 * col[2]
+                    if 15 < lum < 215:
+                        smart_top_color = col
+                        break
+                else:
+                    smart_top_color = top_colors[0][1]
+        except Exception:
+            smart_top_color = global_dom_color
+
+        local_top_color = sample_frosted_sash_rgb(image)
+        local_bot_color = sample_frosted_bar_rgb(image, getattr(cfg, 'bar_height_ratio', 0.080), getattr(cfg, 'bar_bottom_inset', 0.0))
+
+        if cfg.grad_color_top == "global": top_color = global_dom_color
+        elif cfg.grad_color_top == "local": top_color = local_top_color
+        else: top_color = (0, 0, 0)
+
+        if cfg.grad_color_bot == "global": bot_color = global_dom_color
+        elif cfg.grad_color_bot == "local": bot_color = local_bot_color
+        else: bot_color = (0, 0, 0)
+
     # --- TOP GRADIENT (vectorised) ---
     # Darkens the top of the poster so the age-rating numeral and quality
     # badges stay legible over bright art.  Strength is one of four presets
@@ -1508,9 +1569,53 @@ def build_poster(
         eased_top = ((1 - t_top) * top_max_alpha).astype(np.uint8)
         top_array = np.broadcast_to(eased_top[:, np.newaxis], (top_height, width)).copy()
         top_overlay = Image.fromarray(top_array, mode="L")
-        top_tinted = Image.new("RGBA", (width, top_height), (0, 0, 0, 0))
+        top_tinted = Image.new("RGBA", (width, top_height), (int(top_color[0]), int(top_color[1]), int(top_color[2]), 0))
         top_tinted.putalpha(top_overlay)
         image.paste(top_tinted, (0, 0), mask=top_tinted)
+
+    # --- FROSTED GLASS 2.0 (con maschera 33% nero) ---
+    if getattr(cfg, 'frosted_glass_intensity', 0) > 0:
+        from PIL import ImageFilter, ImageEnhance
+        fg_height = int(height * 0.60)
+        fg_start  = height - fg_height
+        bottom_crop = image.crop((0, fg_start, width, height))
+
+        box_radius = max(1, int(cfg.frosted_glass_intensity / 20))
+        glass_layer = bottom_crop
+        for _ in range(3):
+            glass_layer = glass_layer.filter(ImageFilter.BoxBlur(radius=box_radius))
+
+        glass_layer = glass_layer.filter(ImageFilter.UnsharpMask(radius=3, percent=150, threshold=3))
+        glass_layer = ImageEnhance.Color(glass_layer).enhance(1.4)
+        glass_layer = ImageEnhance.Brightness(glass_layer).enhance(0.7)
+
+        noise = np.random.normal(0, 2, (fg_height, width, 3)).astype(np.float32)
+        glass_np = np.array(glass_layer.convert("RGBA"), dtype=np.float32)
+        glass_np[:, :, :3] = np.clip(glass_np[:, :, :3] + noise, 0, 255)
+        glass_layer = Image.fromarray(glass_np.astype(np.uint8), mode="RGBA")
+
+        t_blur = np.linspace(0, 1, fg_height, dtype=np.float32)
+        eased_blur = (np.power(t_blur, 1.8) * 255).astype(np.uint8)
+        blur_mask_arr = np.broadcast_to(eased_blur[:, np.newaxis], (fg_height, width)).copy()
+        blur_mask = Image.fromarray(blur_mask_arr, mode="L")
+
+        image.paste(glass_layer, (0, fg_start), mask=blur_mask)
+
+        # Maschera tinta al 33% di altezza
+        tint_height = int(height * 0.33)
+        tint_start = height - tint_height
+        t_bot = np.linspace(0, 1, tint_height, dtype=np.float32)
+        eased_tint = ((t_bot ** 1.2) * 180).astype(np.uint8)
+        tint_mask_arr = np.broadcast_to(eased_tint[:, np.newaxis], (tint_height, width)).copy()
+        tint_mask = Image.fromarray(tint_mask_arr, mode="L")
+
+        if bot_color != (0, 0, 0):
+            dark_tint_color = (int(bot_color[0] * 0.35), int(bot_color[1] * 0.35), int(bot_color[2] * 0.35))
+        else:
+            dark_tint_color = (0, 0, 0)
+
+        tint_layer = Image.new("RGBA", (width, tint_height), (*dark_tint_color, 255))
+        image.paste(tint_layer, (0, tint_start), mask=tint_mask)
 
     # --- BOTTOM GRADIENT (vectorised) ---
     # Strength is one of four presets (off / low / medium / high) — see
@@ -1533,9 +1638,14 @@ def build_poster(
         eased_bot     = ((1 - (1 - t_bot) ** _BOTTOM_GRADIENT_CURVE) * bottom_max_alpha).astype(np.uint8)
         bottom_array  = np.broadcast_to(eased_bot[:, np.newaxis], (bottom_height, width)).copy()
         bottom_overlay = Image.fromarray(bottom_array, mode="L")
-        bottom_tinted  = Image.new("RGBA", (width, bottom_height), (0, 0, 0, 0))
+        if bot_color != (0, 0, 0):
+            dark_bot_color = (int(bot_color[0] * 0.35), int(bot_color[1] * 0.35), int(bot_color[2] * 0.35))
+        else:
+            dark_bot_color = (0, 0, 0)
+        bottom_tinted  = Image.new("RGBA", (width, bottom_height), (*dark_bot_color, 0))
         bottom_tinted.putalpha(bottom_overlay)
         image.paste(bottom_tinted, (0, bottom_start), mask=bottom_tinted)
+
 
     # --- Badge / quality overlay ---
     mode   = cfg.badge_display_mode
