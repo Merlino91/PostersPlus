@@ -1505,6 +1505,8 @@ def build_poster(
 
     if cfg.grad_color_top in ("local", "global") or cfg.grad_color_bot in ("local", "global"):
         global_dom_color = (100, 100, 100)
+        smart_top_color = (100, 100, 100)
+
         try:
             small_img = image.copy()
             small_img.thumbnail((50, 50))
@@ -1525,7 +1527,6 @@ def build_poster(
             small_top = image.crop((width - int(width * 0.4), 0, width, int(height * 0.2)))
             small_top.thumbnail((50, 50))
             top_colors = small_top.convert("RGB").getcolors(25000)
-            smart_top_color = (100, 100, 100)
             if top_colors:
                 top_colors.sort(key=lambda t: t[0], reverse=True)
                 for count, col in top_colors:
@@ -1538,16 +1539,22 @@ def build_poster(
         except Exception:
             smart_top_color = global_dom_color
 
-         local_top_color = smart_top_color
+        local_top_color = smart_top_color
         local_bot_color = dominant_frost_rgb(_frost_color_src)
 
-        if cfg.grad_color_top == "global": top_color = global_dom_color
-        elif cfg.grad_color_top == "local": top_color = local_top_color
-        else: top_color = (0, 0, 0)
+        if cfg.grad_color_top == "global":
+            top_color = global_dom_color
+        elif cfg.grad_color_top == "local":
+            top_color = local_top_color
+        else:
+            top_color = (0, 0, 0)
 
-        if cfg.grad_color_bot == "global": bot_color = global_dom_color
-        elif cfg.grad_color_bot == "local": bot_color = local_bot_color
-        else: bot_color = (0, 0, 0)
+        if cfg.grad_color_bot == "global":
+            bot_color = global_dom_color
+        elif cfg.grad_color_bot == "local":
+            bot_color = local_bot_color
+        else:
+            bot_color = (0, 0, 0)
 
     # --- TOP GRADIENT (vectorised) ---
     # Darkens the top of the poster so the age-rating numeral and quality
