@@ -1969,8 +1969,8 @@ def build_poster(
                     ops.append((sep, sep_x))
                     cursor = sep_x - pip_gap
 
-            # LA TUA MODIFICA: Calcolo per centrare verticalmente l'icona
-            icon_y_offset = (font_size - icon_size) // 2
+            # LA TUA MODIFICA: Calcolo per centrare verticalmente l'icona (spinta in basso dell'8%)
+            icon_y_offset = ((font_size - icon_size) // 2) + int(font_size * 0.08)
 
             for op in ops:
                 kind, ox = op[0], op[1]
