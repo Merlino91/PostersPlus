@@ -1500,7 +1500,29 @@ def build_poster(
     _frost_color_src = image.copy()
 
     # --- ESTRAZIONE COLORI CENTRALIZZATA SU IMMAGINE PULITA (_frost_color_src) ---
+    def _get_vivid_dominant_color(img: Image.Image) -> tuple[int, int, int]:
+        import colorsys
+        small_img = img.copy()
+        small_img.thumbnail((50, 50))
+        colors = small_img.convert("RGB").getcolors(2500)
+        if not colors:
+            return (100, 100, 100)
+        
+        def color_vividness_score(c_count, c_rgb):
+            r, g, b = c_rgb[0] / 255.0, c_rgb[1] / 255.0, c_rgb[2] / 255.0
+            h, s, v = colorsys.rgb_to_hsv(r, g, b)
+            if s < 0.15 or v < 0.15 or v > 0.92:
+                return -1
+            return s * v * (c_count ** 0.2)
+
+        colors.sort(key=lambda t: color_vividness_score(t[0], t[1]), reverse=True)
+        if color_vividness_score(colors[0][0], colors[0][1]) > 0:
+            return colors[0][1]
+        colors.sort(key=lambda t: t[0], reverse=True)
+        return colors[0][1]
+
     global_dom_color = (100, 100, 100)
+    vivid_dom_color  = _get_vivid_dominant_color(_frost_color_src)
     smart_top_color  = (100, 100, 100)
 
     try:
@@ -1576,7 +1598,7 @@ def build_poster(
         top_tinted.putalpha(top_overlay)
         image.paste(top_tinted, (0, 0), mask=top_tinted)
 
-    # --- FROSTED GLASS 2.0 (solo effetto vetro sfumato/blur) ---
+    # --- FROSTED GLASS 2.0 (Effetto vetro sfumato 2.0 originale) ---
     if getattr(cfg, 'frosted_glass_intensity', 0) > 0:
         from PIL import ImageFilter, ImageEnhance
         fg_height = int(height * 0.60)
@@ -1603,6 +1625,22 @@ def build_poster(
         blur_mask = Image.fromarray(blur_mask_arr, mode="L")
 
         image.paste(glass_layer, (0, fg_start), mask=blur_mask)
+
+        # Tinta di sfondo inferiore al 33% di altezza (35% finto nero pigmentato)
+        tint_height = int(height * 0.33)
+        tint_start = height - tint_height
+        t_bot_tint = np.linspace(0, 1, tint_height, dtype=np.float32)
+        eased_tint = ((t_bot_tint ** 1.2) * 180).astype(np.uint8)
+        gradient_mask_arr = np.broadcast_to(eased_tint[:, np.newaxis], (tint_height, width)).copy()
+        gradient_mask = Image.fromarray(gradient_mask_arr, mode="L")
+
+        if bot_color != (0, 0, 0):
+            dark_tint_color = (int(bot_color[0] * 0.35), int(bot_color[1] * 0.35), int(bot_color[2] * 0.35))
+        else:
+            dark_tint_color = (0, 0, 0)
+
+        tint_layer = Image.new("RGBA", (width, tint_height), (*dark_tint_color, 255))
+        image.paste(tint_layer, (0, tint_start), mask=gradient_mask)
 
     # --- BOTTOM GRADIENT / VIGNETTE (regolato da bottom_gradient e colorato da grad_color_bot) ---
     # Strength is one of four presets (off / low / medium / high / custom).
@@ -1870,7 +1908,7 @@ def build_poster(
 
     _frost_tint: tuple[float, float, float] | None
     if getattr(cfg, 'use_global_ui_color', False) and (_bar_frosted or _notch_frosted or _notch_pill or _sash_poster):
-        _frost_tint = global_dom_color
+        _frost_tint = vivid_dom_color
     elif _notch_pill:
         _frost_tint = smart_top_color
     elif (_bar_frosted or _notch_frosted or _sash_poster):
