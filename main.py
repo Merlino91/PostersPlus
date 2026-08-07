@@ -1499,62 +1499,58 @@ def build_poster(
     # colour to grey (e.g. a blue sky reads as white behind the notch).
     _frost_color_src = image.copy()
 
-    # --- ESTRAZIONE COLORI LOCAL / GLOBAL ---
-    top_color = (0, 0, 0)
-    bot_color = (0, 0, 0)
+    # --- ESTRAZIONE COLORI CENTRALIZZATA SU IMMAGINE PULITA (_frost_color_src) ---
+    global_dom_color = (100, 100, 100)
+    smart_top_color  = (100, 100, 100)
 
-    if cfg.grad_color_top in ("local", "global") or cfg.grad_color_bot in ("local", "global"):
-        global_dom_color = (100, 100, 100)
-        smart_top_color = (100, 100, 100)
+    try:
+        clean_sample = _frost_color_src.copy()
+        clean_sample.thumbnail((40, 60))
+        colors = clean_sample.convert("RGB").getcolors(25000)
+        if colors:
+            colors.sort(key=lambda t: t[0], reverse=True)
+            for count, col in colors:
+                lum = 0.299 * col[0] + 0.587 * col[1] + 0.114 * col[2]
+                if 15 < lum < 215:
+                    global_dom_color = col
+                    break
+            else:
+                global_dom_color = colors[0][1]
+    except Exception:
+        pass
 
-        try:
-            small_img = image.copy()
-            small_img.thumbnail((50, 50))
-            colors = small_img.convert("RGB").getcolors(25000)
-            if colors:
-                colors.sort(key=lambda t: t[0], reverse=True)
-                for count, col in colors:
-                    lum = 0.299 * col[0] + 0.587 * col[1] + 0.114 * col[2]
-                    if 15 < lum < 215:
-                        global_dom_color = col
-                        break
-                else:
-                    global_dom_color = colors[0][1]
-        except Exception:
-            pass
+    try:
+        clean_top_crop = _frost_color_src.crop((width - int(width * 0.4), 0, width, int(height * 0.2)))
+        clean_top_crop.thumbnail((40, 40))
+        top_colors = clean_top_crop.convert("RGB").getcolors(25000)
+        if top_colors:
+            top_colors.sort(key=lambda t: t[0], reverse=True)
+            for count, col in top_colors:
+                lum = 0.299 * col[0] + 0.587 * col[1] + 0.114 * col[2]
+                if 15 < lum < 215:
+                    smart_top_color = col
+                    break
+            else:
+                smart_top_color = top_colors[0][1]
+    except Exception:
+        smart_top_color = global_dom_color
 
-        try:
-            small_top = image.crop((width - int(width * 0.4), 0, width, int(height * 0.2)))
-            small_top.thumbnail((50, 50))
-            top_colors = small_top.convert("RGB").getcolors(25000)
-            if top_colors:
-                top_colors.sort(key=lambda t: t[0], reverse=True)
-                for count, col in top_colors:
-                    lum = 0.299 * col[0] + 0.587 * col[1] + 0.114 * col[2]
-                    if 15 < lum < 215:
-                        smart_top_color = col
-                        break
-                else:
-                    smart_top_color = top_colors[0][1]
-        except Exception:
-            smart_top_color = global_dom_color
+    local_top_color = smart_top_color
+    local_bot_color = dominant_frost_rgb(_frost_color_src)
 
-        local_top_color = smart_top_color
-        local_bot_color = dominant_frost_rgb(_frost_color_src)
+    if cfg.grad_color_top == "global":
+        top_color = global_dom_color
+    elif cfg.grad_color_top == "local":
+        top_color = local_top_color
+    else:
+        top_color = (0, 0, 0)
 
-        if cfg.grad_color_top == "global":
-            top_color = global_dom_color
-        elif cfg.grad_color_top == "local":
-            top_color = local_top_color
-        else:
-            top_color = (0, 0, 0)
-
-        if cfg.grad_color_bot == "global":
-            bot_color = global_dom_color
-        elif cfg.grad_color_bot == "local":
-            bot_color = local_bot_color
-        else:
-            bot_color = (0, 0, 0)
+    if cfg.grad_color_bot == "global":
+        bot_color = global_dom_color
+    elif cfg.grad_color_bot == "local":
+        bot_color = local_bot_color
+    else:
+        bot_color = (0, 0, 0)
 
     # --- TOP GRADIENT (vectorised) ---
     # Darkens the top of the poster so the age-rating numeral and quality
@@ -1624,11 +1620,7 @@ def build_poster(
         eased_bot     = ((1 - (1 - t_bot) ** _BOTTOM_GRADIENT_CURVE) * bottom_max_alpha).astype(np.uint8)
         bottom_array  = np.broadcast_to(eased_bot[:, np.newaxis], (bottom_height, width)).copy()
         bottom_overlay = Image.fromarray(bottom_array, mode="L")
-        if bot_color != (0, 0, 0):
-            dark_bot_color = (int(bot_color[0] * 0.35), int(bot_color[1] * 0.35), int(bot_color[2] * 0.35))
-        else:
-            dark_bot_color = (0, 0, 0)
-        bottom_tinted  = Image.new("RGBA", (width, bottom_height), (*dark_bot_color, 0))
+        bottom_tinted  = Image.new("RGBA", (width, bottom_height), (int(bot_color[0]), int(bot_color[1]), int(bot_color[2]), 0))
         bottom_tinted.putalpha(bottom_overlay)
         image.paste(bottom_tinted, (0, bottom_start), mask=bottom_tinted)
 
@@ -1871,17 +1863,22 @@ def build_poster(
     # bar simply adopts the notch's colour (and, below, its saturation) whenever a
     # frosted notch is shown, with no separate "match" toggle needed.
     _sash_shown    = cfg.sash_mode != "hidden" and sash_result is not None
+    _notch_pill    = _sash_shown and cfg.sash_mode == "notch" and cfg.sash_badge_style == "minimal_pill"
     _notch_frosted = _sash_shown and cfg.sash_mode == "notch" and cfg.sash_badge_style == "frosted"
     _sash_poster   = _sash_shown and cfg.sash_mode == "sash" and cfg.sash_poster_color
     _bar_frosted   = cfg.rating_display_mode == 4 and cfg.bar_style in ("frosted", "rating_frosted")
-    _frost_tint: tuple[float, float, float] | None = (
-        dominant_frost_rgb(_frost_color_src)
-        if (_bar_frosted or _notch_frosted or _sash_poster) else None
-    )
-    # One saturation for every frosted element: a frosted notch owns it (its slider
-    # lives in the sash panel); otherwise the rating bar's slider drives it. Sharing
-    # it keeps the bar and any sash/notch identical.
-    _frost_sat = cfg.sash_badge_frost_saturation if _notch_frosted else cfg.bar_frost_saturation
+
+    _frost_tint: tuple[float, float, float] | None
+    if getattr(cfg, 'use_global_ui_color', False) and (_bar_frosted or _notch_frosted or _notch_pill or _sash_poster):
+        _frost_tint = global_dom_color
+    elif _notch_pill:
+        _frost_tint = smart_top_color
+    elif (_bar_frosted or _notch_frosted or _sash_poster):
+        _frost_tint = dominant_frost_rgb(_frost_color_src)
+    else:
+        _frost_tint = None
+
+    _frost_sat = cfg.sash_badge_frost_saturation if (_notch_frosted or _notch_pill) else cfg.bar_frost_saturation
 
     # --- Rating / genre label ---
     if cfg.rating_display_mode != 0:
