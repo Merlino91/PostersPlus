@@ -1506,16 +1506,18 @@ def build_poster(
     _frost_color_src = image.copy()
 
     # -------------------------------------------------------------------------
-    # 1. ESTRATTORE VIVIDEZZA PERSONALE (_get_vivid_dominant_color -> vivid_dom_color)
-    #    - Algoritmo basato su HSV: moltiplica Saturazione x Brillantezza x Frequenza
-    #      (s * v * c_count^0.2) e scarta neri, bianchi e grigi opachi.
-    #    - USO: Applicato a Notch & Rating Bar quando 'use_global_ui_color' e ATTIVO.
+    # ESTRATTORE VIVIDEZZA DOMINANTE PERSONALE (_get_vivid_dominant_color)
+    # Algoritmo da main-personale.py: calcola il punteggio in spazio colore HSV:
+    #   score = Saturazione * Brillantezza * (c_count ^ 0.2)
+    # Scarta neri, bianchi e grigi sbiaditi (s < 0.15 o v < 0.15 o v > 0.92) per
+    # selezionare il colore piu VIVIDO e ricco dell'intera locandina.
+    # Campiona a 40x60 px per mantenere il rapporto di forma reale 2:3 del poster.
     # -------------------------------------------------------------------------
     def _get_vivid_dominant_color(img: Image.Image) -> tuple[int, int, int]:
         import colorsys
         small_img = img.copy()
-        small_img.thumbnail((50, 50))  # Campione 50x50 per calcolo vividezza
-        colors = small_img.convert("RGB").getcolors(2500)
+        small_img.thumbnail((40, 60))  # Campione 40x60 in proporzione 2:3 poster
+        colors = small_img.convert("RGB").getcolors(25000)
         if not colors:
             return (100, 100, 100)
         
@@ -1533,36 +1535,16 @@ def build_poster(
         colors.sort(key=lambda t: t[0], reverse=True)
         return colors[0][1]
 
-    # -------------------------------------------------------------------------
-    # 2. ESTRATTORE GLOBALE FREQUENZIALE (global_dom_color)
-    #    - Cerca il colore piu frequente nell'intera locandina con luminosita media.
-    #    - USO: Gradiente Top/Bottom quando 'grad_color_top' o 'grad_color_bot' e 'global'.
-    # -------------------------------------------------------------------------
-    global_dom_color = (100, 100, 100)
+    # In main-personale.py, global_dom_color era proprio _get_dominant_color(image)
     vivid_dom_color  = _get_vivid_dominant_color(_frost_color_src)
+    global_dom_color = vivid_dom_color
     smart_top_color  = (100, 100, 100)
 
-    try:
-        clean_sample = _frost_color_src.copy()
-        clean_sample.thumbnail((40, 60))  # Proporzione 2:3 tipica delle locandine
-        colors = clean_sample.convert("RGB").getcolors(25000)
-        if colors:
-            colors.sort(key=lambda t: t[0], reverse=True)
-            for count, col in colors:
-                lum = 0.299 * col[0] + 0.587 * col[1] + 0.114 * col[2]
-                if 15 < lum < 215:
-                    global_dom_color = col
-                    break
-            else:
-                global_dom_color = colors[0][1]
-    except Exception:
-        pass
-
     # -------------------------------------------------------------------------
-    # 3. ESTRATTORE LOCALE SUPERIORE (smart_top_color)
-    #    - Ritaglia l'angolo in alto a destra (20% altezza, 40% larghezza) dove risiede la Notch.
-    #    - USO: Gradiente Top quando 'grad_color_top' e 'local', e Notch 'Minimal Pill'
-    #      quando 'use_global_ui_color' e DISATTIVO.
+    # ESTRATTORE LOCALE SUPERIORE (smart_top_color)
+    # Ritaglia l'angolo in alto a destra (20% altezza, 40% larghezza) dove risiede la Notch.
+    # USO: Gradiente Top quando 'grad_color_top' e 'local', e Notch 'Minimal Pill'
+    # quando 'use_global_ui_color' e DISATTIVO.
     # -------------------------------------------------------------------------
     try:
         clean_top_crop = _frost_color_src.crop((width - int(width * 0.4), 0, width, int(height * 0.2)))
