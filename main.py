@@ -1610,27 +1610,33 @@ def build_poster(
         top_tinted.putalpha(top_overlay)
         image.paste(top_tinted, (0, 0), mask=top_tinted)
 
-    # --- FROSTED GLASS 2.0 (Effetto vetro sfumato 2.0 originale) ---
+    # --- FROSTED GLASS 2.0 (Effetto vetro sfumato ottico puro) ---
+    # Dedicato ESCLUSIVAMENTE alla sfocatura lente ed al contrasto visivo.
+    # Non applica maschere scure di propria iniziativa per non inquinare il Bottom Gradient.
     if getattr(cfg, 'frosted_glass_intensity', 0) > 0:
         from PIL import ImageFilter, ImageEnhance
         fg_height = int(height * 0.60)
         fg_start  = height - fg_height
         bottom_crop = image.crop((0, fg_start, width, height))
 
+        # 1. Sfocatura iterativa a 3 passaggi (simula la rifrazione della luce)
         box_radius = max(1, int(cfg.frosted_glass_intensity / 20))
         glass_layer = bottom_crop
         for _ in range(3):
             glass_layer = glass_layer.filter(ImageFilter.BoxBlur(radius=box_radius))
 
+        # 2. Accentua i bordi rifratti + boost vividezza 140% e luminosita 70%
         glass_layer = glass_layer.filter(ImageFilter.UnsharpMask(radius=3, percent=150, threshold=3))
         glass_layer = ImageEnhance.Color(glass_layer).enhance(1.4)
         glass_layer = ImageEnhance.Brightness(glass_layer).enhance(0.7)
 
+        # 3. Micro-grana organica anti-banding in NumPy
         noise = np.random.normal(0, 2, (fg_height, width, 3)).astype(np.float32)
         glass_np = np.array(glass_layer.convert("RGBA"), dtype=np.float32)
         glass_np[:, :, :3] = np.clip(glass_np[:, :, :3] + noise, 0, 255)
         glass_layer = Image.fromarray(glass_np.astype(np.uint8), mode="RGBA")
 
+        # 4. Maschera esponenziale di fusione (1.8)
         t_blur = np.linspace(0, 1, fg_height, dtype=np.float32)
         eased_blur = (np.power(t_blur, 1.8) * 255).astype(np.uint8)
         blur_mask_arr = np.broadcast_to(eased_blur[:, np.newaxis], (fg_height, width)).copy()
@@ -1638,39 +1644,41 @@ def build_poster(
 
         image.paste(glass_layer, (0, fg_start), mask=blur_mask)
 
-        # Tinta di sfondo inferiore al 33% di altezza (35% finto nero pigmentato)
-        tint_height = int(height * 0.33)
-        tint_start = height - tint_height
-        t_bot_tint = np.linspace(0, 1, tint_height, dtype=np.float32)
-        eased_tint = ((t_bot_tint ** 1.2) * 180).astype(np.uint8)
-        gradient_mask_arr = np.broadcast_to(eased_tint[:, np.newaxis], (tint_height, width)).copy()
-        gradient_mask = Image.fromarray(gradient_mask_arr, mode="L")
-
-        if bot_color != (0, 0, 0):
-            dark_tint_color = (int(bot_color[0] * 0.35), int(bot_color[1] * 0.35), int(bot_color[2] * 0.35))
-        else:
-            dark_tint_color = (0, 0, 0)
-
-        tint_layer = Image.new("RGBA", (width, tint_height), (*dark_tint_color, 255))
-        image.paste(tint_layer, (0, tint_start), mask=gradient_mask)
-
-    # --- BOTTOM GRADIENT / VIGNETTE (regolato da bottom_gradient e colorato da grad_color_bot) ---
-    # Strength is one of four presets (off / low / medium / high / custom).
-    # Color source (black / local / global) comes from grad_color_bot.
-    if cfg.bottom_gradient == "custom" and cfg.bottom_gradient_opacity is not None and cfg.bottom_gradient_height is not None:
+    # --- BOTTOM GRADIENT / VIGNETTE (Falso Nero Pigmentato al 35% + Curva 1.2) ---
+    # Gestito dai preset UI (off / low / medium / high / custom) per altezza e opacita.
+    # Quando la sfumatura e colorata (Global/Local), converte il colore nel "Falso Nero Pigmentato" (35%).
+    # Se impostato su "off", l'intero blocco non viene eseguito ed il fondo sparisce al 100%.
+    _bg_preset: tuple[float, int] | None
+    if cfg.bottom_gradient == "off":
+        _bg_preset = None
+    elif cfg.bottom_gradient == "custom" and cfg.bottom_gradient_opacity is not None and cfg.bottom_gradient_height is not None:
         _bg_preset = (cfg.bottom_gradient_height, int(cfg.bottom_gradient_opacity * 255 if cfg.bottom_gradient_opacity <= 1.0 else cfg.bottom_gradient_opacity))
     else:
-        _bg_preset = _BOTTOM_GRADIENT_LEVELS.get(cfg.bottom_gradient, _BOTTOM_GRADIENT_LEVELS["high"])
+        _bg_preset = _BOTTOM_GRADIENT_LEVELS.get(cfg.bottom_gradient, None)
         
     if _bg_preset is not None:
         bottom_height_ratio, bottom_max_alpha = _bg_preset
         bottom_height = max(1, int(height * bottom_height_ratio))
         bottom_start  = height - bottom_height
-        t_bot         = np.linspace(0, 1, bottom_height, dtype=np.float32)
-        eased_bot     = ((1 - (1 - t_bot) ** _BOTTOM_GRADIENT_CURVE) * bottom_max_alpha).astype(np.uint8)
+        
+        # Curva ad esponente 1.2 originale dal file personale
+        t_bot     = np.linspace(0, 1, bottom_height, dtype=np.float32)
+        eased_bot = ((t_bot ** 1.2) * bottom_max_alpha).astype(np.uint8)
         bottom_array  = np.broadcast_to(eased_bot[:, np.newaxis], (bottom_height, width)).copy()
         bottom_overlay = Image.fromarray(bottom_array, mode="L")
-        bottom_tinted  = Image.new("RGBA", (width, bottom_height), (int(bot_color[0]), int(bot_color[1]), int(bot_color[2]), 0))
+        
+        # Calcolo Falso Nero Pigmentato al 35%: se bot_color e Global o Local, scurisce al 35%.
+        # Se bot_color e Black (0, 0, 0), resta nero puro.
+        if bot_color != (0, 0, 0):
+            dark_bot_color = (
+                int(bot_color[0] * 0.35),
+                int(bot_color[1] * 0.35),
+                int(bot_color[2] * 0.35)
+            )
+        else:
+            dark_bot_color = (0, 0, 0)
+
+        bottom_tinted = Image.new("RGBA", (width, bottom_height), (*dark_bot_color, 0))
         bottom_tinted.putalpha(bottom_overlay)
         image.paste(bottom_tinted, (0, bottom_start), mask=bottom_tinted)
 
