@@ -1497,13 +1497,24 @@ def build_poster(
     # bar/notch/sash sample their tint colour from this, not the graded image —
     # otherwise the near-black top/bottom the gradients paint on drags the sampled
     # colour to grey (e.g. a blue sky reads as white behind the notch).
+    # =========================================================================
+    # ESTRAZIONE COLORI CENTRALIZZATA SU IMMAGINE PULITA (_frost_color_src)
+    # =========================================================================
+    # Scattiamo una copia dell'immagine originale PRIMA che i gradienti top/bottom
+    # o l'effetto vetro applichino toni scuri o filtri. Tutti gli estrattori usano
+    # esclusivamente questo snapshot pulito per non essere inquinati da vignettature.
     _frost_color_src = image.copy()
 
-    # --- ESTRAZIONE COLORI CENTRALIZZATA SU IMMAGINE PULITA (_frost_color_src) ---
+    # -------------------------------------------------------------------------
+    # 1. ESTRATTORE VIVIDEZZA PERSONALE (_get_vivid_dominant_color -> vivid_dom_color)
+    #    - Algoritmo basato su HSV: moltiplica Saturazione x Brillantezza x Frequenza
+    #      (s * v * c_count^0.2) e scarta neri, bianchi e grigi opachi.
+    #    - USO: Applicato a Notch & Rating Bar quando 'use_global_ui_color' e ATTIVO.
+    # -------------------------------------------------------------------------
     def _get_vivid_dominant_color(img: Image.Image) -> tuple[int, int, int]:
         import colorsys
         small_img = img.copy()
-        small_img.thumbnail((50, 50))
+        small_img.thumbnail((50, 50))  # Campione 50x50 per calcolo vividezza
         colors = small_img.convert("RGB").getcolors(2500)
         if not colors:
             return (100, 100, 100)
@@ -1511,6 +1522,7 @@ def build_poster(
         def color_vividness_score(c_count, c_rgb):
             r, g, b = c_rgb[0] / 255.0, c_rgb[1] / 255.0, c_rgb[2] / 255.0
             h, s, v = colorsys.rgb_to_hsv(r, g, b)
+            # Scarta i colori privi di saturazione o eccessivamente scuri/chiari
             if s < 0.15 or v < 0.15 or v > 0.92:
                 return -1
             return s * v * (c_count ** 0.2)
@@ -1521,13 +1533,18 @@ def build_poster(
         colors.sort(key=lambda t: t[0], reverse=True)
         return colors[0][1]
 
+    # -------------------------------------------------------------------------
+    # 2. ESTRATTORE GLOBALE FREQUENZIALE (global_dom_color)
+    #    - Cerca il colore piu frequente nell'intera locandina con luminosita media.
+    #    - USO: Gradiente Top/Bottom quando 'grad_color_top' o 'grad_color_bot' e 'global'.
+    # -------------------------------------------------------------------------
     global_dom_color = (100, 100, 100)
     vivid_dom_color  = _get_vivid_dominant_color(_frost_color_src)
     smart_top_color  = (100, 100, 100)
 
     try:
         clean_sample = _frost_color_src.copy()
-        clean_sample.thumbnail((40, 60))
+        clean_sample.thumbnail((40, 60))  # Proporzione 2:3 tipica delle locandine
         colors = clean_sample.convert("RGB").getcolors(25000)
         if colors:
             colors.sort(key=lambda t: t[0], reverse=True)
@@ -1541,6 +1558,12 @@ def build_poster(
     except Exception:
         pass
 
+    # -------------------------------------------------------------------------
+    # 3. ESTRATTORE LOCALE SUPERIORE (smart_top_color)
+    #    - Ritaglia l'angolo in alto a destra (20% altezza, 40% larghezza) dove risiede la Notch.
+    #    - USO: Gradiente Top quando 'grad_color_top' e 'local', e Notch 'Minimal Pill'
+    #      quando 'use_global_ui_color' e DISATTIVO.
+    # -------------------------------------------------------------------------
     try:
         clean_top_crop = _frost_color_src.crop((width - int(width * 0.4), 0, width, int(height * 0.2)))
         clean_top_crop.thumbnail((40, 40))
@@ -1557,6 +1580,13 @@ def build_poster(
     except Exception:
         smart_top_color = global_dom_color
 
+    # -------------------------------------------------------------------------
+    # 4. ESTRATTORE LOCALE/FROSTED INFERIORE (local_bot_color / dominant_frost_rgb)
+    #    - Algoritmo originale UmbraProject (awards.py: dominant_frost_rgb):
+    #      Campiona 40x60 px ed usa l'istogramma HSV a 24 bin per trovare la tinta vetro.
+    #    - USO: Gradiente Bottom quando 'grad_color_bot' e 'local', e Frosted Notch/Bar
+    #      quando 'use_global_ui_color' e DISATTIVO.
+    # -------------------------------------------------------------------------
     local_top_color = smart_top_color
     local_bot_color = dominant_frost_rgb(_frost_color_src)
 
