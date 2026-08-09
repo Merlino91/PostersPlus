@@ -1572,6 +1572,18 @@ def build_poster(
     local_top_color = smart_top_color
     local_bot_color = dominant_frost_rgb(_frost_color_src)
 
+    # -------------------------------------------------------------------------
+    # 5. LUMINOSITÀ MEDIA DEL FONDO (per Smart Bottom Gradient Adattivo)
+    #    - Calcola la luminosita percepita media nel 25% inferiore del poster.
+    # -------------------------------------------------------------------------
+    try:
+        bot_crop_sample = _frost_color_src.crop((0, int(height * 0.75), width, height))
+        bot_crop_sample.thumbnail((50, 50))
+        bot_arr = np.array(bot_crop_sample.convert("RGB"), dtype=np.float32)
+        bottom_avg_lum = float(np.mean(0.299 * bot_arr[:, :, 0] + 0.587 * bot_arr[:, :, 1] + 0.114 * bot_arr[:, :, 2]))
+    except Exception:
+        bottom_avg_lum = 100.0
+
     if cfg.grad_color_top == "global":
         top_color = global_dom_color
     elif cfg.grad_color_top == "local":
@@ -1644,10 +1656,10 @@ def build_poster(
 
         image.paste(glass_layer, (0, fg_start), mask=blur_mask)
 
-    # --- BOTTOM GRADIENT / VIGNETTE (Falso Nero Pigmentato al 35% + Curva 1.2) ---
+    # --- BOTTOM GRADIENT / VIGNETTE (Falso Nero Pigmentato + Curva 1.2 + Smart Adaptive Softening) ---
     # Gestito dai preset UI (off / low / medium / high / custom) per altezza e opacita.
-    # Quando la sfumatura e colorata (Global/Local), converte il colore nel "Falso Nero Pigmentato" (35%).
-    # Se impostato su "off", l'intero blocco non viene eseguito ed il fondo sparisce al 100%.
+    # Se la luminosita media del fondo e < 40 (locandina scura o nera), riduce in percentuale l'opacita
+    # e sfuma delicatamente il pigmento verso il nero per evitare aloni colorati invasivi.
     _bg_preset: tuple[float, int] | None
     if cfg.bottom_gradient == "off":
         _bg_preset = None
@@ -1661,19 +1673,28 @@ def build_poster(
         bottom_height = max(1, int(height * bottom_height_ratio))
         bottom_start  = height - bottom_height
         
-        # Curva ad esponente 1.2 originale dal file personale
+        # --- ADATTAMENTO PROPORZIONALE SMART PER LOCANDINE SCURE (bottom_avg_lum < 40) ---
+        adaptive_scale = 1.0
+        if bottom_avg_lum < 40.0:
+            # Scala proporzionale in base all'oscurita (es. lum=20 -> scale=0.5 -> riduzione 50% dell'opacita attiva)
+            # Limite minimo di sicurezza 0.25 (25%) per non annullare del tutto la protezione testo.
+            adaptive_scale = max(0.25, bottom_avg_lum / 40.0)
+
+        effective_max_alpha = int(bottom_max_alpha * adaptive_scale)
+
+        # Curva ad esponente 1.2 applicata all'opacita effettiva scalata
         t_bot     = np.linspace(0, 1, bottom_height, dtype=np.float32)
-        eased_bot = ((t_bot ** 1.2) * bottom_max_alpha).astype(np.uint8)
+        eased_bot = ((t_bot ** 1.2) * effective_max_alpha).astype(np.uint8)
         bottom_array  = np.broadcast_to(eased_bot[:, np.newaxis], (bottom_height, width)).copy()
         bottom_overlay = Image.fromarray(bottom_array, mode="L")
         
-        # Calcolo Falso Nero Pigmentato al 35%: se bot_color e Global o Local, scurisce al 35%.
-        # Se bot_color e Black (0, 0, 0), resta nero puro.
+        # Sfumatura adattiva del colore: se il fondo e molto scuro, abbassa anche la percentuale di pigmento
         if bot_color != (0, 0, 0):
+            pigment_ratio = 0.35 * adaptive_scale
             dark_bot_color = (
-                int(bot_color[0] * 0.35),
-                int(bot_color[1] * 0.35),
-                int(bot_color[2] * 0.35)
+                int(bot_color[0] * pigment_ratio),
+                int(bot_color[1] * pigment_ratio),
+                int(bot_color[2] * pigment_ratio)
             )
         else:
             dark_bot_color = (0, 0, 0)
