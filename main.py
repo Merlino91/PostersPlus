@@ -1688,13 +1688,13 @@ def build_poster(
         bottom_array  = np.broadcast_to(eased_bot[:, np.newaxis], (bottom_height, width)).copy()
         bottom_overlay = Image.fromarray(bottom_array, mode="L")
         
-        # Sfumatura adattiva del colore: se il fondo e molto scuro, abbassa anche la percentuale di pigmento
+        # Falso Nero Pigmentato al 35%: mantiene la saturazione del colore estratto
+        # senza desaturarlo verso il nero. Solo l'opacita (effective_max_alpha) si addolcisce.
         if bot_color != (0, 0, 0):
-            pigment_ratio = 0.35 * adaptive_scale
             dark_bot_color = (
-                int(bot_color[0] * pigment_ratio),
-                int(bot_color[1] * pigment_ratio),
-                int(bot_color[2] * pigment_ratio)
+                int(bot_color[0] * 0.35),
+                int(bot_color[1] * 0.35),
+                int(bot_color[2] * 0.35)
             )
         else:
             dark_bot_color = (0, 0, 0)
