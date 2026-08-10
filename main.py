@@ -1656,6 +1656,23 @@ def build_poster(
 
         image.paste(glass_layer, (0, fg_start), mask=blur_mask)
 
+        # 5. Glass Glow / Ambient Light (riflesso satinato 3D sul bordo del vetro)
+        try:
+            glow_h = max(2, int(height * 0.008))
+            glow_layer = Image.new("RGBA", (width, glow_h * 2), (0, 0, 0, 0))
+            glow_draw = ImageDraw.Draw(glow_layer)
+            glow_color = (
+                min(255, int(vivid_dom_color[0] * 0.5 + 128)),
+                min(255, int(vivid_dom_color[1] * 0.5 + 128)),
+                min(255, int(vivid_dom_color[2] * 0.5 + 128)),
+                120
+            )
+            glow_draw.rectangle([(0, glow_h // 2), (width, glow_h + glow_h // 2)], fill=glow_color)
+            glow_layer = glow_layer.filter(ImageFilter.GaussianBlur(radius=glow_h * 0.75))
+            image.paste(glow_layer, (0, fg_start - glow_h), mask=glow_layer)
+        except Exception:
+            pass
+
     # --- BOTTOM GRADIENT / VIGNETTE (Falso Nero Pigmentato + Curva 1.2 + Smart Adaptive Softening) ---
     # Gestito dai preset UI (off / low / medium / high / custom) per altezza e opacita.
     # Se la luminosita media del fondo e < 40 (locandina scura o nera), riduce in percentuale l'opacita
