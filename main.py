@@ -1616,10 +1616,26 @@ def build_poster(
         top_height = max(1, int(height * top_height_ratio))
         t_top = np.linspace(0, 1, top_height, dtype=np.float32)
         eased_top = ((1 - t_top) * top_max_alpha).astype(np.uint8)
-        top_array = np.broadcast_to(eased_top[:, np.newaxis], (top_height, width)).copy()
-        top_overlay = Image.fromarray(top_array, mode="L")
-        top_tinted = Image.new("RGBA", (width, top_height), (int(top_color[0]), int(top_color[1]), int(top_color[2]), 0))
-        top_tinted.putalpha(top_overlay)
+        
+        if cfg.grad_color_top != "black":
+            # Parte piu esterna (bordo in alto y=0): vivid_dom_color (colore vivido e saturo)
+            # Sfuma verso l'interno (y=top_height): smart_top_color (colore locale)
+            r_arr = (vivid_dom_color[0] * (1 - t_top) + smart_top_color[0] * t_top).astype(np.uint8)
+            g_arr = (vivid_dom_color[1] * (1 - t_top) + smart_top_color[1] * t_top).astype(np.uint8)
+            b_arr = (vivid_dom_color[2] * (1 - t_top) + smart_top_color[2] * t_top).astype(np.uint8)
+            
+            top_rgb_array = np.zeros((top_height, width, 4), dtype=np.uint8)
+            top_rgb_array[:, :, 0] = r_arr[:, np.newaxis]
+            top_rgb_array[:, :, 1] = g_arr[:, np.newaxis]
+            top_rgb_array[:, :, 2] = b_arr[:, np.newaxis]
+            top_rgb_array[:, :, 3] = eased_top[:, np.newaxis]
+            top_tinted = Image.fromarray(top_rgb_array, mode="RGBA")
+        else:
+            top_array = np.broadcast_to(eased_top[:, np.newaxis], (top_height, width)).copy()
+            top_overlay = Image.fromarray(top_array, mode="L")
+            top_tinted = Image.new("RGBA", (width, top_height), (0, 0, 0, 0))
+            top_tinted.putalpha(top_overlay)
+
         image.paste(top_tinted, (0, 0), mask=top_tinted)
 
     # --- FROSTED GLASS 2.0 (Effetto vetro sfumato ottico puro) ---
@@ -1655,23 +1671,6 @@ def build_poster(
         blur_mask = Image.fromarray(blur_mask_arr, mode="L")
 
         image.paste(glass_layer, (0, fg_start), mask=blur_mask)
-
-        # 5. Glass Glow / Ambient Light (riflesso satinato 3D sul bordo del vetro)
-        try:
-            glow_h = max(2, int(height * 0.008))
-            glow_layer = Image.new("RGBA", (width, glow_h * 2), (0, 0, 0, 0))
-            glow_draw = ImageDraw.Draw(glow_layer)
-            glow_color = (
-                min(255, int(vivid_dom_color[0] * 0.5 + 128)),
-                min(255, int(vivid_dom_color[1] * 0.5 + 128)),
-                min(255, int(vivid_dom_color[2] * 0.5 + 128)),
-                120
-            )
-            glow_draw.rectangle([(0, glow_h // 2), (width, glow_h + glow_h // 2)], fill=glow_color)
-            glow_layer = glow_layer.filter(ImageFilter.GaussianBlur(radius=glow_h * 0.75))
-            image.paste(glow_layer, (0, fg_start - glow_h), mask=glow_layer)
-        except Exception:
-            pass
 
     # --- BOTTOM GRADIENT / VIGNETTE (Falso Nero Pigmentato + Curva 1.2 + Smart Adaptive Softening) ---
     # Gestito dai preset UI (off / low / medium / high / custom) per altezza e opacita.
