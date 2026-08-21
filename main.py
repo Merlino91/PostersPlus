@@ -1211,7 +1211,7 @@ def build_request_config(params: dict) -> RequestConfig:
     cfg.sash_badge_size_w       = _f("sash_badge_size_w",       cfg.sash_badge_size_w,       0.5, 2.0)
     cfg.sash_badge_size_h       = _f("sash_badge_size_h",       cfg.sash_badge_size_h,       0.5, 2.0)
     _style_raw = params.get("sash_badge_style", cfg.sash_badge_style)
-    if _style_raw in ("silver", "gold", "frosted", "black"):
+    if _style_raw in ("silver", "gold", "frosted", "black", "minimal_pill"):
         cfg.sash_badge_style = _style_raw
     cfg.sash_length_ratio       = _f("sash_length_ratio",      cfg.sash_length_ratio,      0.8, 1.5)
     cfg.sash_height_ratio       = _f("sash_height_ratio",      cfg.sash_height_ratio,      0.06, 0.20)
@@ -2908,17 +2908,6 @@ def build_poster(
     _sash_poster   = _sash_shown and cfg.sash_mode == "sash" and cfg.sash_poster_color
     _bar_frosted   = cfg.rating_display_mode == 4 and cfg.bar_style in ("frosted", "rating_frosted")
 
-    # CUSTOM: use_global_ui_color forces vivid_dom_color on all frosted elements
-    if cfg.use_global_ui_color and (_bar_frosted or _notch_frosted or _notch_pill or _sash_poster):
-        _frost_tint = vivid_dom_color
-    elif _notch_pill:
-        _frost_tint = smart_top_color
-    elif (_bar_frosted or _notch_frosted or _sash_poster):
-        _frost_tint = (
-            (_strict_tint if _strict_tint is not None else dominant_frost_rgb(_frost_color_src))
-        )
-    else:
-        _frost_tint = None
     # A tinted vignette and a frosted notch sample the same artwork but answer
     # different questions — the vignette asks what the band's own stretch of art is
     # made of, the notch what colour the poster is — so they can land some way
@@ -2929,10 +2918,22 @@ def build_poster(
     # poster shows.  The frosted bar follows, as it already follows the notch.
     _frost_matched = (
         cfg.notch_vignette_color and _notch_frosted and _vignette_shown is not None
-        and not cfg.use_global_ui_color
+        and not cfg.use_global_ui_color and not _notch_pill
     )
-    if _frost_matched:
+
+    # CUSTOM: use_global_ui_color forces vivid_dom_color on all UI elements
+    if cfg.use_global_ui_color and (_bar_frosted or _notch_frosted or _notch_pill or _sash_poster):
+        _frost_tint = vivid_dom_color
+    elif _notch_pill:
+        _frost_tint = smart_top_color
+    elif _frost_matched:
         _frost_tint = _vignette_shown
+    elif (_bar_frosted or _notch_frosted or _sash_poster):
+        _frost_tint = (
+            (_strict_tint if _strict_tint is not None else dominant_frost_rgb(_frost_color_src))
+        )
+    else:
+        _frost_tint = None
     # Matching gets its own mode rather than the saturation slider or plain
     # reference.  The slider turns a poster colour into a pastel that is not that
     # colour any more; reference keeps the saturation but lifts the Value to make
@@ -2977,9 +2978,18 @@ def build_poster(
             rating_cy = height * cfg.accent_bar_y_offset
 
             try:
-                font_meta = ImageFont.truetype(os.path.join(_FONTS_DIR, "Inter-Bold.ttf"), font_size)
+                font_meta = ImageFont.truetype(os.path.join(_FONTS_DIR, "Ubuntu-Bold.ttf"), font_size)
             except IOError:
-                font_meta = ImageFont.load_default()
+                try:
+                    font_meta = ImageFont.truetype(os.path.join(_FONTS_DIR, "Inter-Bold.ttf"), font_size)
+                except IOError:
+                    font_meta = ImageFont.load_default()
+
+            icon_size = max(10, int(font_size * 0.85))
+            try:
+                font_icon = ImageFont.truetype(os.path.join(_FONTS_DIR, "Font Awesome 7 Free-Solid-900.otf"), icon_size)
+            except IOError:
+                font_icon = font_meta
 
             tx, ty = _text_center(draw, label, font_meta, width / 2, rating_cy)  # type: ignore
             draw.text(
@@ -3007,30 +3017,45 @@ def build_poster(
 
         elif cfg.rating_display_mode == 2:
             font_size = int(width * cfg.numeric_score_font_size_ratio)
-            # Score formatting:
-            #   out of 100 (default): "87", "100", "N/A"
-            #   out of 10:            "8.7", "8.0" (always one decimal), "10"
-            #                         (no decimal — already two glyphs wide)
-            # Non-numeric scores ("N/A") pass through unchanged in either mode.
+            icon_size = max(10, int(font_size * 0.85))
             if cfg.score_out_of_10 and isinstance(score, (int, float)):
                 _score_text = "10" if score >= 100 else f"{score / 10:.1f}"
             else:
                 _score_text = str(score)
-            label = f"{genre_label} ★ {_score_text}" if genre_label else f"★ {_score_text}"
             rating_cy = height * cfg.numeric_score_y_offset
 
             try:
-                font_meta = ImageFont.truetype(os.path.join(_FONTS_DIR, "Inter-Bold.ttf"), font_size)
+                font_meta = ImageFont.truetype(os.path.join(_FONTS_DIR, "Ubuntu-Bold.ttf"), font_size)
             except IOError:
-                font_meta = ImageFont.load_default()
+                try:
+                    font_meta = ImageFont.truetype(os.path.join(_FONTS_DIR, "Inter-Bold.ttf"), font_size)
+                except IOError:
+                    font_meta = ImageFont.load_default()
 
-            tx, ty = _text_center(draw, label, font_meta, width / 2, rating_cy)  # type: ignore
-            draw.text(
-                (tx, ty - int(font_size * 0.10)),
-                label,
-                font=font_meta,
-                fill=(*cfg.rating_text_color, 255) if cfg.rating_text_color else (200, 200, 200, 255),
-            )
+            try:
+                font_icon = ImageFont.truetype(os.path.join(_FONTS_DIR, "Font Awesome 7 Free-Solid-900.otf"), icon_size)
+            except IOError:
+                font_icon = font_meta
+                icon_size = font_size
+
+            star_icon = ""
+            _ink = (*cfg.rating_text_color, 255) if cfg.rating_text_color else (200, 200, 200, 255)
+
+            len_genre = draw.textlength(f"{genre_label}  ", font=font_meta) if genre_label else 0
+            len_icon = draw.textlength(f"{star_icon} ", font=font_icon)
+            len_score = draw.textlength(_score_text, font=font_meta)
+
+            total_width = len_genre + len_icon + len_score
+            ox = (width - total_width) // 2
+
+            _, ty = _text_center(draw, genre_label or _score_text, font_meta, width / 2, rating_cy)
+            adjusted_oy = ty - int(font_size * 0.10)
+            icon_oy = adjusted_oy + (font_size - icon_size) // 2
+
+            if genre_label:
+                draw.text((ox, adjusted_oy), f"{genre_label}  ", font=font_meta, fill=_ink)
+            draw.text((ox + len_genre, icon_oy), f"{star_icon} ", font=font_icon, fill=_ink)
+            draw.text((ox + len_genre + len_icon, adjusted_oy), _score_text, font=font_meta, fill=_ink)
 
         elif cfg.rating_display_mode == 3:
             font_size = int(width * cfg.minimalist_mode_font_size_ratio)
