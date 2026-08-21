@@ -997,6 +997,8 @@ class RequestConfig:
     sash_badge_inset: float = 0.0          # top-edge offset as fraction of poster height (± small)
     sash_badge_pad:   float = 1.0          # vertical padding scale (<1 tightens top/bottom space)
     sash_badge_font_ratio:   float = 0.43  # font size as fraction of badge height
+    use_global_ui_color: bool = False
+    text_drop_shadow: bool = True
     sash_badge_frost_opacity: float = 0.75 # frosted overlay opacity (0.0–1.0)
     sash_badge_frost_saturation: float = 1.2 # frosted colour-cast strength (0 = grey)
     # Take the frosted notch's colour from whatever a tinted vignette landed on,
@@ -1201,6 +1203,8 @@ def build_request_config(params: dict) -> RequestConfig:
     cfg.sash_badge_inset         = _f("sash_badge_inset",         cfg.sash_badge_inset,         -0.02, 0.02)
     cfg.sash_badge_pad           = _f("sash_badge_pad",           cfg.sash_badge_pad,           0.5, 1.5)
     cfg.sash_badge_font_ratio    = _f("sash_badge_font_ratio",    cfg.sash_badge_font_ratio,    0.10, 1.0)
+    cfg.use_global_ui_color     = _b("use_global_ui_color",     cfg.use_global_ui_color)
+    cfg.text_drop_shadow        = _b("text_drop_shadow",        cfg.text_drop_shadow)
     cfg.sash_badge_frost_opacity = _f("sash_badge_frost_opacity", cfg.sash_badge_frost_opacity, 0.0, 1.0)
     cfg.sash_badge_frost_saturation = _f("sash_badge_frost_saturation", cfg.sash_badge_frost_saturation, 0.0, 2.0)
     cfg.notch_vignette_color        = _b("notch_vignette_color", cfg.notch_vignette_color)
@@ -2256,10 +2260,16 @@ def _draw_combined_text_badge(
     else:
         fmt = "SDR"
 
+    # Verifichiamo la presenza della lingua italiana
+    is_ita = "ITA" in token_set
+
     try:
-        font = ImageFont.truetype(os.path.join(_FONTS_DIR, "Inter-Bold.ttf"), font_size)
+        font = ImageFont.truetype(os.path.join(_FONTS_DIR, "Ubuntu-Bold.ttf"), font_size)
     except IOError:
-        font = ImageFont.load_default()
+        try:
+            font = ImageFont.truetype(os.path.join(_FONTS_DIR, "Inter-Bold.ttf"), font_size)
+        except IOError:
+            font = ImageFont.load_default()
 
     draw = ImageDraw.Draw(image)
     ink  = (235, 235, 235, 255)
@@ -2284,11 +2294,18 @@ def _draw_combined_text_badge(
 
         # Horizontal rule — v_gap below the actual glyph bottom
         ly = y + h_res + v_gap
-        draw.rounded_rectangle(
-            [x, ly, x + total_w, ly + line_h],
-            radius=line_h // 2,
-            fill=sep_color,
-        )
+        if is_ita:
+            # Dividiamo la larghezza in 3 e disegniamo la bandiera in orizzontale
+            w_third = total_w / 3.0
+            draw.rectangle([x, ly, x + int(w_third), ly + line_h], fill=(0, 146, 70))             # Verde
+            draw.rectangle([x + int(w_third), ly, x + int(w_third * 2), ly + line_h], fill=(255, 255, 255))   # Bianco
+            draw.rectangle([x + int(w_third * 2), ly, x + total_w, ly + line_h], fill=(206, 43, 55))          # Rosso
+        else:
+            draw.rounded_rectangle(
+                [x, ly, x + total_w, ly + line_h],
+                radius=line_h // 2,
+                fill=sep_color,
+            )
 
         # Visual tag — v_gap below the rule, aligned to its own visual top
         fmt_x = x + (total_w - w_fmt) // 2 - b_fmt[0]
@@ -2304,7 +2321,15 @@ def _draw_combined_text_badge(
         cx = x
         draw.text((cx, y), res, font=font, fill=ink)
         cx += round(draw.textlength(res, font=font)) + pip_gap
-        _draw_solid_pip(image, x=cx, y_center=pip_cy, width=pip_w, height=pip_h, color=sep_color)
+        if is_ita:
+            # Dividiamo l'altezza in 3 e disegniamo la bandiera in verticale
+            top_y = pip_cy - pip_h // 2
+            h_third = pip_h / 3.0
+            draw.rectangle([cx, top_y, cx + pip_w, top_y + int(h_third)], fill=(0, 146, 70))              # Verde
+            draw.rectangle([cx, top_y + int(h_third), cx + pip_w, top_y + int(h_third * 2)], fill=(255, 255, 255))    # Bianco
+            draw.rectangle([cx, top_y + int(h_third * 2), cx + pip_w, top_y + pip_h], fill=(206, 43, 55))           # Rosso
+        else:
+            _draw_solid_pip(image, x=cx, y_center=pip_cy, width=pip_w, height=pip_h, color=sep_color)
         cx += pip_w + pip_gap
         draw.text((cx, y), fmt, font=font, fill=ink)
 
@@ -2385,6 +2410,58 @@ def build_poster(
     # otherwise the near-black top/bottom the gradients paint on drags the sampled
     # colour to grey (e.g. a blue sky reads as white behind the notch).
     _frost_color_src = image.copy()
+
+    # -------------------------------------------------------------------------
+    # CUSTOM: Vivid Dominant Color extractor
+    # Calcola il colore più vivido e saturo dell'intero poster usando HSV.
+    # Usato da use_global_ui_color per forzare un colore unico su tutti gli
+    # elementi frosted/pill, e come fallback per smart_top_color.
+    # -------------------------------------------------------------------------
+    def _get_vivid_dominant_color(img: Image.Image) -> tuple[int, int, int]:
+        import colorsys
+        small_img = img.copy()
+        small_img.thumbnail((40, 60))  # Campione 40x60 in proporzione 2:3 poster
+        colors = small_img.convert("RGB").getcolors(25000)
+        if not colors:
+            return (100, 100, 100)
+
+        def color_vividness_score(c_count, c_rgb):
+            r, g, b = c_rgb[0] / 255.0, c_rgb[1] / 255.0, c_rgb[2] / 255.0
+            h, s, v = colorsys.rgb_to_hsv(r, g, b)
+            # Scarta i colori privi di saturazione o eccessivamente scuri/chiari
+            if s < 0.15 or v < 0.15 or v > 0.92:
+                return -1
+            return s * v * (c_count ** 0.2)
+
+        colors.sort(key=lambda t: color_vividness_score(t[0], t[1]), reverse=True)
+        if color_vividness_score(colors[0][0], colors[0][1]) > 0:
+            return colors[0][1]
+        colors.sort(key=lambda t: t[0], reverse=True)
+        return colors[0][1]
+
+    vivid_dom_color = _get_vivid_dominant_color(_frost_color_src)
+
+    # -------------------------------------------------------------------------
+    # CUSTOM: Smart Top Color extractor
+    # Ritaglia l'angolo in alto a destra (20% altezza, 40% larghezza) dove
+    # risiede la Notch. Usato come colore di default per Minimal Pill.
+    # -------------------------------------------------------------------------
+    smart_top_color: tuple[int, int, int] = (100, 100, 100)
+    try:
+        clean_top_crop = _frost_color_src.crop((width - int(width * 0.4), 0, width, int(height * 0.2)))
+        clean_top_crop.thumbnail((40, 40))
+        top_colors = clean_top_crop.convert("RGB").getcolors(25000)
+        if top_colors:
+            top_colors.sort(key=lambda t: t[0], reverse=True)
+            for count, col in top_colors:
+                lum = 0.299 * col[0] + 0.587 * col[1] + 0.114 * col[2]
+                if 15 < lum < 215:
+                    smart_top_color = col
+                    break
+            else:
+                smart_top_color = top_colors[0][1]
+    except Exception:
+        smart_top_color = vivid_dom_color
 
     # Whole-poster colour sample.  The strict pick is shared with every frosted
     # element further down so they agree without re-quantising; the vignette's own
@@ -2827,12 +2904,21 @@ def build_poster(
     # frosted notch is shown, with no separate "match" toggle needed. A tinted
     # vignette drew from the same sample above; reuse it rather than re-quantising.
     _notch_frosted = _sash_shown and cfg.sash_mode == "notch" and cfg.sash_badge_style == "frosted"
+    _notch_pill    = _sash_shown and cfg.sash_mode == "notch" and cfg.sash_badge_style == "minimal_pill"
     _sash_poster   = _sash_shown and cfg.sash_mode == "sash" and cfg.sash_poster_color
     _bar_frosted   = cfg.rating_display_mode == 4 and cfg.bar_style in ("frosted", "rating_frosted")
-    _frost_tint: tuple[float, float, float] | None = (
-        (_strict_tint if _strict_tint is not None else dominant_frost_rgb(_frost_color_src))
-        if (_bar_frosted or _notch_frosted or _sash_poster) else None
-    )
+
+    # CUSTOM: use_global_ui_color forces vivid_dom_color on all frosted elements
+    if cfg.use_global_ui_color and (_bar_frosted or _notch_frosted or _notch_pill or _sash_poster):
+        _frost_tint = vivid_dom_color
+    elif _notch_pill:
+        _frost_tint = smart_top_color
+    elif (_bar_frosted or _notch_frosted or _sash_poster):
+        _frost_tint = (
+            (_strict_tint if _strict_tint is not None else dominant_frost_rgb(_frost_color_src))
+        )
+    else:
+        _frost_tint = None
     # A tinted vignette and a frosted notch sample the same artwork but answer
     # different questions — the vignette asks what the band's own stretch of art is
     # made of, the notch what colour the poster is — so they can land some way
@@ -2843,6 +2929,7 @@ def build_poster(
     # poster shows.  The frosted bar follows, as it already follows the notch.
     _frost_matched = (
         cfg.notch_vignette_color and _notch_frosted and _vignette_shown is not None
+        and not cfg.use_global_ui_color
     )
     if _frost_matched:
         _frost_tint = _vignette_shown
@@ -2853,10 +2940,9 @@ def build_poster(
     # back as a bright one.  "match" holds chroma where the band had it.  The two
     # controls are mutually exclusive in the configurator for the same reason.
     _frost_ref: bool | str = "match" if _frost_matched else cfg.frost_reference
-    # One saturation for every frosted element: a frosted notch owns it (its slider
-    # lives in the sash panel); otherwise the rating bar's slider drives it. Sharing
-    # it keeps the bar and any sash/notch identical.
-    _frost_sat = cfg.sash_badge_frost_saturation if _notch_frosted else cfg.bar_frost_saturation
+    # One saturation for every frosted element: a frosted notch or pill owns it;
+    # otherwise the rating bar's slider drives it. Sharing keeps them identical.
+    _frost_sat = cfg.sash_badge_frost_saturation if (_notch_frosted or _notch_pill) else cfg.bar_frost_saturation
 
     # --- Rating / genre label ---
     if cfg.rating_display_mode != 0:
@@ -3163,6 +3249,29 @@ def build_poster(
         _is_star  = cfg.sash_winner_star and sash_type == "win"
         _label_tr = translate_sash(label, cfg.logo_language)
         if cfg.sash_mode == "notch":
+            if cfg.text_drop_shadow:
+                from PIL import ImageFilter
+                shadow_layer = Image.new("RGBA", image.size, (0, 0, 0, 0))
+                shadow_layer = draw_award_badge(
+                    shadow_layer, _label_tr, sash_type=sash_type,
+                    size_ratio_w=cfg.sash_badge_size_w,
+                    size_ratio_h=cfg.sash_badge_size_h,
+                    notch_style="black",
+                    notch_inset=cfg.sash_badge_inset,
+                    notch_pad_ratio=cfg.sash_badge_pad,
+                    font_size_ratio=cfg.sash_badge_font_ratio,
+                    frost_opacity=1.0,
+                    frost_saturation=cfg.sash_badge_frost_saturation,
+                    frost_reference=_frost_ref,
+                    tint_rgb=(0, 0, 0),
+                    star=_is_star,
+                    text_color=cfg.sash_text_color,
+                )
+                shadow_layer = shadow_layer.filter(ImageFilter.GaussianBlur(radius=3))
+                alpha = shadow_layer.split()[-1].point(lambda p: int(p * 0.45))
+                shadow_layer.putalpha(alpha)
+                image.alpha_composite(shadow_layer, dest=(0, 2))
+
             image = draw_award_badge(image, _label_tr, sash_type=sash_type,
                                      size_ratio_w=cfg.sash_badge_size_w,
                                      size_ratio_h=cfg.sash_badge_size_h,
@@ -4515,6 +4624,41 @@ async def get_poster(
     # it further down, and a literal "{imdb_id?}" baked into cache keys would
     # fragment the cache per client build.
     imdb_id = _normalise_optional_id(imdb_id, "imdb_id")
+    tmdb_id = _normalise_optional_id(tmdb_id, "tmdb_id")
+    anilist_id = _normalise_optional_id(anilist_id, "anilist_id")
+    kitsu_id = _normalise_optional_id(kitsu_id, "kitsu_id")
+    stremio_id = _normalise_optional_id(stremio_id, "stremio_id")
+
+    # -----------------------------------------------------------------------
+    # PONTE DI SALVATAGGIO (BYPASS PER WATCHLY / RPDB / IMDB-ONLY CLIENTS)
+    # Se manca il TMDB ID ma abbiamo un IMDB ID valido, chiediamo a TheMovieDB.
+    # Questo risolve automaticamente il problema dei client che inviano solo IMDB.
+    # -----------------------------------------------------------------------
+    if not tmdb_id and imdb_id and _IMDB_ID_RE.match(imdb_id):
+        effective_tmdb_key = _resolve_tmdb_key((tmdb_key or "").strip())
+        if effective_tmdb_key and _HTTP_CLIENT:
+            try:
+                find_resp = await _HTTP_CLIENT.get(
+                    f"https://api.themoviedb.org/3/find/{imdb_id}",
+                    params={"api_key": effective_tmdb_key, "external_source": "imdb_id"},
+                    timeout=10.0
+                )
+                if find_resp.status_code == 200:
+                    find_data = find_resp.json()
+                    if find_data.get("movie_results"):
+                        tmdb_id = str(find_data["movie_results"][0]["id"])
+                        type = "movie"
+                    elif find_data.get("tv_results"):
+                        tmdb_id = str(find_data["tv_results"][0]["id"])
+                        type = "tv"
+                    elif find_data.get("tv_episode_results"):
+                        tmdb_id = str(find_data["tv_episode_results"][0]["show_id"])
+                        type = "tv"
+                    elif find_data.get("tv_season_results"):
+                        tmdb_id = str(find_data["tv_season_results"][0]["show_id"])
+                        type = "tv"
+            except Exception as e:
+                logger.warning(f"Ponte IMDB->TMDB per Watchly fallito per {imdb_id}: {e}")
 
     # AIOMetadata's "{id}" is the raw Stremio meta id, and for an ordinary title
     # that IS the IMDb id ("tt0903747"). Generated templates no longer send
