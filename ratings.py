@@ -518,13 +518,14 @@ def draw_frosted_bar(
 
     # ── Font ─────────────────────────────────────────────────────────────────
     font_size = max(10, int(bar_h * font_size_ratio))
-    font_path = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)), "fonts", "Inter-Bold.ttf"
-    )
+    _fonts_d = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts")
     try:
-        font = ImageFont.truetype(font_path, font_size)
+        font = ImageFont.truetype(os.path.join(_fonts_d, "Ubuntu-Bold.ttf"), font_size)
     except IOError:
-        font = ImageFont.load_default()
+        try:
+            font = ImageFont.truetype(os.path.join(_fonts_d, "Inter-Bold.ttf"), font_size)
+        except IOError:
+            font = ImageFont.load_default()
 
     _REF   = "Agypq0★·"
     _ref_b = ImageDraw.Draw(Image.new("RGBA", (1, 1))).textbbox((0, 0), _REF, font=font)
