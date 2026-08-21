@@ -81,14 +81,20 @@ def _extract_tokens_from_parsed_file(parsed: dict) -> set[str]:
     if "DTS:X" in audio_tags or "DTSX" in audio_tags or "DTS-X" in audio_tags:
         tokens.add("DTSX")
 
+    # Lingua italiana (audio o tag lingua)
+    languages = {t.upper() for t in parsed.get("languages", [])}
+    if any(tag in ["IT", "ITA", "ITALIAN", "ITALIANO", "MULTI"] for tag in languages | audio_tags):
+        tokens.add("ITA")
+
     return tokens
 
 
 def _ordered_tokens(seen: set[str]) -> list[str]:
     """Reduce a set of detected tokens to one token per category, badge order.
 
-    At most one resolution, one source, one visual tag and one audio tag are
-    kept, each in descending preference, so the badge row is deterministic.
+    At most one resolution, one source, one visual tag, one audio tag and one
+    language tag are kept, each in descending preference, so the badge row is
+    deterministic.
     """
     tokens: list[str] = []
     for group in (
@@ -96,6 +102,7 @@ def _ordered_tokens(seen: set[str]) -> list[str]:
         ("REMUX", "WEBDL"),
         ("DV", "HDR10+", "HDR10"),
         ("ATMOS", "DTSX"),
+        ("ITA",),
     ):
         for token in group:
             if token in seen:
@@ -273,6 +280,10 @@ def _tokens_from_stremio_stream(
         tokens.add("ATMOS")
     if re.search(r'DTS.?X\b', text):
         tokens.add("DTSX")
+
+    # Lingua italiana
+    if re.search(r'\b(ITA|ITALIAN|ITALIANO|MULTI)\b', text):
+        tokens.add("ITA")
 
     return tokens
 
