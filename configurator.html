@@ -2867,6 +2867,7 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
                 <option value="black">Pure Black</option>
                 <option value="silver">Black, Silver Trim</option>
                 <option value="gold">Black, Gold Trim</option>
+                <option value="minimal_pill">Minimal Pill</option>
               </select>
             </div>
             <div class="field" id="sash-text-color-field" style="display:none;">
@@ -2892,6 +2893,20 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
                 <span class="toggle-label" data-tip="Only show the release status sash for titles in cinemas or in production. Leaving it off also shows Streaming / Physical / Airing / Ended / Cancelled; enabling it suppresses those whatever their sash order.">Release Status: Unavailable Only</span>
                 <label class="toggle-switch">
                   <input type="checkbox" id="tog-release-cinema-only" onchange="build(); queuePreviewReload()">
+                  <div class="toggle-track"><div class="toggle-thumb"></div></div>
+                </label>
+              </div>
+              <div class="toggle-row">
+                <span class="toggle-label" data-tip="Forces a single vibrant poster-dominant color across all frosted and badge elements.">Use Global UI Color</span>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="tog-global-ui" onchange="build(); queuePreviewReload()">
+                  <div class="toggle-track"><div class="toggle-thumb"></div></div>
+                </label>
+              </div>
+              <div class="toggle-row">
+                <span class="toggle-label" data-tip="Adds a subtle soft drop shadow behind the top notch badge.">Notch Drop Shadow</span>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="tog-text-shadow" checked onchange="build(); queuePreviewReload()">
                   <div class="toggle-track"><div class="toggle-thumb"></div></div>
                 </label>
               </div>
@@ -3374,6 +3389,7 @@ const SASH_SLOTS = [
   { id:'gg_noms',        label:'Major Golden Globe Nom',            color:'#9a9a9a' },
   // Timely — narrow, time-boxed windows. Above the curated lists below so a
   // notable-cast match can't bury "this is new right now".
+  { id:'next_episode',   label:'Prossimo Episodio (Data)',          color:'#5aaaff' },
   { id:'trending',       label:'TMDB Trending Top {{TRENDING_FETCH_COUNT}}', color:'#5aaaff' },
   { id:'trending_broad', label:'TMDB Trending {{TRENDING_FETCH_COUNT_PLUS_ONE}}-{{TRENDING_BROAD_FETCH_COUNT}}', color:'#5aaaff' },
   { id:'premiere',       label:'Premiere',                          color:'#e05555' },
@@ -3384,6 +3400,7 @@ const SASH_SLOTS = [
   // Curated taste — common matches, so they sit under the timely tier.
   { id:'studio',         label:'Notable Studio Name',               color:'#9060cc' },
   { id:'director',       label:'Notable Director Name',             color:'#9060cc' },
+  { id:'creator',        label:'Notable Creator / Mangaka',         color:'#9060cc' },
   { id:'cast',           label:'Notable Cast Name',                 color:'#4ab87a' },
   // Static flavour — always true, never urgent.
   { id:'cult',           label:'Cult Classic',                      color:'#5aaaff' },
@@ -4603,6 +4620,8 @@ function buildBaseParams({ usePlaceholders = false, domainOverride = null } = {}
   params.set('cinema_greyscale', c('tog-cinema-greyscale') ? 'true' : 'false');
   params.set('cinema_greyscale_skip_if_available', c('tog-cinema-greyscale-skip') ? 'true' : 'false');
   params.set('release_status_cinema_only', c('tog-release-cinema-only') ? 'true' : 'false');
+  if (c('tog-global-ui')) params.set('use_global_ui_color', 'true');
+  if (!c('tog-text-shadow')) params.set('text_drop_shadow', 'false');
 
   if (showSash) {
     if (c('tog-sash-winner-star')) params.set('sash_winner_star', 'true');
@@ -5646,6 +5665,8 @@ function importUrl(urlStr, { silent = false, settingsOnly = false, preserveClien
   if (p.has('cinema_greyscale')) _setEl('tog-cinema-greyscale', p.get('cinema_greyscale'));
   if (p.has('cinema_greyscale_skip_if_available')) _setEl('tog-cinema-greyscale-skip', p.get('cinema_greyscale_skip_if_available'));
   if (p.has('release_status_cinema_only')) _setEl('tog-release-cinema-only', p.get('release_status_cinema_only'));
+  if (p.has('use_global_ui_color')) _setEl('tog-global-ui', p.get('use_global_ui_color'));
+  if (p.has('text_drop_shadow'))    _setEl('tog-text-shadow', p.get('text_drop_shadow'));
 
   if (p.has('muted'))           _setEl('tog-muted',         p.get('muted'));
   // sash_mode supersedes the legacy show_award_sash + sash_badge bools.
