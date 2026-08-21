@@ -1610,36 +1610,38 @@ def draw_award_badge(
     # padding, corner radius) — differisce solo per font (Ubuntu-Bold + FA),
     # sfondo solido (niente blur/frost), e colore testo intelligente.
     if notch_style == "minimal_pill":
-        # Font: Ubuntu-Bold per il testo, Font Awesome per le icone
+        # 1. Caricamento Font (Testo Ubuntu-Bold + Icone Font Awesome 7)
         try:
             ubuntu_font = ImageFont.truetype(os.path.join(_fonts_dir, "Ubuntu-Bold.ttf"), font_size_ss)
         except IOError:
             ubuntu_font = font
+
         try:
             icon_font = ImageFont.truetype(os.path.join(_fonts_dir, "Font Awesome 7 Free-Solid-900.otf"), font_size_ss)
         except IOError:
             icon_font = font
 
-        # Rimisura larghezza testo con il font Ubuntu (può differire da Inter)
+        # 2. Ricalcolo delle dimensioni della pillola con il font Ubuntu
         _pill_bbox = _tmp_d.textbbox((0, 0), label, font=ubuntu_font)
         _pill_text_w = int(_pill_bbox[2] - _pill_bbox[0])
         badge_w = max(min_badge_w, min(max_badge_w, _pill_text_w // SS + _h_pad))
         bw = badge_w * SS
         bx = (width - badge_w) // 2
 
-        # Colore sfondo dalla tint_rgb (smart_top_color o vivid_dom_color)
+        # 3. Assegnazione Colore Sfondo (da smart_top_color o vivid_dom_color)
         if tint_rgb is not None:
             bg_r, bg_g, bg_b = int(tint_rgb[0]), int(tint_rgb[1]), int(tint_rgb[2])
         else:
-            bg_r, bg_g, bg_b = 50, 150, 250  # fallback blu
+            bg_r, bg_g, bg_b = 50, 150, 250
 
-        # Forma: top piatto, bottom arrotondato (come le altre notch)
+        # 4. Disegno della Pillola Solida (Shape)
         badge_ss = Image.new("RGBA", (bw, bh), (0, 0, 0, 0))
         rr_mask_ss = Image.new("L", (bw, bh), 0)
-        _pill_draw = ImageDraw.Draw(rr_mask_ss)
-        _pill_draw.rectangle([(0, 0), (bw - 1, bh - r_ss)], fill=255)
-        _pill_draw.rounded_rectangle(
-            [(0, 0), (bw - 1, bh - 1)], radius=r_ss, fill=255,
+        pill_radius = bh // 4
+        draw_mask = ImageDraw.Draw(rr_mask_ss)
+        draw_mask.rectangle([(0, 0), (bw - 1, bh - pill_radius)], fill=255)
+        draw_mask.rounded_rectangle(
+            [(0, 0), (bw - 1, bh - 1)], radius=pill_radius, fill=255,
             corners=(False, False, True, True)
         )
 
@@ -1647,16 +1649,17 @@ def draw_award_badge(
         body.putalpha(rr_mask_ss)
         badge_ss = body
 
-        # Colore testo intelligente con _frost_ink (scuro su sfondo chiaro, chiaro su scuro)
-        _pill_ink = _frost_ink(bg_r, bg_g, bg_b)
+        # 5. Colore Testo intelligente (contrasto su sfondo chiaro/scuro o override utente)
+        lum = 0.299 * bg_r + 0.587 * bg_g + 0.114 * bg_b
+        default_ink = (250, 250, 250, 255) if lum < 140 else (15, 15, 15, 245)
+        text_color_to_use = (*text_color, 255) if text_color is not None else default_ink
 
-        # Disegno testo
         txt_layer = Image.new("RGBA", (bw, bh), (0, 0, 0, 0))
         td = ImageDraw.Draw(txt_layer)
 
-        # Split rendering: se la label inizia con ★, sostituiamo con icona FA Award
+        # 6. SPLIT RENDERING (Intercettazione Stella -> Sostituzione con Icona Font Awesome Award )
         if label.startswith("★"):
-            icon_char = "\uf559"  # FA Award icon
+            icon_char = ""  # FA Award icon
             rest_str = label.replace("★", "").strip()
 
             gap = int(font_size_ss * 0.4)
@@ -1666,15 +1669,15 @@ def draw_award_badge(
 
             tx = (bw - total_w) / 2
 
-            td.text((tx, text_cy_ss), icon_char, font=icon_font, fill=(*_pill_ink, 245), anchor="lm")
-            td.text((tx + icon_w + gap, text_cy_ss), rest_str, font=ubuntu_font, fill=(*_pill_ink, 245), anchor="lm")
+            td.text((tx, text_cy_ss), icon_char, font=icon_font, fill=text_color_to_use, anchor="lm")
+            td.text((tx + icon_w + gap, text_cy_ss), rest_str, font=ubuntu_font, fill=text_color_to_use, anchor="lm")
         else:
-            # Label standard senza stella
             tx, ty = _text_center(td, label, ubuntu_font, bw / 2, text_cy_ss)
-            td.text((tx, ty), label, font=ubuntu_font, fill=(*_pill_ink, 245))
+            td.text((tx, ty), label, font=ubuntu_font, fill=text_color_to_use)
 
         badge_ss = Image.alpha_composite(badge_ss, txt_layer)
 
+        # 7. Composizione Finale
         badge_final = badge_ss.resize((badge_w, badge_h), Image.Resampling.LANCZOS)
         result = image.copy()
         result.alpha_composite(badge_final, (bx, by_composite))
