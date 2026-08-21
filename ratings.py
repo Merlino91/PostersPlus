@@ -234,13 +234,13 @@ def _score_color_alt(score: int) -> tuple[tuple[int, int, int], tuple[int, int, 
 
 
 def _score_color_metal(score: int) -> tuple[tuple[int, int, int], tuple[int, int, int]]:
-    """Four-band metal palette mirroring the quality-tier badge colours: grey → bronze → silver → gold."""
+    """Four-band metal palette: grey → silver → bronze → gold."""
     if score < 50:    # grey
         return (140, 140, 148), (90,  90,  98)
-    elif score < 70:  # bronze
-        return (210, 120,  50), (150, 80,  25)
-    elif score < 85:  # silver
+    elif score < 70:  # silver
         return (218, 224, 240), (155, 165, 195)
+    elif score < 85:  # bronze
+        return (210, 120,  50), (150, 80,  25)
     else:             # gold
         return (255, 210,  60), (200, 150,  25)
 
