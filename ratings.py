@@ -516,7 +516,7 @@ def draw_frosted_bar(
     bar_h = max(24, int(height * bar_height_ratio))
     bar_y = height - bar_h - int(height * bottom_inset)
 
-    # ── Font ─────────────────────────────────────────────────────────────────
+    # ── Font: Ubuntu-Bold per testo, Font Awesome 7 per le icone (stella) ──────
     font_size = max(10, int(bar_h * font_size_ratio))
     _fonts_d = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts")
     try:
@@ -527,7 +527,14 @@ def draw_frosted_bar(
         except IOError:
             font = ImageFont.load_default()
 
-    _REF   = "Agypq0★·"
+    icon_size = max(10, int(font_size * 0.85))
+    try:
+        font_icon = ImageFont.truetype(os.path.join(_fonts_d, "Font Awesome 7 Free-Solid-900.otf"), icon_size)
+    except IOError:
+        font_icon = font
+        icon_size = font_size
+
+    _REF   = "Agypq0·"
     _ref_b = ImageDraw.Draw(Image.new("RGBA", (1, 1))).textbbox((0, 0), _REF, font=font)
     # Pure optical centering — no base nudge; the stripe branches add their own
     # downward compensation to account for the accent bar stealing top space.
@@ -576,7 +583,6 @@ def draw_frosted_bar(
         arr = np.zeros((bar_h, width, 4), dtype=np.uint8)
         arr[:, :, :3] = 12;  arr[:, :, 3] = int(frost_opacity * 255)
         bar_img = Image.fromarray(arr, "RGBA")
-        # No accent stripe, so no stripe compensation — centre like plain frosted.
         text_y += max(1, int(bar_h * 0.03))
 
     elif style in ("silver", "gold"):
@@ -597,10 +603,8 @@ def draw_frosted_bar(
         ink = (*_SILVER, 248)
         arr = np.zeros((bar_h, width, 4), dtype=np.uint8)
         arr[:, :, :3] = 12;  arr[:, :, 3] = int(frost_opacity * 255)
-        # Unfilled
         arr[:stripe, :, 0] = dim[0]; arr[:stripe, :, 1] = dim[1]
         arr[:stripe, :, 2] = dim[2]; arr[:stripe, :, 3] = 240
-        # Filled
         fw = int(width * _score_pct() / 100)
         if fw > 0:
             arr[:stripe, :fw, 0] = fc[0]; arr[:stripe, :fw, 1] = fc[1]
@@ -613,19 +617,15 @@ def draw_frosted_bar(
         ink = (*_frosted_ink(), 248)
         bar_img, _, _, _ = _build_frosted_base()
         if fill_color is not None:
-            # Explicit colour chosen — use it directly.
             fill_col = fill_color
             dim_col  = tuple(max(0, int(c * 0.12)) for c in fill_col)
         else:
-            # Colour Sample: derive a contrasting fill from the bar's own tint.
-            # The frosted tint's effective value ≈ _v2*0.4+0.60; if the bar is
-            # light go darker, if dark go brighter — always staying hue-matched.
             bar_img2, _h2, _s2, _v2 = _build_frosted_base()
-            bar_img = bar_img2  # rebuild with HSV data
+            bar_img = bar_img2
             _tint_v = _v2 * 0.4 + 0.60
-            if _tint_v > 0.70:  # light bar → dark fill
+            if _tint_v > 0.70:
                 _fv = max(0.15, _v2 * 0.30)
-            else:                # dark bar → bright fill
+            else:
                 _fv = min(1.0, _v2 * 0.40 + 0.70)
             fr2, fg2, fb2 = _cs.hsv_to_rgb(_h2, min(1.0, _s2 * 1.6), _fv)
             fill_col = (int(fr2 * 255), int(fg2 * 255), int(fb2 * 255))
@@ -640,7 +640,7 @@ def draw_frosted_bar(
         bar_img.alpha_composite(Image.fromarray(sa, "RGBA"), (0, 0))
         text_y += _stripe_nudge
 
-    else:  # plain frosted — small nudge down, no stripe compensation needed
+    else:  # plain frosted
         ink = (*_frosted_ink(), 248)
         bar_img, _, _, _ = _build_frosted_base()
         text_y += max(1, int(bar_h * 0.03))
@@ -652,14 +652,56 @@ def draw_frosted_bar(
     td        = ImageDraw.Draw(txt_layer)
     h_pad     = max(20, int(width * 0.055))
 
+    def _draw_mixed_text(text: str, x_pos: int, y_pos: int, fill_color: tuple, anchor: str = "left"):
+        """Disegna testo gestendo la sostituzione del glifo ★ con l'icona Font Awesome 7."""
+        if not text:
+            return
+        star_glyph = ""
+        normalized = text.replace("★", star_glyph)
+        
+        # Scomposizione in token testo e stella
+        tokens = []
+        cur = ""
+        for ch in normalized:
+            if ch == star_glyph:
+                if cur:
+                    tokens.append(("text", cur))
+                    cur = ""
+                tokens.append(("star", star_glyph))
+            else:
+                cur += ch
+        if cur:
+            tokens.append(("text", cur))
+
+        total_w = 0.0
+        for t_type, t_val in tokens:
+            if t_type == "star":
+                total_w += td.textlength(t_val, font=font_icon)
+            else:
+                total_w += td.textlength(t_val, font=font)
+
+        if anchor == "center":
+            cx = x_pos - total_w / 2
+        elif anchor == "right":
+            cx = x_pos - total_w
+        else:
+            cx = float(x_pos)
+
+        icon_y_offset = (font_size - icon_size) // 2
+        for t_type, t_val in tokens:
+            if t_type == "star":
+                td.text((cx, y_pos + icon_y_offset), t_val, font=font_icon, fill=fill_color)
+                cx += td.textlength(t_val, font=font_icon)
+            else:
+                td.text((cx, y_pos), t_val, font=font, fill=fill_color)
+                cx += td.textlength(t_val, font=font)
+
     if center_text:
-        cw = int(td.textlength(center_text, font=font))
-        td.text(((width - cw) // 2, text_y), center_text, font=font, fill=ink)
+        _draw_mixed_text(center_text, width // 2, text_y, ink, anchor="center")
     if left_text:
-        td.text((h_pad, text_y), left_text, font=font, fill=ink)
+        _draw_mixed_text(left_text, h_pad, text_y, ink, anchor="left")
     if right_text:
-        rw = int(td.textlength(right_text, font=font))
-        td.text((width - h_pad - rw, text_y), right_text, font=font, fill=ink)
+        _draw_mixed_text(right_text, width - h_pad, text_y, ink, anchor="right")
 
     bar_final = Image.alpha_composite(bar_img, txt_layer)
     result    = image.copy()
