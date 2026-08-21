@@ -2950,16 +2950,6 @@ def build_poster(
 
         if cfg.rating_display_mode == 1:
             font_size = int(width * cfg.accent_bar_font_size_ratio)
-            # Label suffix is configurable: append year, append sash text, or
-            # append both joined by " · ".  Missing data degrades gracefully —
-            # if "sash" is requested but no sash triggered, we just show the
-            # genre; if "both" but only one is present, we show whichever did.
-            #
-            # The separator immediately before the sash text becomes "★" when
-            # the sash is a winner (sash_type == "win") rather than "·".  Same
-            # disambiguation trick used by Compact mode — festival wins and
-            # nominees can share their label text, so without this they'd be
-            # indistinguishable here.
             _append_year = cfg.accent_bar_append_mode in (0, 2)
             _append_sash = cfg.accent_bar_append_mode in (1, 2)
             _sash_text_for_label, _sash_type_for_label = (
@@ -2984,12 +2974,6 @@ def build_poster(
                     font_meta = ImageFont.truetype(os.path.join(_FONTS_DIR, "Inter-Bold.ttf"), font_size)
                 except IOError:
                     font_meta = ImageFont.load_default()
-
-            icon_size = max(10, int(font_size * 0.85))
-            try:
-                font_icon = ImageFont.truetype(os.path.join(_FONTS_DIR, "Font Awesome 7 Free-Solid-900.otf"), icon_size)
-            except IOError:
-                font_icon = font_meta
 
             tx, ty = _text_center(draw, label, font_meta, width / 2, rating_cy)  # type: ignore
             draw.text(
@@ -3059,42 +3043,32 @@ def build_poster(
 
         elif cfg.rating_display_mode == 3:
             font_size = int(width * cfg.minimalist_mode_font_size_ratio)
+            icon_size = max(10, int(font_size * 0.85))
 
             try:
-                font_meta = ImageFont.truetype(os.path.join(_FONTS_DIR, "Inter-Bold.ttf"), font_size)
+                font_meta = ImageFont.truetype(os.path.join(_FONTS_DIR, "Ubuntu-Bold.ttf"), font_size)
             except IOError:
-                font_meta = ImageFont.load_default()
+                try:
+                    font_meta = ImageFont.truetype(os.path.join(_FONTS_DIR, "Inter-Bold.ttf"), font_size)
+                except IOError:
+                    font_meta = ImageFont.load_default()
+
+            try:
+                font_icon = ImageFont.truetype(os.path.join(_FONTS_DIR, "Font Awesome 7 Free-Solid-900.otf"), icon_size)
+            except IOError:
+                font_icon = font_meta
+                icon_size = font_size
 
             y = round(height * cfg.minimalist_mode_font_y_offset)
             right_edge = width - int(width * cfg.minimalist_mode_font_x_offset)
             _ink = (*cfg.rating_text_color, 255) if cfg.rating_text_color else (235, 235, 235, 255)
 
-            # Segments, each tagged with the ROLE of the separator that precedes
-            # it.  The role says what the separator divides; the configured
-            # style says what it is drawn as.  Keeping those apart is what lets
-            # every mode's separator be restyled without the layout knowing:
-            #   "field"  — between two plain fields (genre | year).  Text colour.
-            #   "rfield" — the same slot in Year mode, where the separator IS
-            #              the rating: it takes the score's colour, because
-            #              nothing else in that layout shows the score at all.
-            #   "rating" — immediately before a printed score.  Defaults to the
-            #              ★, which labels the number rather than dividing it
-            #              off, but can be a plain separator instead.
-            # Mode 0 ("Year"):   genre [rfield] year
-            # Mode 1 ("Rating"): genre [rating] score
-            # Mode 2 ("Both"):   genre [field] year [rating] score
-            # Mode 3 ("Split"):  genre [field] year .................... score
-            #   The same left-hand group as Both with the score moved to the
-            #   opposite margin, where it needs nothing to say what it is — a
-            #   separator earns its place between things that would otherwise
-            #   run together, and nothing runs together across a poster's width.
             _has_score = score not in ("N/A", None)
-            # Score formatting matches the other modes: out of 100 by default,
-            # one decimal out of 10 ("8.7"), with a bare "10" at the top.
             if _has_score and cfg.minimalist_score_out_of_10:
                 _score_str = "10" if int(score) >= 100 else f"{int(score) / 10:.1f}"
             else:
                 _score_str = str(score)
+
             parts = [(genre_label, None)] if genre_label else []
             left_parts: list[tuple[str, str | None]] = []
             if cfg.minimalist_append_mode == 0:
@@ -3118,27 +3092,22 @@ def build_poster(
             pip_h   = int(font_size * 1.4)
             pip_cy  = round(y + font_size * 0.60)
 
-            # Style resolution.  The two field roles share one setting because
-            # they are the same slot in different layouts; the rating role has
-            # its own, since the ★ only makes sense in front of a number and
-            # would be nonsense between a genre and a year.  A glyph reserves
-            # its own width where the bar has a fixed one, so the choice has to
-            # reach the layout below and not just the drawing.
-            _SEP_GLYPH = {"pip": None, "bullet": "•", "star": "★"}
+            _SEP_GLYPH = {"pip": None, "bullet": "•", "star": ""}
 
             def _sep_style(role: str) -> str:
                 return (cfg.minimalist_rating_separator if role == "rating"
                         else cfg.minimalist_separator)
 
             def _sep_glyph(role: str) -> str | None:
-                # Unknown styles fall back to the bar rather than raising: this
-                # runs per poster, and a bad value is a config problem, not a
-                # reason to fail the render.
                 return _SEP_GLYPH.get(_sep_style(role))
 
             def _sep_width(role: str) -> float:
                 glyph = _sep_glyph(role)
-                return pip_w if glyph is None else draw.textlength(glyph, font=font_meta)
+                if glyph is None:
+                    return pip_w
+                if glyph == "":
+                    return draw.textlength(glyph, font=font_icon)
+                return draw.textlength(glyph, font=font_meta)
 
             def _score_int(value) -> "int | None":
                 try:
@@ -3146,8 +3115,7 @@ def build_poster(
                 except (TypeError, ValueError):
                     return None
 
-            # Lay out right-to-left: each segment, with its separator to its left.
-            ops    = []   # (kind, x[, text]); kind in text|field|rfield|rating
+            ops    = []
             cursor = right_edge
             for i in range(len(parts) - 1, -1, -1):
                 seg, sep = parts[i]
@@ -3161,22 +3129,10 @@ def build_poster(
                     ops.append((sep, sep_x))
                     cursor = sep_x - pip_gap
 
-            # Optional centre anchor.  The logo above is centred on the poster,
-            # so the metadata line can be too; the x offset then stops being a
-            # right margin and simply stops applying.  The loop above leaves
-            # `cursor` on the group's left edge, so its exact drawn extent is
-            # known here and the whole thing can just be slid into the middle —
-            # measured after layout rather than predicted before it, because the
-            # per-segment rounding above would otherwise push the result a pixel
-            # or two off centre.  Split is excluded: its two groups are DEFINED
-            # by the opposite margins they hang off, so there is no single group
-            # left to centre, and the option is hidden in the configurator.
             if cfg.minimalist_center and cfg.minimalist_append_mode != 3 and ops:
                 _shift = round(width / 2 - (cursor + right_edge) / 2)
                 ops = [(op[0], op[1] + _shift, *op[2:]) for op in ops]
 
-            # ...and the split mode's left-hand group the same way but forwards,
-            # off the opposite margin, so the two groups sit symmetrically.
             cursor = width - right_edge
             for seg, sep in left_parts:
                 if sep:
@@ -3186,6 +3142,8 @@ def build_poster(
                 ops.append(("text", int(cursor), seg))
                 cursor += draw.textlength(seg, font=font_meta)
 
+            icon_y_offset = ((font_size - icon_size) // 2) + int(font_size * 0.08)
+
             for op in ops:
                 kind, ox = op[0], op[1]
                 if kind == "text":
@@ -3193,25 +3151,21 @@ def build_poster(
                     continue
 
                 glyph = _sep_glyph(kind)
-                if kind == "rfield":
-                    # The rating shown as a colour.  Both shapes take the same
-                    # score lookup, and both are skipped when there is no score
-                    # to colour them with — a neutral mark in this slot would
-                    # read as a rating rather than as the absence of one.
+                if kind in ("rfield", "rating"):
                     _sc = _score_int(score)
-                    if _sc is None:
-                        continue
-                    _fill = score_color_for_mode(
-                        _sc, cfg.score_color_mode, cfg.score_custom_palette)[0]
+                    if _sc is not None:
+                        _fill = score_color_for_mode(
+                            _sc, cfg.score_color_mode, cfg.score_custom_palette)[0]
+                    else:
+                        _fill = _ink[:3]
                 else:
-                    # Unless this separator is carrying the rating in Year
-                    # mode, it belongs to the metadata line and follows that
-                    # line's configured (or default) text colour.
                     _fill = _ink[:3]
 
                 if glyph is None:
                     _draw_solid_pip(image, x=ox, y_center=pip_cy,
                                     width=pip_w, height=pip_h, color=_fill)
+                elif glyph == "":
+                    draw.text((ox, y + icon_y_offset), glyph, font=font_icon, fill=(*_fill, 255))
                 else:
                     draw.text((ox, y), glyph, font=font_meta, fill=(*_fill, 255))
 
