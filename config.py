@@ -520,6 +520,7 @@ BADGE_FILES: dict[str, str] = {
     "DV":     "DV",
     "HDR10+": "HDR10+",
     "HDR10":  "HDR10",
+    "ITA":    "ita",
 }
 
 # Maps TMDB categories to numerics (no need to touch in most cases)
@@ -592,6 +593,7 @@ QUALITY_LABELS: dict[str, str] = {
     "HDR10":  "HDR10",
     "ATMOS":  "Atmos",
     "DTSX":   "DTS:X",
+    "ITA":    "ITA",
 }
 
 # Normalizes all scores to be out of 100
@@ -617,6 +619,8 @@ SCORE_NORMALISERS = {
 # Kept in sync with SASH_SLOTS in configurator.html — the configurator's
 # default order and every bundled preset use this same sequence.
 SASH_PRIORITY: list[str] = [
+    # Prossimo episodio — informazione urgente per serie in corso.
+    "next_episode",
     # Prestige — rare and timeless, so they outrank everything else.
     "wins",
     "gg_wins",
@@ -636,6 +640,7 @@ SASH_PRIORITY: list[str] = [
     # Curated taste — common matches, so they sit under the timely tier.
     "studio",
     "director",
+    "creator",
     "cast",
     # Static flavour — always true, never urgent.
     "cult",
