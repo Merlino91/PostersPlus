@@ -210,6 +210,21 @@ NOTABLE_CAST: dict[str, str] = {
     "Josh O'Connor":          "Josh O'Connor",
 }
 
+NOTABLE_CREATORS: dict[str, str] = {
+    "Akira Toriyama":    "Akira Toriyama",
+    "Eiichiro Oda":      "Eiichiro Oda",
+    "Hajime Isayama":    "Hajime Isayama",
+    "Masashi Kishimoto": "Masashi Kishimoto",
+    "Kentaro Miura":     "Kentaro Miura",
+    "Hiromu Arakawa":    "Hiromu Arakawa",
+    "Yoshihiro Togashi": "Yoshihiro Togashi",
+    "Naoko Takeuchi":    "Naoko Takeuchi",
+    "Tite Kubo":         "Tite Kubo",
+    "Koyoharu Gotouge":  "K. Gotouge",
+    "Tatsuki Fujimoto":  "T. Fujimoto",
+    "Sui Ishida":        "Sui Ishida",
+}
+
 # Within the "structural" bucket, checked in this fixed order
 _STRUCTURAL_CHECKS = ["short_film", "mini_series", "binge_ready"]
 
@@ -303,8 +318,10 @@ _SASH_TYPES: dict[str, str] = {
     "emmy_noms":       "nom",       # silver — legacy alias for pic_noms
     "noms":            "nom",       # silver — legacy catch-all for any nomination
     "festival":        "win",       # gold — major festival win is prestige-equivalent to Oscar
+    "next_episode":    "info",      # teal — prossimo episodio per serie in corso
     "studio":          "prestige",  # purple — production credit
     "director":        "prestige",  # purple — production credit
+    "creator":         "prestige",  # purple — mangaka / original author
     "cast":            "cast",      # green — talent credit
     "trending":        "trending",  # blue
     "trending_broad":  "trending",  # blue — lower-priority ranks 41-100
@@ -410,6 +427,7 @@ class DiscoveryMeta:
     matched_studios:   list[str] = field(default_factory=list)
     matched_directors: list[str] = field(default_factory=list)
     matched_cast:      list[str] = field(default_factory=list)
+    matched_creators:  list[str] = field(default_factory=list)
 
     # Festival winner (from MDblist keywords)
     festival_label: str | None = None   # e.g. "Palme d'Or Winner"
@@ -446,6 +464,10 @@ class DiscoveryMeta:
     # TV:     "Returning" | "Ended" | "Cancelled" | "Production"
     release_status: str | None = None
 
+    # Campi custom per next_episode e mini_series
+    status: str | None = None               # TMDB status ("Returning", "Ended", "Canceled")
+    next_episode_to_air: str | None = None  # data prossimo episodio (YYYY-MM-DD)
+
 
 # ---------------------------------------------------------------------------
 # Extraction helpers
@@ -478,11 +500,22 @@ def extract_discovery_meta(
     cast_list      = notable_cast      or NOTABLE_CAST
     fest_keywords  = festival_keywords or FESTIVAL_KEYWORDS
 
+    # Estrazione flessibile: la cache salva già come stringa/dict sotto 'next_episode'
+    next_ep_data = tmdb_data.get("next_episode") or tmdb_data.get("next_episode_to_air")
+    if isinstance(next_ep_data, str):
+        next_ep_date = next_ep_data
+    elif isinstance(next_ep_data, dict):
+        next_ep_date = next_ep_data.get("air_date")
+    else:
+        next_ep_date = None
+
     meta = DiscoveryMeta(
         award_wins=award_wins,
         award_noms=award_noms,
         trending_rank=trending_rank,
         original_language=tmdb_data.get("original_language"),
+        status=tmdb_data.get("tmdb_status") or tmdb_data.get("status"),
+        next_episode_to_air=next_ep_date,
     )
 
     # Build keyword name set once — reused for festival detection and the
@@ -539,12 +572,23 @@ def extract_discovery_meta(
     credits = tmdb_data.get("credits", {})
 
     for crew_member in credits.get("crew", []):
-        if crew_member.get("job") == "Director":
-            name = crew_member.get("name", "")
+        job = crew_member.get("job", "")
+        name = crew_member.get("name", "")
+
+        # Registi
+        if job == "Director":
             if name in directors:
                 label = directors[name]
                 if label not in meta.matched_directors:
                     meta.matched_directors.append(label)
+
+        # Mangaka e Autori originali
+        elif job in ("Comic Book", "Original Series Creator", "Writer",
+                     "Novel", "Author", "Creator", "Original Concept", "Manga"):
+            if name in NOTABLE_CREATORS:
+                label = NOTABLE_CREATORS[name]
+                if label not in meta.matched_creators:
+                    meta.matched_creators.append(label)
 
     for cast_member in credits.get("cast", [])[:10]:
         name = cast_member.get("name", "")
@@ -564,6 +608,7 @@ def extract_discovery_meta(
         meta.is_mini_series = (
             num_seasons == 1
             and 0 < num_episodes <= 8
+            and meta.status == "Ended"
         )
 
         if num_seasons >= 3 and num_episodes > 0:
@@ -661,8 +706,37 @@ def pick_sash(
     return None
 
 
+MONTHS_IT = ["Gen", "Feb", "Mar", "Apr", "Mag", "Giu", "Lug", "Ago", "Set", "Ott", "Nov", "Dic"]
+
+def _format_date_it(date_str: str) -> str:
+    """Formatta '2025-08-15' → 'il 15 Ago' (o 'l'8 Set' per 1, 8, 11)."""
+    if not isinstance(date_str, str):
+        return ""
+    try:
+        d = datetime.strptime(date_str, "%Y-%m-%d").date()
+        art = "l'" if d.day in (1, 8, 11) else "il "
+        return f"{art}{d.day} {MONTHS_IT[d.month - 1]}"
+    except ValueError:
+        return date_str
+
+def _is_future(date_str: str) -> bool:
+    """True se la data è strettamente futura."""
+    if not isinstance(date_str, str):
+        return False
+    try:
+        return datetime.strptime(date_str, "%Y-%m-%d").date() > date.today()
+    except ValueError:
+        return False
+
+
 def _evaluate_slot(slot: str, meta: DiscoveryMeta) -> str | None:
     """Return a label string if this slot has a match, else None."""
+
+    # --- Slot custom: prossimo episodio ---
+    if slot == "next_episode":
+        if meta.next_episode_to_air and _is_future(meta.next_episode_to_air):
+            return f"Prossimo Ep: {_format_date_it(meta.next_episode_to_air)}"
+        return None
 
     if slot == "wins":
         # Oscar Best Picture wins and Emmy Outstanding wins only.
@@ -709,6 +783,9 @@ def _evaluate_slot(slot: str, meta: DiscoveryMeta) -> str | None:
     if slot == "director":
         # matched_directors already holds display labels (dict values)
         return f"{meta.matched_directors[0]}" if meta.matched_directors else None
+
+    if slot == "creator":
+        return f"{meta.matched_creators[0]}" if meta.matched_creators else None
 
     if slot == "cast":
         # matched_cast already holds display labels (dict values)
@@ -786,8 +863,10 @@ ALL_PRIORITY_SLOTS: list[str] = [
     "festival",
     "pic_noms",
     "gg_noms",
+    "next_episode",
     "studio",
     "director",
+    "creator",
     "cast",
     "trending",
     "new_season",
