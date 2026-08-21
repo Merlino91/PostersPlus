@@ -282,6 +282,11 @@
 
   .left-col {
     min-height: 0;
+    /* A grid item defaults to min-width:auto, so nowrap content inside refuses
+       to shrink and pushes the column past its track. Harmless on desktop where
+       the tracks are fixed px; on mobile's 1fr it is what shifted the whole
+       config panel sideways. Same idiom as the rows' minmax(0, 1fr) above. */
+    min-width: 0;
     height: 100%;
     overflow: hidden;
     display: flex;
@@ -1321,6 +1326,7 @@
   /* ── RIGHT COLUMN ── */
   .right-col {
     min-height: 0;
+    min-width: 0;          /* see .left-col */
     height: 100%;
     overflow: hidden;
     position: sticky;
@@ -1813,7 +1819,13 @@
     html, body { width: 100%; overflow-x: hidden; }
     body { align-items: stretch; }
     .shell { min-width: 0; width: 100%; padding: 0 12px 80px; }
-    .main-layout { grid-template-columns: 1fr; grid-template-rows: auto; width: 100%; height: auto; max-height: none; gap: 16px; align-items: start; }
+    .main-layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto; width: 100%; height: auto; max-height: none; gap: 16px; align-items: start; }
+    /* overflow-y:auto computes the *other* axis to auto too, so this box was
+       horizontally scrollable — which is how a too-wide field could slide the
+       whole config panel sideways while the header (outside it) and the fixed
+       preview stayed put. Tooltips and .menu are parked on <body>, so nothing
+       that needs to escape the panel is clipped by this. */
+    #tab-host { overflow-x: hidden; }
     .left-col { height: auto; overflow: visible; }
     .left-col .panel-body { overflow: visible; scrollbar-width:none}
     .right-col { height: auto; overflow: visible; position: static; }
@@ -2567,13 +2579,30 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
               <div id="rating-mode3-fields" style="display:none;">
                 <div class="field">
                   <label class="field-label" data-tip="If rating is not chosen, the separator colour gives an approximation of it.">Append</label>
-                  <select class="segmented-source" id="cfg-min-append" onchange="build(); queuePreviewReload()">
+                  <select class="segmented-source" id="cfg-min-append" onchange="_updateMinimalistRows(); build(); queuePreviewReload()">
                     <option value="0" selected>Year</option>
                     <option value="1">Rating</option>
-                    <option value="2">Year + Rating</option>
+                    <option value="2">Both</option>
                     <option value="3">Split</option>
                   </select>
                   <div class="segmented" data-for="cfg-min-append"></div>
+                </div>
+                <div class="field" id="minimalist-separator-field">
+                  <label class="field-label" id="minimalist-separator-label" data-tip="Glyph between the genre and the year. In Year mode it still takes the score's colour whichever shape you pick, so the rating survives — a bullet just reads more quietly than the bar.">Separator</label>
+                  <select class="segmented-source" id="cfg-min-separator" onchange="build(); queuePreviewReload()">
+                    <option value="pip" selected>Bar</option>
+                    <option value="bullet">Bullet</option>
+                  </select>
+                  <div class="segmented" data-for="cfg-min-separator"></div>
+                </div>
+                <div class="field" id="minimalist-rating-separator-field">
+                  <label class="field-label" id="minimalist-rating-separator-label" data-tip="Glyph immediately before the score. The star labels the number rather than dividing it off, which is why it is only offered here.">Rating Separator</label>
+                  <select class="segmented-source" id="cfg-min-rating-separator" onchange="build(); queuePreviewReload()">
+                    <option value="star" selected>Star</option>
+                    <option value="pip">Bar</option>
+                    <option value="bullet">Bullet</option>
+                  </select>
+                  <div class="segmented" data-for="cfg-min-rating-separator"></div>
                 </div>
                 <div class="field">
                   <label class="field-label" data-tip="Hex colour for the genre/rating text. Leave blank for the mode default.">Text Colour</label>
@@ -2737,6 +2766,13 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
                 <span class="toggle-label">Display score out of 10</span>
                 <label class="toggle-switch">
                   <input type="checkbox" id="tog-minimalist-score-10" onchange="build(); queuePreviewReload()">
+                  <div class="toggle-track"><div class="toggle-thumb"></div></div>
+                </label>
+              </div>
+              <div class="toggle-row score10-row" id="minimalist-center-row" style="display:none;">
+                <span class="toggle-label" data-tip="Centre the strip under the logo instead of hanging it off the right margin. The X Position slider stops applying.">Centre under logo</span>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="tog-minimalist-center" onchange="build(); queuePreviewReload()">
                   <div class="toggle-track"><div class="toggle-thumb"></div></div>
                 </label>
               </div>
@@ -2986,6 +3022,7 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
               <select id="cfg-badge-display-mode" onchange="updateBadgeModeHint(); build(); queuePreviewReload()">
                 <option value="0">Hidden</option>
                 <option value="4" selected>Quality Notch</option>
+                <option value="6">Quality Bookmark</option>
                 <option value="2">Quality Badge Row</option>
                 <option value="5">Combined Badge</option>
                 <option value="1">Quality Age Rating</option>
@@ -2994,7 +3031,7 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
             </div>
             <div class="field" id="badge-min-score-field" style="display:none">
               <label class="field-label">Minimum Quality to Display</label>
-              <select id="cfg-badge-min-score" onchange="build(); queuePreviewReload()">
+              <select id="cfg-badge-min-score" onchange="this.dataset.userSet='true'; build(); queuePreviewReload()">
                 <option value="2">HD Web</option>
                 <option value="3">One of 4K, HDR or Remux</option>
                 <option value="4">Two of the above or DV</option>
@@ -3058,14 +3095,14 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
                   <span class="range-val" id="rng-bg">8</span>
                 </div>
               </div>
-              <div class="field">
+              <div class="field" id="badge-x-field">
                 <label class="field-label">Badge Horizontal Position</label>
                 <div class="range-row">
                   <input type="range" id="cfg-badge-x" min="0.01" max="1" step="0.01" value="0.050" oninput="updateRange(this,'rng-bx'); build(); queuePreviewReload()">
                   <span class="range-val" id="rng-bx">0.050</span>
                 </div>
               </div>
-              <div class="field">
+              <div class="field" id="badge-y-field">
                 <label class="field-label">Badge Vertical Position</label>
                 <div class="range-row">
                   <input type="range" id="cfg-badge-y" min="0.01" max="0.95" step="0.005" value="0.050" oninput="updateRange(this,'rng-by'); build(); queuePreviewReload()">
@@ -3638,7 +3675,7 @@ function updateKeyBadges() {
 
 function updateScraperHint() {
   const mode = parseInt(document.getElementById('cfg-badge-display-mode').value);
-  const qualityMode = mode === 1 || mode === 2 || mode === 4 || mode === 5;
+  const qualityMode = mode === 1 || mode === 2 || mode === 4 || mode === 5 || mode === 6;
   document.getElementById('wait-quality-field').style.display = qualityMode ? '' : 'none';
   const aiosHint = document.getElementById('aiostreams-hint');
   if (aiosHint) {
@@ -3670,6 +3707,7 @@ const BADGE_MODE_TIPS = {
   1: 'The font colour reflects stream quality, following medal tiers.',
   4: 'A medal-coloured marker based on stream quality.',
   5: 'Minimalist text badge: resolution · visual tag, pip coloured by source. Needs both resolution and source; visual tag defaults to SDR if absent.',
+  6: 'A small corner bookmark coloured by the same quality tier as Quality Notch.',
 };
 
 function updateBadgeModeHint() {
@@ -3679,17 +3717,24 @@ function updateBadgeModeHint() {
   if (BADGE_MODE_TIPS[mode]) modeLabel.dataset.tip = BADGE_MODE_TIPS[mode];
   else modeLabel.removeAttribute('data-tip');
   document.getElementById('badge-gap-field').style.display         = mode === 2 ? '' : 'none';
-  document.getElementById('badge-min-score-field').style.display   = [1,2,4,5].includes(mode) ? '' : 'none';
+  document.getElementById('badge-min-score-field').style.display   = [1,2,4,5,6].includes(mode) ? '' : 'none';
   document.getElementById('badge-stacked-field').style.display     = mode === 5 ? '' : 'none';
   updateScraperHint();
   // Hide the whole height / horizontal / vertical block when badges are off —
   // those knobs only mean anything when there's a badge being placed.  Gap is
   // already mode-2-only and stays nested under this wrapper, so it follows.
   document.getElementById('badge-layout-fields').style.display     = hidden ? 'none' : '';
+  document.getElementById('badge-x-field').style.display           = mode === 6 ? 'none' : '';
+  document.getElementById('badge-y-field').style.display           = mode === 6 ? 'none' : '';
   if (!hidden) {
-    document.getElementById('cfg-badge-h').value = mode === 4 ? 20 : mode === 2 ? 32 : mode === 5 ? 28 : 36;
-    if ([1,2,4,5].includes(mode)) {
-      document.getElementById('cfg-badge-min-score').value = mode === 1 ? '2' : '5';
+    document.getElementById('cfg-badge-h').value = mode === 6 ? 16 : mode === 4 ? 20 : mode === 2 ? 32 : mode === 5 ? 28 : 36;
+    if ([1,2,4,5,6].includes(mode)) {
+      // The mode's default only seeds an untouched field.  Unlike badge height,
+      // a minimum quality means the same thing in every mode, so once the user
+      // (or an imported URL) has picked one, switching modes must not throw it
+      // away.  Cleared by Reset to Defaults, which re-arms the seeding.
+      const _minScore = document.getElementById('cfg-badge-min-score');
+      if (!_minScore.dataset.userSet) _minScore.value = mode === 1 ? '2' : '5';
     }
   }
 }
@@ -3927,6 +3972,20 @@ function saveApiKeys() {
 
 function saveSelection(data) { localStorage.setItem('postersplus_selection', JSON.stringify(data)); }
 
+// How long a "this title has no IMDb link" answer is trusted before the
+// resolver is asked again. Cached at all so a TMDB-only title doesn't re-run
+// the lookup on every page load; expiring, because TMDB gains IMDb links over
+// time and a permanently remembered "no" would never recover.
+const IMDB_NEGATIVE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+function setNoLinkedImdbId() {
+  resolvedImdbId = '';
+  document.getElementById('cfg-imdb').value = '';
+  document.getElementById('selected-imdb-id').textContent = 'None — using TMDB';
+  const spinner = document.getElementById('selected-resolving');
+  if (spinner) spinner.style.display = 'none';
+}
+
 function persistImdbId(imdbId) {
   // The resolve is async, so this can land after build() has already run.
   updateExternalLink();
@@ -3934,7 +3993,8 @@ function persistImdbId(imdbId) {
     const raw = localStorage.getItem('postersplus_selection');
     if (!raw) return;
     const data = JSON.parse(raw);
-    data.imdbId = imdbId;
+    data.imdbId = imdbId || null;
+    data.imdbCheckedAt = Date.now();
     localStorage.setItem('postersplus_selection', JSON.stringify(data));
   } catch(e) {}
 }
@@ -3966,11 +4026,15 @@ function hydrateFromLocalStorage() {
     const badge = document.getElementById('selected-type-badge');
     badge.textContent = (data.type || 'movie').toUpperCase(); badge.className = 'result-type-badge ' + (data.type || 'movie');
     document.getElementById('selected-tmdb-id').textContent = data.tmdbId;
+    const negativeIsFresh = !data.imdbId && data.imdbCheckedAt
+      && (Date.now() - data.imdbCheckedAt) < IMDB_NEGATIVE_TTL_MS;
     if (data.imdbId) {
       resolvedImdbId = data.imdbId;
       document.getElementById('cfg-imdb').value = data.imdbId;
       document.getElementById('selected-imdb-id').textContent = data.imdbId;
       document.getElementById('selected-resolving').style.display = 'none';
+    } else if (negativeIsFresh) {
+      setNoLinkedImdbId();
     } else {
       document.getElementById('selected-imdb-id').textContent = '…';
       document.getElementById('selected-resolving').style.display = 'flex';
@@ -3982,8 +4046,10 @@ function hydrateFromLocalStorage() {
           resolvedImdbId = id;
           document.getElementById('cfg-imdb').value = id;
           document.getElementById('selected-imdb-id').textContent = id;
-          persistImdbId(id); queuePreviewReload();
+        } else {
+          setNoLinkedImdbId();
         }
+        persistImdbId(id || null); queuePreviewReload();
       });
     }
   } catch(e) { console.warn('Could not restore selection:', e); }
@@ -4151,8 +4217,11 @@ async function selectResult(dataset) {
     persistImdbId(imdbId);
     setStatus(`IMDB ID resolved: ${imdbId}`, 'ok');
   } else {
-    document.getElementById('selected-imdb-id').textContent = 'N/A';
-    setStatus('Could not resolve IMDB ID — preview may fail', 'err');
+    // Not an error: TMDB has no IMDb link for plenty of titles, and the poster
+    // renders from TMDB alone. Only the IMDb-keyed extras are unavailable.
+    setNoLinkedImdbId();
+    persistImdbId(null);
+    setStatus('', 'info');
   }
   build(); queuePreviewReload();
 }
@@ -4331,7 +4400,10 @@ function decodePlaceholders(url) {
 function buildBaseParams({ usePlaceholders = false, domainOverride = null } = {}) {
   const domain         = (domainOverride || vEl('cfg-domain')).replace(/\/$/, '') || 'https://your-instance.com';
   const logoLanguage   = vEl('cfg-language') || 'en';
-  const imdbId         = usePlaceholders ? '{imdb_id}'  : (resolvedImdbId  || '{imdb_id}');
+  // Unresolved stays empty rather than falling back to a literal "{imdb_id}":
+  // a concrete url is one somebody pastes into a browser, and a placeholder in
+  // it is just a broken url.
+  const imdbId         = usePlaceholders ? ''            : resolvedImdbId;
   const tmdbId         = usePlaceholders ? '{tmdb_id}'  : (resolvedTmdbId  || '{tmdb_id}');
   const accKey         = vEl('cfg-access-key');
   const type           = usePlaceholders ? '{type}'     : mediaType;
@@ -4362,13 +4434,13 @@ function buildBaseParams({ usePlaceholders = false, domainOverride = null } = {}
   // present in every AIOMetadata version, and always populated — so it can
   // never null the URL and never needs the optional form.
   //
-  // tmdb_id and imdb_id use the REQUIRED "{name}" form; the anime ids use the
-  // optional "{name?}" form. That split is deliberate and load-bearing:
+  // tmdb_id uses the REQUIRED "{name}" form; the anime ids use the optional
+  // "{name?}" form. That split is deliberate and load-bearing:
   //
   //   - Required is understood by every AIOMetadata build. Optional is not —
   //     older ones leave the placeholder in the URL verbatim, and a literal
   //     placeholder where the core id belongs fails validation server-side and
-  //     400s the poster. Never put the core ids in the optional form.
+  //     400s the poster. Never put the core id in the optional form.
   //   - The anime ids can't be required: the resolver returns null for the
   //     whole URL as soon as a required placeholder has no value, so
   //     "{kitsu_id}" would kill every live-action poster.
@@ -4377,15 +4449,26 @@ function buildBaseParams({ usePlaceholders = false, domainOverride = null } = {}
   //     doesn't leaves "{kitsu_id?}" literal, and the server treats a literal
   //     placeholder as absent and takes the ordinary TMDB path.
   //
-  // The cost is that a title with an anime id but no tmdb/imdb never reaches us
-  // — the resolver nulls it. Not observed in practice: every logged request has
-  // carried tmdb_id and imdb_id.
+  // imdb_id is no longer emitted at all, and that is the same rule read the
+  // other way. It cannot be required: TMDB returns imdb_id: null for titles it
+  // has no IMDb link for, and the resolver then nulls the WHOLE url — those
+  // titles lost their poster entirely rather than losing their rating. It also
+  // cannot be optional: Bingecat rejects "{name?}" at config time and some
+  // AIOMetadata builds pass it through verbatim.
+  //
+  // Nothing visible is lost by dropping it. tmdb_id alone identifies the title,
+  // and the server reads the IMDb id back out of TMDB's own metadata for the
+  // enrichment that needs one (Metahub logo fallback, digital-release
+  // detection, stream-quality lookups). Urls generated before this — and any
+  // client that has a reliable IMDb id, such as the Plex and Jellyfin sync
+  // scripts — keep sending imdb_id and are still accepted; doing so also keys
+  // the rating cache by IMDb id, which is what those scripts want.
   //
   // AIOMetadata also offers {mal_id} and {anidb_id}; neither is emitted because
   // neither is wired as an art source (MAL needs auth, AniDB's API is heavily
   // restricted). The server ignores them if you add them by hand.
   params.set('tmdb_id', tmdbId);
-  params.set('imdb_id', imdbId);
+  if (imdbId) params.set('imdb_id', imdbId);
   if (usePlaceholders && c('tog-anime-ids')) {
     params.set('stremio_id', '{id}');
   }
@@ -4414,8 +4497,11 @@ function buildBaseParams({ usePlaceholders = false, domainOverride = null } = {}
       params.set('vignette_color_saturation', n('cfg-vignette-sat').toFixed(2));
       params.set('vignette_color_blur',       n('cfg-vignette-blur').toFixed(2));
       params.set('vignette_color_lightness',  n('cfg-vignette-light').toFixed(2));
-      if (c('tog-vignette-ramp')) params.set('vignette_color_ramp', 'true');
-      if (c('tog-vignette-local')) params.set('vignette_color_local', 'true');
+      // Both default to *on* in the renderer, so unlike every other toggle these
+      // have to be written out either way — omitting them when off would leave
+      // the renderer on its default and the switch would never turn anything off.
+      params.set('vignette_color_ramp',  c('tog-vignette-ramp')  ? 'true' : 'false');
+      params.set('vignette_color_local', c('tog-vignette-local') ? 'true' : 'false');
     } }
   if (c('tog-hide-genre')) params.set('hide_genre', 'true');
   params.set('fallback_to_imdb', c('tog-fallback-imdb') ? 'true' : 'false');
@@ -4451,6 +4537,16 @@ function buildBaseParams({ usePlaceholders = false, domainOverride = null } = {}
       params.set('minimalist_mode_font_x_offset',   n('cfg-x-mode3').toFixed(3));
       params.set('minimalist_mode_font_y_offset',   n('cfg-y-mode3').toFixed(3));
       params.set('minimalist_score_out_of_10',      c('tog-minimalist-score-10') ? 'true' : 'false');
+      // Emitted whatever the Append mode is, even where that mode draws no such
+      // separator and the control is hidden.  These params are also the
+      // persistence format — saveSettings() round-trips this same builder — so
+      // omitting one because it is inert right now means it is not saved, and a
+      // reload silently returns it to the default.  Losing somebody's setting
+      // because they happened to be parked on another mode is worse than a URL
+      // carrying a param the server will ignore.
+      params.set('minimalist_center',              c('tog-minimalist-center') ? 'true' : 'false');
+      params.set('minimalist_separator',           vEl('cfg-min-separator') || 'pip');
+      params.set('minimalist_rating_separator',    vEl('cfg-min-rating-separator') || 'star');
     } else if (ratingMode === 4) {
       params.set('bar_style',           vEl('cfg-bar-style') || 'frosted');
       const _bs = vEl('cfg-bar-style') || '';
@@ -4546,21 +4642,23 @@ function buildBaseParams({ usePlaceholders = false, domainOverride = null } = {}
   // ── Quality Badges ─────────────────────────────────────────────────────────
   params.set('badge_display_mode', badgeMode);
   if (badgeMode !== 0) {
-    params.set('badge_height',   ni('cfg-badge-h'));
-    params.set('badge_anchor_x', n('cfg-badge-x').toFixed(3));
-    params.set('badge_anchor_y', n('cfg-badge-y').toFixed(3));
+    params.set('badge_height', ni('cfg-badge-h'));
+    if (badgeMode !== 6) {
+      params.set('badge_anchor_x', n('cfg-badge-x').toFixed(3));
+      params.set('badge_anchor_y', n('cfg-badge-y').toFixed(3));
+    }
     if (badgeMode === 2) {
       // badge_gap only applies to Quality Badge Row mode
       params.set('badge_gap', ni('cfg-badge-gap'));
     }
-    if ([1,2,4,5].includes(badgeMode)) {
+    if ([1,2,4,5,6].includes(badgeMode)) {
       params.set('badge_min_score', ni('cfg-badge-min-score'));
     }
     if (badgeMode === 5) {
       if (c('tog-badge-stacked')) params.set('combined_badge_stacked', 'true');
     }
   }
-  if (c('tog-wait-quality') && [1,2,4].includes(badgeMode)) {
+  if (c('tog-wait-quality') && [1,2,4,6].includes(badgeMode)) {
     params.set('wait_for_quality', 'true');
     if (c('tog-greyscale-noquality')) params.set('greyscale_no_quality', 'true');
   }
@@ -4577,25 +4675,130 @@ function buildPreviewUrl() {
 }
 function buildTemplateUrl() { return buildBaseParams({ usePlaceholders: true }); }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Clipboard
+//
+// navigator.clipboard cannot be the primary route, because of what it puts on
+// an Apple pasteboard. Measured on iOS Safari with the real template string:
+//
+//   writeText(url)                     -> types: [text/plain, text/uri-list]
+//   ClipboardItem({'text/plain': ...}) -> types: [text/plain, text/uri-list]
+//   document-selection copy            -> types: [text/plain]
+//
+// Both async-API routes synthesise that second flavour — a URL-canonicalised
+// copy of the string in which "{tmdb_id}" has become "%7Btmdb_id%7D" — and
+// declaring a single explicit text/plain item does not suppress it. WebKit's
+// paste then inserts the uri-list flavour, not the plain one, so the encoded
+// form is what lands in the field. AIOMetadata matches its placeholders with a
+// literal pattern.includes('{tmdb_id}'), never matches, passes the placeholder
+// through unsubstituted, and every poster 400s on the server's _check_tmdb_id.
+//
+// A copy driven from a document selection carries text/plain alone, on the same
+// device and the same string, so the URL flavour is never synthesised at all.
+// (That is also what the "paste via Notepad" folk remedy was doing by hand:
+// bouncing through a plain-text app discards every flavour but one.)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Copies by selecting an off-screen node — see the note above for why.
+ *
+ * Selects a plain element rather than a textarea deliberately: an ordinary DOM
+ * text selection is the shape that was actually measured as producing a single
+ * flavour, and a textarea selection is a different enough code path that it
+ * would be an untested assumption.
+ */
+function copyViaSelection(text) {
+  const host = document.createElement('div');
+  host.textContent = text;
+  // Off-screen but genuinely selectable: display:none and visibility:hidden
+  // cannot be selected at all, and a user-select:none inherited from a reset
+  // would leave the selection silently empty.
+  host.style.cssText = 'position:fixed;top:0;left:-9999px;white-space:pre;' +
+                       '-webkit-user-select:text;user-select:text;';
+  document.body.appendChild(host);
+
+  const sel   = window.getSelection();
+  const saved = sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
+  let ok = false;
+  try {
+    const range = document.createRange();
+    range.selectNodeContents(host);
+    sel.removeAllRanges();
+    sel.addRange(range);
+    // Confirm the selection took before firing. The first attempt at this fix
+    // selected a readonly, unfocused textarea; iOS reported execCommand success
+    // while copying nothing, so the fallback below never armed and the button
+    // silently did nothing at all. A selection that does not hold our string is
+    // the one detectable precursor to that.
+    if (sel.toString() === text) ok = document.execCommand('copy');
+  } catch { ok = false; }
+
+  sel.removeAllRanges();
+  if (saved) sel.addRange(saved);
+  host.remove();
+  return ok;
+}
+
+/** Same idea against an editable field, for engines that refuse the above.
+ *
+ * A non-editable selection is not universally copyable — this is the hedge for
+ * an engine that requires the selection to live in an editable control. Focused
+ * before selecting, which the very first attempt at this fix omitted.
+ */
+function copyViaTextarea(text) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  // In-viewport but invisible, rather than parked off-screen: some engines
+  // decline to copy a selection that is nowhere on screen.
+  ta.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:1px;' +
+                     'padding:0;border:0;opacity:0;';
+  document.body.appendChild(ta);
+
+  const restore = document.activeElement;
+  let ok = false;
+  try {
+    ta.focus();
+    ta.setSelectionRange(0, text.length);
+    ok = document.execCommand('copy');
+  } catch { /* fall through to the caller's next route */ }
+
+  ta.remove();
+  if (restore && restore !== document.body) restore.focus?.();
+  return ok;
+}
+
+/** Selection routes first, async API last — see the note above for why. */
+async function copyText(text) {
+  if (copyViaSelection(text)) return true;
+  if (copyViaTextarea(text))  return true;
+  // Reached when execCommand is unavailable or refused everywhere. Costs Apple
+  // users the encoded placeholders, which is the status quo ante rather than a
+  // regression, and is correct everywhere else.
+  if (navigator.clipboard) {
+    try { await navigator.clipboard.writeText(text); return true; } catch { /* fall through */ }
+  }
+  return false;
+}
+
 async function copyUrl() {
-  // On LAN IPs clipboard is unavailable (non-secure context). Focus the URL
-  // display box and select all so the user can Ctrl+C manually.
+  const url = buildTemplateUrl();
+  const btn = document.querySelector('.preview-actions .btn-preview');
+  if (await copyText(url)) {
+    setStatus('');
+    // The console strip used to confirm this; the button says so itself now.
+    flashButton(btn, 'Copied');
+    return;
+  }
+  // Every route refused. On a non-secure origin the URL box is still on screen,
+  // so fall back to selecting it for a manual copy — which is, conveniently,
+  // the one route measured to carry clean braces anyway.
   if (_SHOW_URL_BOX) {
     const inp = document.getElementById('url-display-input');
     inp.focus();
     inp.select();
-    setStatus('URL selected — press Ctrl+C to copy, then paste into AIOMetadata → Art Providers → Custom Art URLs → Poster URL Pattern.', 'info');
+    setStatus('URL selected — copy it manually, then paste into AIOMetadata → Art Providers → Custom Art URLs → Poster URL Pattern.', 'info');
     return;
   }
-  const url = buildTemplateUrl();
-  try {
-    await navigator.clipboard.writeText(url);
-    setStatus('');
-    // The console strip used to confirm this; the button says so itself now.
-    flashButton(document.querySelector('.preview-actions .btn-preview'), 'Copied');
-  } catch {
-    setStatus('Clipboard copy failed — check browser permissions.', 'err');
-  }
+  setStatus('Clipboard copy failed — check browser permissions.', 'err');
 }
 
 /** Briefly swaps a button's label to confirm an action, then restores it. */
@@ -4629,6 +4832,9 @@ function resetDefaults() {
     if (el.type === 'checkbox') el.checked = el.defaultChecked;
     if (el.type === 'hidden')   el.value   = el.defaultValue || '';
     if (el.tagName === 'SELECT') { for (const opt of el.options) opt.selected = opt.defaultSelected; }
+    // Forget "the user chose this themselves" marks, so the mode-driven
+    // defaults start seeding again from a clean slate.
+    delete el.dataset.userSet;
   });
   onPrimaryClientChange({ rebuild: false });
   // Re-reads both gradient selects: re-hides the custom opacity/height sliders
@@ -4656,7 +4862,7 @@ function resetDefaults() {
 function queuePreviewReload() {
   clearTimeout(previewDebounce);
   previewDebounce = setTimeout(() => {
-    if (resolvedImdbId && resolvedTmdbId) loadPreview();
+    if (resolvedTmdbId) loadPreview();
   }, 350);
 }
 
@@ -4673,7 +4879,7 @@ function setStatus(msg, cls='') {
 async function loadPreview() {
   if (previewLoading) { clearTimeout(previewDebounce); return; }
   if (imdbResolvePending) return;
-  if (!resolvedImdbId || !resolvedTmdbId) { setStatus('Search and select a title first', 'err'); return; }
+  if (!resolvedTmdbId) { setStatus('Search and select a title first', 'err'); return; }
   if (!vEl('cfg-tmdb-key') && !serverCaps.tmdb_key_set) { setStatus('This instance has no server side TMDB key. You must provide your own or ask the operator to add one.', 'err'); return; }
   previewLoading = true;
   document.getElementById('preview-status').textContent = 'LOADING';
@@ -5049,6 +5255,40 @@ function initSegmented() {
   window.addEventListener('resize', hide);
 })();
 
+/** Minimalist controls that depend on the Append mode as well as the rating
+ *  mode.  Nothing here is hidden on taste — a control only disappears when the
+ *  layout has no separator for it to act on:
+ *    Year, Split — one separator (genre | year).
+ *    Rating      — one separator, the one in front of the score, so the star
+ *                  is on offer.
+ *    Both        — both of them, relabelled to say which is which.
+ *    Centre      — hidden under Split alone, which has no single group to
+ *                  centre: its two halves are defined by the opposite margins
+ *                  they hang off, so there is no behaviour to give it. */
+function _updateMinimalistRows() {
+  const isMinimal = parseInt(document.getElementById('cfg-rating-mode').value) === 3;
+  const append    = parseInt(vEl('cfg-min-append') || '0');
+  const both      = append === 2;
+
+  const row = document.getElementById('minimalist-center-row');
+  if (row) row.style.display = (isMinimal && append !== 3) ? '' : 'none';
+
+  // Year (0), Both (2) and Split (3) draw the genre|year separator; Rating (1)
+  // and Both draw the one before the score.
+  const showField  = isMinimal && append !== 1;
+  const showRating = isMinimal && (append === 1 || both);
+  const field  = document.getElementById('minimalist-separator-field');
+  const rating = document.getElementById('minimalist-rating-separator-field');
+  if (field)  field.style.display  = showField  ? '' : 'none';
+  if (rating) rating.style.display = showRating ? '' : 'none';
+
+  // With both on screen "Separator" twice says nothing; name the slots.
+  const fl = document.getElementById('minimalist-separator-label');
+  const rl = document.getElementById('minimalist-rating-separator-label');
+  if (fl) fl.textContent = both ? 'Genre / Year'  : 'Separator';
+  if (rl) rl.textContent = both ? 'Year / Rating' : 'Separator';
+}
+
 function updateRatingFields() {
   const mode = parseInt(document.getElementById('cfg-rating-mode').value);
   document.getElementById('rating-mode1-fields').style.display      = mode === 1 ? '' : 'none';
@@ -5060,6 +5300,7 @@ function updateRatingFields() {
   document.getElementById('numeric-score10-row').style.display      = mode === 2 ? '' : 'none';
   document.getElementById('minimalist-score10-row').style.display   = mode === 3 ? '' : 'none';
   document.getElementById('bar-score10-row').style.display          = mode === 4 ? '' : 'none';
+  _updateMinimalistRows();
   // Hidden mode has no per-mode fields, so the Style group would otherwise be
   // a heading and a rule with nothing under them.
   document.getElementById('rating-style-group').style.display       = mode === 0 ? 'none' : '';
@@ -5110,7 +5351,7 @@ const PRESETS = [
     name: 'Prestige Rating Bar',
     description: 'Classic Posters+ design featuring a score bar using the prestige score palette, which uses grey, bronze and gold. Paired with the info sash and horizontal badge row.',
     screenshot: '/static/presets/prestige_rating_bar.jpg',
-    params: 'http://postersplus:8000/poster?tmdb_id={tmdb_id}&imdb_id={imdb_id}&type={type}&primary_client=stremio_tv_nuvio&top_gradient=medium&bottom_gradient=high&fallback_to_imdb=true&rating_display_mode=1&score_color_mode=2&accent_bar_font_size_ratio=0.080&accent_bar_y_offset=0.90&accent_bar_append_mode=0&accent_bar_bottom_ratio=0.040&score_glow_threshold=85&score_glow_blur=1&score_glow_alpha=40&movie_weights=letterboxd%3A0.99%2Ctrakt%3A0.01%2Ctomatoes%3A0.00%2Cpopcorn%3A0.00%2Cimdb%3A0.00%2Cmetacritic%3A0.00%2Cmetacriticuser%3A0.00%2Ctmdb%3A0.00%2Crogerebert%3A0.00%2Cmyanimelist%3A0.00&tv_weights=trakt%3A0.80%2Ctomatoes%3A0.20%2Cpopcorn%3A0.00%2Cimdb%3A0.00%2Cmetacritic%3A0.00%2Cmetacriticuser%3A0.00%2Ctmdb%3A0.00%2Cmyanimelist%3A0.00&textless=false&use_original_art=false&original_art_source=primary&logo_language=en&logo_priority=native_original&fallback_bg_style=photoreal&logo_max_w_ratio=0.75&logo_max_h_ratio=0.25&logo_bottom_ratio=0.28&sash_mode=sash&cinema_greyscale=true&cinema_greyscale_skip_if_available=false&release_status_cinema_only=false&muted=false&sash_poster_color=false&sash_length_ratio=1.20&sash_height_ratio=0.135&sash_priority=wins%2Cgg_wins%2Cfestival%2Cpic_noms%2Cmetacritic%2Cgg_noms%2Ctrending%2Ctrending_broad%2Cpremiere%2Cnew_release%2Cjust_added%2Cnew_season%2Cseason_finale%2Cstudio%2Cdirector%2Ccast%2Ccult%2Cforeign%2Ctrue_story%2Cshort_film%2Cmini_series%2Cbinge_ready%2Creturning%2Cairing%2Ccancelled%2Cended%2Cphysical%2Cstreaming%2Ccinema%2Cproduction&badge_display_mode=5&badge_height=28&badge_anchor_x=0.060&badge_anchor_y=0.045&badge_min_score=5&top_vignette_sash_only=true',
+    params: 'http://postersplus:8000/poster?tmdb_id={tmdb_id}&type={type}&primary_client=stremio_tv_nuvio&top_gradient=medium&bottom_gradient=high&fallback_to_imdb=true&rating_display_mode=1&score_color_mode=2&accent_bar_font_size_ratio=0.080&accent_bar_y_offset=0.90&accent_bar_append_mode=0&accent_bar_bottom_ratio=0.040&score_glow_threshold=85&score_glow_blur=1&score_glow_alpha=40&movie_weights=letterboxd%3A0.99%2Ctrakt%3A0.01%2Ctomatoes%3A0.00%2Cpopcorn%3A0.00%2Cimdb%3A0.00%2Cmetacritic%3A0.00%2Cmetacriticuser%3A0.00%2Ctmdb%3A0.00%2Crogerebert%3A0.00%2Cmyanimelist%3A0.00&tv_weights=trakt%3A0.80%2Ctomatoes%3A0.20%2Cpopcorn%3A0.00%2Cimdb%3A0.00%2Cmetacritic%3A0.00%2Cmetacriticuser%3A0.00%2Ctmdb%3A0.00%2Cmyanimelist%3A0.00&textless=false&use_original_art=false&original_art_source=primary&logo_language=en&logo_priority=native_original&fallback_bg_style=photoreal&logo_max_w_ratio=0.75&logo_max_h_ratio=0.25&logo_bottom_ratio=0.28&sash_mode=sash&cinema_greyscale=true&cinema_greyscale_skip_if_available=false&release_status_cinema_only=false&muted=false&sash_poster_color=false&sash_length_ratio=1.20&sash_height_ratio=0.135&sash_priority=wins%2Cgg_wins%2Cfestival%2Cpic_noms%2Cmetacritic%2Cgg_noms%2Ctrending%2Ctrending_broad%2Cpremiere%2Cnew_release%2Cjust_added%2Cnew_season%2Cseason_finale%2Cstudio%2Cdirector%2Ccast%2Ccult%2Cforeign%2Ctrue_story%2Cshort_film%2Cmini_series%2Cbinge_ready%2Creturning%2Cairing%2Ccancelled%2Cended%2Cphysical%2Cstreaming%2Ccinema%2Cproduction&badge_display_mode=5&badge_height=28&badge_anchor_x=0.060&badge_anchor_y=0.045&badge_min_score=5&top_vignette_sash_only=true',
   },
   {
     id: 'light_rating_bar',
@@ -5230,7 +5471,7 @@ function loadPreset(id) {
   const preset = PRESETS.find(p => p.id === id);
   if (!preset) return;
   const domain = (vEl('cfg-domain') || window.location.origin).replace(/\/$/, '');
-  const url = `${domain}/poster?tmdb_id=%7Btmdb_id%7D&imdb_id=%7Bimdb_id%7D&type=%7Btype%7D&${preset.params}`;
+  const url = `${domain}/poster?tmdb_id=%7Btmdb_id%7D&type=%7Btype%7D&${preset.params}`;
   importUrl(url, { settingsOnly: true, preserveClientInsets: true });
   closePresetModal();
   setStatus(`Preset "${preset.name}" loaded.`, 'ok');
@@ -5467,6 +5708,9 @@ function importUrl(urlStr, { silent = false, settingsOnly = false, preserveClien
   if (p.has('minimalist_mode_font_x_offset'))  _setEl('cfg-x-mode3',      p.get('minimalist_mode_font_x_offset'));
   if (p.has('minimalist_mode_font_y_offset'))  _setEl('cfg-y-mode3',      p.get('minimalist_mode_font_y_offset'));
   if (p.has('minimalist_score_out_of_10'))     _setEl('tog-minimalist-score-10', p.get('minimalist_score_out_of_10'));
+  if (p.has('minimalist_center'))              _setEl('tog-minimalist-center', p.get('minimalist_center'));
+  if (p.has('minimalist_separator'))           _setEl('cfg-min-separator', p.get('minimalist_separator'));
+  if (p.has('minimalist_rating_separator'))    _setEl('cfg-min-rating-separator', p.get('minimalist_rating_separator'));
   if (p.has('bar_style'))           { _setEl('cfg-bar-style',  p.get('bar_style')); _updateBarRatingRows(); }
   if (p.has('bar_accent'))            _setEl('cfg-bar-accent', p.get('bar_accent'));
   if (p.has('bar_append'))            _setEl('cfg-bar4-append', p.get('bar_append'));
@@ -5516,6 +5760,12 @@ function importUrl(urlStr, { silent = false, settingsOnly = false, preserveClien
   if (p.has('badge_anchor_y'))          _setEl('cfg-badge-y',          p.get('badge_anchor_y'));
   if (p.has('badge_min_score'))         _setEl('cfg-badge-min-score',  p.get('badge_min_score'));
   else if (p.has('combined_badge_min_score')) _setEl('cfg-badge-min-score', p.get('combined_badge_min_score'));
+  // An imported minimum is as deliberate as a clicked one, so it gets the same
+  // protection from the per-mode seeding above — and this holds whatever order
+  // the restore and updateBadgeModeHint() happen to run in.
+  if (p.has('badge_min_score') || p.has('combined_badge_min_score')) {
+    document.getElementById('cfg-badge-min-score').dataset.userSet = 'true';
+  }
   if (p.has('combined_badge_stacked'))  _setEl('tog-badge-stacked',    p.get('combined_badge_stacked') === 'true');
   if (p.has('wait_for_quality'))   _setEl('tog-wait-quality', p.get('wait_for_quality'));
   if (p.has('greyscale_no_quality')) _setEl('tog-greyscale-noquality', p.get('greyscale_no_quality'));
@@ -5539,6 +5789,10 @@ function importUrl(urlStr, { silent = false, settingsOnly = false, preserveClien
 
   // ── Persist API keys and rebuild ────────────────────────────────────────
   if (!settingsOnly) saveApiKeys();
+  // Assigning .value never fires change, so the segmented buttons above every
+  // imported <select> would still be highlighting whatever they showed before
+  // the import.  Covers Separator, Append, the gradients and Sash Mode alike.
+  syncSegmented();
   build();
   queuePreviewReload();
   if (!silent) setStatus('Settings imported from URL.', 'ok');
@@ -5600,6 +5854,7 @@ function _resetFormToDefaults() {
     } else if (el.tagName === 'SELECT') {
       for (const opt of el.options) opt.selected = opt.defaultSelected;
     }
+    delete el.dataset.userSet;
   });
 }
 

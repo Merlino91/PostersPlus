@@ -59,7 +59,14 @@ def _apply_conn_pragmas(conn: sqlite3.Connection) -> None:
     and auto_vacuum are DB-level and persist in the file, so they're set once in
     init_db.)"""
     conn.execute("PRAGMA synchronous=NORMAL")       # safe with WAL; avoids unnecessary fsyncs
-    conn.execute("PRAGMA cache_size=-32000")        # 32 MB in-process page cache
+    # 4 MB in-process page cache.  This is PER CONNECTION and connections are
+    # per-thread (see above), so the real cost is this figure times every thread
+    # that touches the DB — the asyncio default executor alone is
+    # min(32, cpu_count+4) threads, plus the loop thread and the OCR workers.
+    # At the old 32 MB that ceiling was ~350 MB on a 4-core host, nearly all of
+    # it redundant: the same pages are already in the host's OS page cache, so
+    # copies two-through-eleven only save a memcpy, never a disk read.
+    conn.execute("PRAGMA cache_size=-4000")
     conn.execute("PRAGMA temp_store=MEMORY")        # temp tables/indices stay in RAM
     conn.execute("PRAGMA busy_timeout=15000")       # wait up to 15s if another worker holds the write lock
     conn.execute("PRAGMA wal_autocheckpoint=1000")  # fold WAL back into main DB at 1000 pages (~4 MB)
@@ -309,6 +316,27 @@ def init_db() -> None:
     ):
         _add_column_if_missing(conn, "tmdb_metadata_cache", col, definition)
 
+    # Per-row expiry for the release caches.  Their TTL is no longer a single
+    # constant — it depends on the status and on when TMDB says the title next
+    # moves — so the deadline is computed at write time and stored.  Rows written
+    # before this column existed have expires_at NULL and fall back to the
+    # status-tiered TTL measured from cached_at (see _release_row_expiry).
+    for table in ("release_status_cache", "movie_release_info_cache"):
+        _add_column_if_missing(conn, table, "expires_at", "INTEGER")
+
+    # Same treatment for composites.  A rendered poster is derived from facts
+    # that expire on their own schedules — a trending rank, a release status —
+    # and the flat COMPOSITE_CACHE_TTL let it outlive them.  The deadline is now
+    # computed at write time from whichever input expires soonest.  NULL rows
+    # predate the column and fall back to cached_at + TTL + jitter.
+    _add_column_if_missing(conn, "final_poster_cache", "expires_at", "INTEGER")
+
+    # Which source a trending snapshot came from.  Without this, changing
+    # TRENDING_SOURCE_* had no visible effect until the snapshot aged out on its
+    # own — up to a day of an operator setting the variable, restarting, seeing
+    # the old rankings and concluding the feature was broken.
+    _add_column_if_missing(conn, "trending_cache", "source_sig", "TEXT")
+
     conn.commit()
 
 
@@ -342,16 +370,24 @@ def _quality_ttl(release_date: str | None) -> int:
 # ---------------------------------------------------------------------------
 
 # L1: bounded in-memory LRU — most-recently-used composites served without
-# any SQLite read, keeping the hot set off the OS page cache.
-_composite_l1: OrderedDict[str, bytes] = OrderedDict()
+# any SQLite read, keeping the hot set off the OS page cache.  Each value is
+# (expires_at, jpeg_bytes): L1 carries the same deadline as its L2 row, because
+# an entry that never ages out in RAM would happily serve a Cinema sash for as
+# long as the LRU kept it resident.
+_composite_l1: OrderedDict[str, tuple[int, bytes]] = OrderedDict()
 _composite_l1_lock = threading.Lock()
 
 
 def composite_l1_stats() -> dict:
     with _composite_l1_lock:
         count = len(_composite_l1)
-        total_bytes = sum(len(v) for v in _composite_l1.values())
+        total_bytes = sum(len(data) for _expires_at, data in _composite_l1.values())
     return {"entries": count, "bytes": total_bytes}
+
+
+def _composite_expiry(cache_key: str, cached_at: float) -> float:
+    """Deadline for a composite row written before the expires_at column."""
+    return cached_at + COMPOSITE_CACHE_TTL + _ttl_jitter(cache_key, COMPOSITE_CACHE_TTL_JITTER)
 
 
 def get_cached_final_poster(cache_key: str) -> bytes | None:
@@ -360,26 +396,37 @@ def get_cached_final_poster(cache_key: str) -> bytes | None:
     Checks the in-memory LRU (L1) first; falls through to SQLite (L2) on miss
     and promotes the result to L1 so the next hit is served entirely from RAM.
     """
+    now = time.time()
+
     # L1: in-memory LRU — no disk I/O, no OS page-cache pressure
     if COMPOSITE_MEM_ENTRIES > 0:
         with _composite_l1_lock:
-            if cache_key in _composite_l1:
-                _composite_l1.move_to_end(cache_key)
-                return _composite_l1[cache_key]
+            entry = _composite_l1.get(cache_key)
+            if entry is not None:
+                expires_at, data = entry
+                if now <= expires_at:
+                    _composite_l1.move_to_end(cache_key)
+                    return data
+                # Nothing sweeps L1 on a timer, so an aged-out entry is dropped
+                # on the read that finds it and the L2 check below takes over.
+                del _composite_l1[cache_key]
 
     # L2: SQLite with TTL check
     try:
         row = get_db().execute(
-            "SELECT jpeg_bytes, cached_at FROM final_poster_cache WHERE cache_key = ?",
+            "SELECT jpeg_bytes, cached_at, expires_at FROM final_poster_cache WHERE cache_key = ?",
             (cache_key,),
         ).fetchone()
         if not row:
             return None
-        jpeg_bytes, cached_at = row
-        age_secs = time.time() - cached_at
-        effective_ttl = COMPOSITE_CACHE_TTL + _ttl_jitter(cache_key, COMPOSITE_CACHE_TTL_JITTER)
-        if age_secs > effective_ttl:
-            logger.info(f"Final poster cache expired for {cache_key} ({age_secs/86400:.1f}d old)")
+        jpeg_bytes, cached_at, expires_at = row
+        if expires_at is None:
+            expires_at = _composite_expiry(cache_key, cached_at)
+        if now > expires_at:
+            logger.info(
+                f"Final poster cache expired for {cache_key} "
+                f"({(now - cached_at)/86400:.1f}d old)"
+            )
             with _db_lock:
                 get_db().execute(
                     "DELETE FROM final_poster_cache WHERE cache_key = ?", (cache_key,)
@@ -390,7 +437,7 @@ def get_cached_final_poster(cache_key: str) -> bytes | None:
         # Promote to L1
         if COMPOSITE_MEM_ENTRIES > 0:
             with _composite_l1_lock:
-                _composite_l1[cache_key] = data
+                _composite_l1[cache_key] = (int(expires_at), data)
                 _composite_l1.move_to_end(cache_key)
                 while len(_composite_l1) > COMPOSITE_MEM_ENTRIES:
                     _composite_l1.popitem(last=False)
@@ -401,11 +448,24 @@ def get_cached_final_poster(cache_key: str) -> bytes | None:
 
 
 def set_cached_final_poster(cache_key: str, jpeg_bytes: bytes, request_params: str = None, ttl_override: int = None) -> None:
-    """Store a fully composited JPEG poster into L1 (RAM) and L2 (SQLite)."""
+    """Store a fully composited JPEG poster into L1 (RAM) and L2 (SQLite).
+
+    *ttl_override* caps the lifetime, in seconds, for a render that depends on
+    something shorter-lived than COMPOSITE_CACHE_TTL — a trending rank, a
+    release status.  It is a cap on the jittered TTL rather than a value added
+    to it, so a one-day override really means one day and not one day plus up
+    to COMPOSITE_CACHE_TTL_JITTER.
+    """
+    now = int(time.time())
+    ttl = COMPOSITE_CACHE_TTL + _ttl_jitter(cache_key, COMPOSITE_CACHE_TTL_JITTER)
+    if ttl_override is not None:
+        ttl = min(ttl, ttl_override)
+    expires_at = now + int(ttl)
+
     # L1: always store the freshly-rendered composite so the next hit skips SQLite
     if COMPOSITE_MEM_ENTRIES > 0:
         with _composite_l1_lock:
-            _composite_l1[cache_key] = jpeg_bytes
+            _composite_l1[cache_key] = (expires_at, jpeg_bytes)
             _composite_l1.move_to_end(cache_key)
             while len(_composite_l1) > COMPOSITE_MEM_ENTRIES:
                 _composite_l1.popitem(last=False)
@@ -413,17 +473,13 @@ def set_cached_final_poster(cache_key: str, jpeg_bytes: bytes, request_params: s
     # L2: persist to SQLite for warm restarts
     try:
         with _db_lock:
-            now = int(time.time())
-            cached_at = now
-            if ttl_override is not None and COMPOSITE_CACHE_TTL > ttl_override:
-                cached_at = now - (COMPOSITE_CACHE_TTL - ttl_override)
-                
             get_db().execute(
                 """
-                INSERT OR REPLACE INTO final_poster_cache (cache_key, jpeg_bytes, cached_at, request_params)
-                VALUES (?, ?, ?, ?)
+                INSERT OR REPLACE INTO final_poster_cache
+                    (cache_key, jpeg_bytes, cached_at, request_params, expires_at)
+                VALUES (?, ?, ?, ?, ?)
                 """,
-                (cache_key, jpeg_bytes, cached_at, request_params),
+                (cache_key, jpeg_bytes, now, request_params, expires_at),
             )
             if COMPOSITE_MAX_ENTRIES > 0:
                 (count,) = get_db().execute(
@@ -559,10 +615,16 @@ def prune_caches() -> None:
         with _db_lock:
             db = get_db()
 
-            # Composites — fixed TTL in seconds
+            # Composites — per-row deadline (a render can be pinned to a
+            # trending rank or a release status that expires well before
+            # COMPOSITE_CACHE_TTL).  Rows predating the expires_at column fall
+            # back to the flat TTL plus the largest jitter any key can draw, so
+            # this never deletes one the read path would still call fresh.
             r = db.execute(
-                "DELETE FROM final_poster_cache WHERE cached_at < ?",
-                (now - COMPOSITE_CACHE_TTL,),
+                "DELETE FROM final_poster_cache WHERE "
+                "(expires_at IS NOT NULL AND expires_at < ?) OR "
+                "(expires_at IS NULL AND cached_at < ?)",
+                (now, now - COMPOSITE_CACHE_TTL - COMPOSITE_CACHE_TTL_JITTER // 2),
             )
             if r.rowcount:
                 logger.info(f"Pruned {r.rowcount} expired composite cache entries")
@@ -598,18 +660,25 @@ def prune_caches() -> None:
             if r.rowcount:
                 logger.info(f"Pruned {r.rowcount} expired digital release cache entries")
 
-            release_status_cutoff = now - _RELEASE_STATUS_TTL_DAYS * 86400
-            r = db.execute(
-                "DELETE FROM release_status_cache WHERE cached_at < ?", (release_status_cutoff,)
-            )
-            if r.rowcount:
-                logger.info(f"Pruned {r.rowcount} expired release status cache entries")
-
-            r = db.execute(
-                "DELETE FROM movie_release_info_cache WHERE cached_at < ?", (release_status_cutoff,)
-            )
-            if r.rowcount:
-                logger.info(f"Pruned {r.rowcount} expired movie release info cache entries")
+            # Expiry is per-row now (see release_status_expiry), so prune on the
+            # stored deadline.  Rows predating the expires_at column are only
+            # dropped once they are past the LONGEST tier, since their real
+            # deadline depends on a status this SQL cannot evaluate — the read
+            # path tiers them correctly in the meantime and rewrites them with a
+            # deadline as soon as they are refreshed.
+            legacy_cutoff = now - max(_RELEASE_STATUS_TTL_DAYS.values()) * 86400
+            for table, label in (
+                ("release_status_cache",     "release status"),
+                ("movie_release_info_cache", "movie release info"),
+            ):
+                r = db.execute(
+                    f"DELETE FROM {table} WHERE "
+                    "(expires_at IS NOT NULL AND expires_at < ?) OR "
+                    "(expires_at IS NULL AND cached_at < ?)",
+                    (now, legacy_cutoff),
+                )
+                if r.rowcount:
+                    logger.info(f"Pruned {r.rowcount} expired {label} cache entries")
 
             detection_cutoff = now - 180 * 86400
             r = db.execute(
@@ -894,11 +963,21 @@ def set_cached_quality(
 # All callers use get_cached_trending_snapshot / set_cached_trending_snapshot.
 # ---------------------------------------------------------------------------
 
-def get_cached_trending_snapshot(media_type: str) -> dict[str, int] | None:
+def get_cached_trending_snapshot(
+    media_type: str, source_sig: str | None = None
+) -> dict[str, int] | None:
+    """Cached rankings for *media_type*, or None if absent, stale, or from a
+    different source.
+
+    *source_sig* identifies where the snapshot came from (see
+    tmdb.trending_source_signature).  A mismatch is treated as expired so that
+    changing TRENDING_SOURCE_* takes effect on the next request rather than
+    whenever the day-long TTL happens to lapse.
+    """
     try:
         row = get_db().execute(
             """
-            SELECT rankings_json, cached_at
+            SELECT rankings_json, cached_at, source_sig
             FROM trending_cache
             WHERE media_type = ?
             """,
@@ -908,10 +987,17 @@ def get_cached_trending_snapshot(media_type: str) -> dict[str, int] | None:
         if not row:
             return None
 
-        rankings_json, cached_at = row
+        rankings_json, cached_at, stored_sig = row
         age_days = (time.time() - cached_at) / 86400
 
         if age_days > TRENDING_CACHE_DURATION:
+            return None
+
+        if source_sig is not None and (stored_sig or "") != source_sig:
+            logger.info(
+                f"Trending snapshot for {media_type} discarded: source changed "
+                f"({stored_sig or 'unset'!r} -> {source_sig!r})"
+            )
             return None
 
         return json.loads(rankings_json)
@@ -923,24 +1009,41 @@ def get_cached_trending_snapshot(media_type: str) -> dict[str, int] | None:
 def set_cached_trending_snapshot(
     media_type: str,
     rankings: dict[str, int],
+    source_sig: str | None = None,
 ) -> None:
+    # Deliberately read without the signature: the point of this is to diff
+    # against whatever was there before so changed titles get invalidated, and a
+    # source switch changes the most ranks of all.
     old_rankings = get_cached_trending_snapshot(media_type) or {}
     try:
         with _db_lock:
             get_db().execute(
                 """
                 INSERT OR REPLACE INTO trending_cache
-                (media_type, rankings_json, cached_at)
-                VALUES (?, ?, ?)
+                (media_type, rankings_json, cached_at, source_sig)
+                VALUES (?, ?, ?, ?)
                 """,
                 (
                     media_type,
                     json.dumps(rankings),
                     int(time.time()),
+                    source_sig or "",
                 ),
             )
             get_db().commit()
-            
+
+        # A snapshot that went from populated to empty is an unreadable source
+        # far more often than a list that genuinely emptied overnight, and the
+        # diff below would flush every trending composite on the strength of it.
+        # Store it — a broken source should stay visible in the sash — but leave
+        # the composites for the next successful refresh to invalidate.
+        if not rankings and old_rankings:
+            logger.warning(
+                f"Trending snapshot for {media_type} is now empty (was "
+                f"{len(old_rankings)} entries) — not invalidating composites"
+            )
+            return
+
         # Invalidate final posters for items that changed trending rank or dropped out.
         changed_ids = set()
         for t_id, r in rankings.items():
@@ -1403,42 +1506,141 @@ def add_digital_releases(entries: list[tuple[str, int]]) -> int:
 # ---------------------------------------------------------------------------
 # Cached separately from main metadata so the extra TMDB /release_dates call
 # only happens for users who have enabled the "release_status" sash slot.
-# TTL: 7 days — status changes slowly (Cinema → Streaming → BluRay is one-way).
+#
+# TTL is tiered by status rather than flat, because the progression
+# Cinema -> Streaming -> Physical is one-way and slows down as it goes.  A film
+# that reached Physical two years ago cannot change again, so re-asking TMDB
+# every week was pure waste; a film still in cinemas can flip to Streaming any
+# day TMDB publishes a digital date, and a weekly TTL meant showing "Cinema" for
+# up to a week after it was wrong.
+_RELEASE_STATUS_TTL_DAYS = {
+    # Terminal or near-terminal — nothing further to observe.
+    "Physical":   90,
+    "Cancelled":  90,
+    "Ended":      60,
+    # Can still gain a physical date, but not urgently.
+    "Streaming":  30,
+    # Actively awaiting a transition TMDB may publish at any time.
+    "Cinema":      1,
+    "Production":  1,
+    # TV that is still running: episode-level facts move faster than film status.
+    "Airing":      3,
+    "Returning":   3,
+}
+_RELEASE_STATUS_TTL_FALLBACK_DAYS = 7
+# Longest a row may sleep on the strength of a published future date.  TMDB
+# revises dates, and a film dated six months out should not go unverified that
+# whole time, so a known boundary buys at most this much quiet.
+_RELEASE_BOUNDARY_MAX_WAIT_DAYS = 14
 
-_RELEASE_STATUS_TTL_DAYS = 7
+
+def release_status_ttl_seconds(status: str | None) -> int:
+    """How long a *status* is allowed to stand before it is re-checked.
+
+    Exported because a rendered composite is derived from this: a poster whose
+    sash or greyscale treatment came from a "Cinema" status must not outlive the
+    status row that produced it.
+    """
+    return _RELEASE_STATUS_TTL_DAYS.get(
+        status or "", _RELEASE_STATUS_TTL_FALLBACK_DAYS
+    ) * 86400
+
+
+def _release_row_expiry(status: str | None, cached_at: int) -> int:
+    """Deadline for a release row that predates the expires_at column."""
+    return int(cached_at) + release_status_ttl_seconds(status)
+
+
+def release_status_expiry(
+    status: str | None,
+    *,
+    upcoming_dates: "list[int] | None" = None,
+    now: int | None = None,
+) -> int:
+    """When a cached release status should next be re-checked, as a unix time.
+
+    Starts from the status tier, then clamps to the soonest *future* release date
+    TMDB has already told us about.  That is what makes "releasing soon" cheap to
+    handle: we do not have to predict anything, because a film with a digital
+    date next Friday is a film whose status is known to change next Friday, so
+    the row is simply set to expire then.  A leak that beats the published date
+    is still invisible to us — that is what the r/movieleaks feed in
+    digital_release.py is for — but the *scheduled* transitions land on time.
+
+    ``upcoming_dates`` are unix timestamps of known future boundaries
+    (theatrical / digital / physical).  Past dates should not be passed; they
+    have already been folded into the status.
+
+    A known boundary REPLACES the tier rather than being min'd with it, which is
+    the whole point: the short "Cinema" tier exists because TMDB might publish a
+    digital date any day, so once it has published one there is nothing left to
+    poll for and the row can simply sleep until that date.  Min'ing the two
+    would keep re-asking daily for an answer we already have.  The wait is still
+    capped, because published dates do get revised.
+    """
+    now = int(time.time() if now is None else now)
+    future = sorted(ts for ts in (upcoming_dates or ()) if int(ts) > now)
+    if future:
+        # The boundary IS midnight at the start of the release day, and the
+        # status is computed against a local calendar date, so that instant is
+        # exactly when the row becomes wrong.  Expiring a day later — which this
+        # used to do — held a film at "Cinema" for the whole of its own digital
+        # release day.  The one-hour floor below stops a boundary that is
+        # minutes away from turning into a re-fetch loop.
+        deadline = int(future[0])
+        deadline = min(deadline, now + _RELEASE_BOUNDARY_MAX_WAIT_DAYS * 86400)
+    else:
+        deadline = _release_row_expiry(status, now)
+    # Never thrash: a boundary that is hours away still gets a minimum dwell.
+    return max(deadline, now + 3600)
 
 
 def get_cached_movie_release_info(cache_key: str) -> dict | None:
     """Return cached movie release info JSON, or None if absent / expired."""
     try:
         row = get_db().execute(
-            "SELECT info_json, cached_at FROM movie_release_info_cache WHERE cache_key = ?",
+            "SELECT info_json, cached_at, expires_at FROM movie_release_info_cache WHERE cache_key = ?",
             (cache_key,),
         ).fetchone()
         if not row:
             return None
-        info_json, cached_at = row
-        age_days = (time.time() - cached_at) / 86400
-        if age_days > _RELEASE_STATUS_TTL_DAYS:
-            logger.info(f"Movie release info cache expired for {cache_key} ({age_days:.1f}d old)")
+        info_json, cached_at, expires_at = row
+        info = json.loads(info_json or "{}")
+        # The stored status is only a snapshot; callers recompute it from the
+        # dates.  Tier this row's TTL off that same stored status so a finished
+        # title is not re-fetched weekly for dates that can no longer move.
+        deadline = expires_at or _release_row_expiry(info.get("status"), cached_at)
+        if time.time() > deadline:
+            logger.info(
+                f"Movie release info cache expired for {cache_key} "
+                f"({(time.time() - cached_at) / 86400:.1f}d old)"
+            )
             return None
-        return json.loads(info_json or "{}")
+        return info
     except Exception as exc:
         logger.error(f"Movie release info cache read error: {exc}")
         return None
 
 
-def set_cached_movie_release_info(cache_key: str, info: dict) -> None:
+def set_cached_movie_release_info(
+    cache_key: str, info: dict, expires_at: int | None = None
+) -> None:
     """Upsert richer TMDB movie release-date information."""
     try:
+        now = int(time.time())
+        if expires_at is None:
+            expires_at = _release_row_expiry(info.get("status"), now)
         with _db_lock:
             get_db().execute(
                 """
-                INSERT INTO movie_release_info_cache (cache_key, info_json, cached_at)
-                VALUES (?, ?, ?)
-                ON CONFLICT(cache_key) DO UPDATE SET info_json=excluded.info_json, cached_at=excluded.cached_at
+                INSERT INTO movie_release_info_cache (cache_key, info_json, cached_at, expires_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(cache_key) DO UPDATE SET
+                    info_json=excluded.info_json,
+                    cached_at=excluded.cached_at,
+                    expires_at=excluded.expires_at
                 """,
-                (cache_key, json.dumps(info), int(time.time())),
+                (cache_key, json.dumps(info), now, int(expires_at)),
             )
             get_db().commit()
     except Exception as exc:
@@ -1449,15 +1651,18 @@ def get_cached_release_status(cache_key: str) -> str | None:
     """Return the cached release status string, or None if absent / expired."""
     try:
         row = get_db().execute(
-            "SELECT status, cached_at FROM release_status_cache WHERE cache_key = ?",
+            "SELECT status, cached_at, expires_at FROM release_status_cache WHERE cache_key = ?",
             (cache_key,),
         ).fetchone()
         if not row:
             return None
-        status, cached_at = row
-        age_days = (time.time() - cached_at) / 86400
-        if age_days > _RELEASE_STATUS_TTL_DAYS:
-            logger.info(f"Release status cache expired for {cache_key} ({age_days:.1f}d old)")
+        status, cached_at, expires_at = row
+        deadline = expires_at or _release_row_expiry(status, cached_at)
+        if time.time() > deadline:
+            logger.info(
+                f"Release status cache expired for {cache_key} "
+                f"({(time.time() - cached_at) / 86400:.1f}d old, status={status})"
+            )
             return None
         return status
     except Exception as exc:
@@ -1465,17 +1670,29 @@ def get_cached_release_status(cache_key: str) -> str | None:
         return None
 
 
-def set_cached_release_status(cache_key: str, status: str) -> None:
-    """Upsert a release status entry."""
+def set_cached_release_status(
+    cache_key: str, status: str, expires_at: int | None = None
+) -> None:
+    """Upsert a release status entry.
+
+    *expires_at* comes from release_status_expiry() at the call site, which knows
+    the title's upcoming release dates; omitting it falls back to the status tier.
+    """
     try:
+        now = int(time.time())
+        if expires_at is None:
+            expires_at = _release_row_expiry(status, now)
         with _db_lock:
             get_db().execute(
                 """
-                INSERT INTO release_status_cache (cache_key, status, cached_at)
-                VALUES (?, ?, ?)
-                ON CONFLICT(cache_key) DO UPDATE SET status=excluded.status, cached_at=excluded.cached_at
+                INSERT INTO release_status_cache (cache_key, status, cached_at, expires_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(cache_key) DO UPDATE SET
+                    status=excluded.status,
+                    cached_at=excluded.cached_at,
+                    expires_at=excluded.expires_at
                 """,
-                (cache_key, status, int(time.time())),
+                (cache_key, status, now, int(expires_at)),
             )
             get_db().commit()
     except Exception as exc:

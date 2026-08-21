@@ -2,6 +2,70 @@
 
 ## Unreleased
 
+### Anime
+
+- Added anime-native poster requests through AniList and Kitsu. Clients that
+  supply `anilist_id`, `kitsu_id`, or an AIOMetadata-compatible `{id}` can use
+  the provider's cover art, title, genres, air dates, lifecycle status, and
+  community score without converting the title to a TMDB or IMDb id.
+- Added an off-by-default Anime IDs configurator option for AIOMetadata poster
+  URLs. Anime-native ids are also carried through to compatible quality sources,
+  so stream-quality badges continue to work when no IMDb id exists.
+- Anime requests now keep any accompanying TMDB and IMDb ids for logos, MDBList
+  ratings, awards, age ratings, release data, and other enrichment. AniList and
+  Kitsu scores participate in the normal weighted-rating pipeline and default
+  to zero weight.
+- Anime cover art can receive a TMDB logo by default. If an anime provider is
+  unavailable or misses a title, rendering temporarily falls back to TMDB art
+  instead of a genre canvas without caching the degraded result.
+- Improved anime provider caching, concurrency limits, genre selection, request
+  identity, and placeholder handling. Definitive misses are negative-cached,
+  while throttles and transient provider failures are not.
+
+### Poster Rendering
+
+- Added a dedicated 16:9 poster layout through `shape=landscape`, with backdrop
+  artwork, height-relative sizing, a unified bottom information band, and clear
+  top corners for client overlays. `landscape_art` selects textless or original
+  artwork and `badge_pos` controls the age-rating badge position.
+- Added poster-coloured top and bottom vignettes with saturation, blur,
+  lightness, two-colour ramp, and blend controls. Tint selection now samples the
+  artwork near the visible seam, rejects shadow-only and conflicting colours,
+  and limits excessive chroma for more consistent results across a shelf.
+- Frosted notches and bars can match the colour actually painted by a tinted
+  vignette. Matching preserves the vignette's lightness and falls back to the
+  normal frost colour when the band does not have a reliable tint.
+- Posters confirmed to contain a baked-in title use a plain black vignette
+  instead of blurring and tinting the title inside the artwork.
+- Expanded Minimalist mode with a Split layout, optional centring, and separate
+  field and rating separators. Pip, bullet, and rating-star treatments are
+  exposed only where they apply, including the score-coloured separator in Year
+  mode.
+- Added independent notch padding so the space above and below a label can be
+  tightened without shrinking the font, changing the badge width, or moving the
+  notch.
+
+### Configurator
+
+- Redesigned the configurator with rounded panels, sentence-case group headings,
+  text tabs, consistent spacing and controls, a cleaner preview panel, and
+  refreshed preset and import dialogs across every settings tab.
+- Reworked inline help into row tooltips that also work on touch devices, and
+  improved control grouping, contrast, button styling, colour swatches, and the
+  sash-priority editor.
+- Moved Import from URL into the header and added a title-link menu with IMDb,
+  TMDB artwork, MDBList, and SIMKL shortcuts. Fixed menu links that could open
+  `#` before their targets were initialized.
+- Generated poster URLs and presets no longer carry an `imdb_id` placeholder,
+  which previously discarded the whole URL for any title without an IMDb link.
+  A title with no linked IMDb id is now reported as a normal state rather than an
+  error, previews load from the TMDB id alone, and the result is remembered for a
+  week so the resolver is not re-run on every load.
+- Plex and Jellyfin sync no longer skip library items that have a TMDB id but no
+  IMDb id. Quality badges from the local file continue to work for those items,
+  and an `imdb_id` baked into a copied recipe URL can no longer be applied to
+  items it does not belong to.
+
 ### Quality
 
 - Added QualiCache as a quality source: set `QUALITY_SOURCE=qualicache` and
@@ -20,6 +84,76 @@
   repeated at each call site. `/status` reports the active backend as
   `quality_source`.
 
+### Metadata And Caching
+
+- IMDb ids are now optional. `tmdb_id` is the required identity — it selects the
+  artwork and metadata — and `imdb_id` is optional enrichment. Titles TMDB has no
+  IMDb link for previously returned an error and, through AIOMetadata, lost their
+  poster entirely because a required placeholder with no value discards the whole
+  URL. Existing URLs that send both ids are unchanged.
+- Ratings, awards, keywords, and age ratings are now looked up through MDBList's
+  TMDB route when no IMDb id is available, so TMDB-only titles keep their score
+  and sashes. A title MDBList does not know still renders from TMDB metadata with
+  an `N/A` score.
+- Stream-quality lookups now resolve their id after metadata, so a title whose URL
+  omits `imdb_id` still gets quality badges via the IMDb id TMDB itself supplies.
+  Anime keeps its provider-native id for these lookups. Titles with no IMDb id
+  anywhere skip the lookup rather than issuing one nothing can answer; an explicit
+  `quality=` override is unaffected.
+- Rating cache, coalescing, and back-off state are now keyed on one immutable
+  per-request identity (`tmdb:<id>` when there is no IMDb id) rather than the raw
+  `imdb_id` parameter. Cache warming writes the same identity the request path
+  reads. Metahub logo fallback, digital-release detection, and IMDb links run only
+  when an IMDb id is actually available.
+- `/poster?debug=1` now reports the resolved identities — `canonical_id`,
+  `rating_provider`, `rating_media_id`, `quality_id`, and `effective_imdb_id`.
+- Added `TRENDING_SOURCE_MOVIE` and `TRENDING_SOURCE_TV` so operators can replace
+  TMDB's global trending list with an MDBList page or a TMDB-shaped endpoint.
+  The configured order drives both trending sashes and cache warming, enabling
+  regional or service-specific rankings.
+- Custom trending sources now isolate movie and TV entries, reject rows without
+  numeric TMDB ids, follow canonical MDBList URLs, refresh cleanly when the
+  configured source changes, and avoid exposing credentials or query strings in
+  cache signatures and logs.
+- Release-status caches now use status-aware lifetimes: active, in-production,
+  and cinema titles refresh quickly, while ended, cancelled, physical, and
+  established streaming releases remain cached longer. Known release dates set
+  the next refresh boundary directly.
+- Composite posters now expire no later than the release data rendered into
+  them. Disk and in-memory cache entries share the same deadline, and cache
+  warming reuses the trending snapshot it already fetched.
+- Rating-provider failure counters are now pruned together with their expired
+  backoff state.
+
+### Performance And Reliability
+
+- Reduced startup memory by loading genre fallback backgrounds on demand into a
+  bounded cache instead of decoding the whole gallery, and reduced per-thread
+  SQLite page-cache memory. Fallback fonts are now cached as well.
+- Made fallback-title rendering faster and more reliable by starting font
+  fitting from a monotonic width search, fitting long titles rather than cutting
+  them off, and ellipsizing every landscape fallback line that needs it.
+- Reduced score and quality-bar composition work by drawing only the affected
+  strips instead of repeatedly compositing full-canvas layers.
+- OCR thread sizing now respects the container's actual cgroup CPU quota rather
+  than the host CPU count. `TEXTLESS_DETECTION_CONCURRENCY` now defaults to `1`
+  to avoid slower scans and roughly 50 MB of unnecessary memory per idle
+  session; larger values remain available for cold-cache library sweeps.
+- Landscape requests no longer wait for quality data the layout does not render,
+  and transient custom-trending failures use a short retry cooldown rather than
+  refetching once per poster.
+
+### Fixes And Documentation
+
+- Fixed missing ratings leaving an empty score in the information strip, and
+  fixed fallback titles that could be clipped instead of resized to fit.
+- Fixed landscape fallbacks losing their title, TV shows retaining a stale
+  ended status after revival, and release sashes surviving past a newly reached
+  digital-release boundary.
+- Split the oversized `.env.example` into a concise starter configuration and a
+  new `ADVANCED.md` tuning reference. Added previously undocumented OCR and face
+  model path overrides and corrected OCR concurrency guidance and defaults.
+
 ### Localization
 
 - Added Brazilian Portuguese (`pt-br`) poster-output translations, contributed
@@ -28,6 +162,11 @@
   a `pt-br` request uses `languages/pt-br.json` rather than `languages/pt.json`.
   Selecting `pt-br` also restricts logo artwork to Brazil-tagged entries,
   falling back to English rather than to Portugal-tagged art.
+- Translated the remaining fixed sash vocabulary in every shipped language: the
+  release-status labels (`Physical`, `Streaming`, `Cinema`, `Production`,
+  `Airing`, `Ended`, `Cancelled`) and the ten festival winner labels, from
+  `Palme d'Or` through `Tribeca AA`. Previously these rendered in English on an
+  otherwise translated poster.
 
 ## v1.1.0 - 2026-06-09
 

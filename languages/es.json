@@ -27,9 +27,16 @@
     "Talk": "Talk Show"
   },
   "sashLabels": {
-    "trendingToday": "Top #{rank} hoy",
+    "trendingToday": "#{rank} hoy",
     "New Season": "Nueva temporada",
     "Returning": "Regresa",
+    "Physical": "Formato físico",
+    "Streaming": "Streaming",
+    "Cinema": "En cines",
+    "Production": "En producción",
+    "Airing": "En emisión",
+    "Ended": "Finalizada",
+    "Cancelled": "Cancelada",
     "Premiere": "Estreno",
     "Just Added": "Recién añadido",
     "Season Finale": "Final de temporada",
@@ -96,7 +103,17 @@
     "Oscar Nominee": "Nominada al Óscar",
     "Emmy Winner": "Ganadora del Emmy",
     "Emmy Nominee": "Nominada al Emmy",
-    "Globe Winner": "Ganadora del Globo de Oro",
-    "Globe Nominee": "Nominada al Globo de Oro"
+    "Globe Winner": "Globo de Oro",
+    "Globe Nominee": "Nominada al Globo de Oro",
+    "Palme d'Or": "Palma de Oro",
+    "Golden Lion": "León de Oro",
+    "Golden Bear": "Oso de Oro",
+    "People's Choice": "Premio del público",
+    "Sundance GJ": "Premio Sundance GJ",
+    "New Currents": "Premio Nuevas Corrientes",
+    "Golden Leopard": "Leopardo de Oro",
+    "Tiger Award": "Premio Tiger",
+    "SXSW Jury": "Premio SXSW Jury",
+    "Tribeca AA": "Premio Tribeca AA"
   }
 }

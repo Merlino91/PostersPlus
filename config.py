@@ -8,6 +8,45 @@
 #     or the project README for a ready-made sample.
 import os
 
+
+def effective_cpus() -> int:
+    """Cores this process may actually use.
+
+    os.cpu_count() reports the HOST's cores, and a Docker `--cpus=` / compose
+    `cpus:` limit is enforced through the CFS quota rather than CPU affinity, so
+    neither os.cpu_count() nor sched_getaffinity sees it.  A container limited to
+    2 CPUs on a 4-core host reports 4 from both.
+
+    That matters because ONNX thread scaling falls off a cliff past the real
+    budget: measured on the detector's production input, a 2-CPU container runs
+    135 ms at 2 threads, 153 ms at 4, 299 ms at 6 and 409 ms at 8.  Oversizing is
+    far more expensive than undersizing, so take the *smallest* figure any source
+    reports.
+    """
+    limits = []
+    try:  # cgroup v2
+        raw = open("/sys/fs/cgroup/cpu.max").read().split()
+        if raw[0] != "max":
+            limits.append(int(raw[0]) / int(raw[1]))
+    except Exception:
+        pass
+    try:  # cgroup v1
+        quota  = int(open("/sys/fs/cgroup/cpu/cpu.cfs_quota_us").read())
+        period = int(open("/sys/fs/cgroup/cpu/cpu.cfs_period_us").read())
+        if quota > 0 and period > 0:
+            limits.append(quota / period)
+    except Exception:
+        pass
+    try:
+        limits.append(len(os.sched_getaffinity(0)))
+    except Exception:
+        pass
+    limits.append(os.cpu_count() or 1)
+    return max(1, int(min(limits)))
+
+
+EFFECTIVE_CPUS = effective_cpus()
+
 # Storage
 
 DB_PATH               = "/app/cache/cache.db"
@@ -135,6 +174,15 @@ BADGE_DISPLAY_MODE       = 4
 POSTER_WIDTH  = 500
 POSTER_HEIGHT = 750
 
+# Landscape Poster Dimensions (16:9)
+#
+# Twice the portrait width so a landscape card on a desktop client still gets a
+# sharp image, and small enough that a WebP stays inside Stremio's 100kb poster
+# guidance.  The source backdrop is fetched at w1280 and fitted down to this.
+
+LANDSCAPE_WIDTH  = 1000
+LANDSCAPE_HEIGHT = 563
+
 # Rating & Genre Label Defaults
 
 ACCENT_BAR_MODE_FONT_SIZE_RATIO    = 0.08   # font size in accent bar mode
@@ -196,6 +244,41 @@ TRENDING_FETCH_TIME          = os.environ.get("TRENDING_FETCH_TIME", "").strip()
 TRENDING_FETCH_TIMEZONE      = os.environ.get("TRENDING_FETCH_TIMEZONE", "UTC").strip()
 TRENDING_FETCH_COUNT         = int(os.environ.get("TRENDING_FETCH_COUNT", "40"))
 TRENDING_BROAD_FETCH_COUNT   = int(os.environ.get("TRENDING_BROAD_FETCH_COUNT", "100"))
+
+# Where "trending" comes from.  Unset (the default) means TMDB's own global
+# trending endpoint, which is US-weighted and not configurable.  Point these at a
+# URL instead and that list becomes the trending set for its media type — both
+# the sash's ranking and the titles the cache warmer pre-renders.
+#
+# Two payload shapes are accepted, which between them cover almost everything:
+#
+#   TMDB-shaped   {"results": [{"id": 1061474}, ...]}   ranked by array order.
+#                 Any TMDB endpoint works, which is how you get a regional list
+#                 TMDB's /trending cannot express:
+#                   https://api.themoviedb.org/3/discover/movie
+#                     ?api_key=KEY&region=FR&sort_by=popularity.desc
+#
+#   MDBList       a plain array of {"id": <tmdb id>, "rank": n, "mediatype": ...}
+#                 ranked by "rank".  Paste the human list URL and it is converted
+#                 for you — https://mdblist.com/lists/snoak/trending-movies
+#                 becomes .../json automatically, and needs no MDBList API key.
+#                 MDBList aggregates Trakt, Letterboxd, IMDb and others, so this
+#                 is the practical way to seed trending from a service PostersPlus
+#                 does not integrate with directly.
+#
+# The list's own order is the ranking; PostersPlus does not re-sort it. Nothing
+# validates that the list is *actually* trending data — a list of your favourite
+# westerns will be accepted and treated as the trending set.
+#
+# If a configured source fails (unreachable, malformed, or empty after parsing)
+# the error is logged and NO trending data is served for that media type on that
+# refresh, so the trending sash disappears rather than silently reverting to
+# TMDB's list and looking like it worked.
+TRENDING_SOURCE_MOVIE        = os.environ.get("TRENDING_SOURCE_MOVIE", "").strip()
+TRENDING_SOURCE_TV           = os.environ.get("TRENDING_SOURCE_TV", "").strip()
+# Cap on how many entries are taken from a custom source, so a 10k-item list
+# cannot balloon the snapshot held in memory and in trending_cache.
+TRENDING_SOURCE_MAX_ITEMS    = max(1, int(os.environ.get("TRENDING_SOURCE_MAX_ITEMS", "500")))
 # Quality (AIOStreams) TTL — separate from rating TTL because stream availability
 # for older titles is very stable.  New content keeps the 1-day window so fresh
 # encodes are picked up quickly; old content is cached for much longer.
@@ -360,14 +443,33 @@ TEXTLESS_FAKE_REPORT_PATH  = os.environ.get(
 PPOCR_BOX_THRESHOLD        = max(0.0, min(
     1.0, float(os.environ.get("PPOCR_BOX_THRESHOLD", "0.70"))
 ))
-# Independent PP-OCR sessions used for parallel cold-cache scans. Sessions run in
-# a dedicated executor and split available ONNX threads between them. Each extra
-# session costs roughly 25-40 MB with the bundled mobile model. Capped at four and at the detected CPU count.
-# Default 2 suits typical 3+ core hosts; use 1 on smaller hosts. Across worker
-# processes, keep WORKERS x this value at or below available CPU cores.
+# Independent PP-OCR sessions used for parallel cold-cache scans, run in a
+# dedicated executor.  Across worker processes, keep WORKERS x this value at or
+# below EFFECTIVE_CPUS.
+#
+# Default 1, because raising it is a throughput-for-latency trade that usually
+# loses.  Sessions SPLIT the ONNX thread budget rather than adding to it, so on
+# 4 cores 1 session gets 4 intra-op threads and 2 sessions get 2 each.  Measured
+# on real poster art: a single scan is ~88 ms at 1 session but ~139 ms at 2,
+# while bulk throughput moves the other way, 8.9 -> 11.0 scans/s.  Neither
+# setting measurably slows concurrent compositing (0.98x vs 1.09x render latency
+# under saturated OCR), so contention is not the deciding factor.
+#
+# The queue decides it, and the queue is usually not busy: the background scan
+# worker is a single task that drains one item at a time and waits for foreground
+# idle, so it can never occupy a second session.  Extra sessions only earn their
+# keep when many low-vote titles need FOREGROUND scans at once — a cold-cache
+# sweep of a large new library.  Once text_detection_cache is populated, scans
+# are occasional and latency-visible (someone is waiting on that poster), which
+# is exactly where 1 session wins.
+#
+# Memory (measured, bundled mobile model): the first session is ~115 MB, mostly
+# the onnxruntime instance itself, so that is the price of having detection on at
+# all.  Each additional session adds ~50 MB — going 1 -> 2 cost ~86 MB more peak
+# RSS under sustained scanning.
 TEXTLESS_DETECTION_CONCURRENCY = max(1, min(
-    4, os.cpu_count() or 1,
-    int(os.environ.get("TEXTLESS_DETECTION_CONCURRENCY", "2")),
+    EFFECTIVE_CPUS,
+    int(os.environ.get("TEXTLESS_DETECTION_CONCURRENCY", "1")),
 ))
 
 # Rating Score Weight Defaults

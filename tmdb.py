@@ -4,7 +4,10 @@ import colorsys
 import hashlib
 import io
 import logging
-from datetime import date as _date
+import re
+import time
+from datetime import date as _date, datetime as _datetime, time as _time
+from urllib.parse import urlsplit
 import httpx
 import numpy as np
 
@@ -49,11 +52,14 @@ from cache import (
     set_cached_release_status,
     get_cached_movie_release_info,
     set_cached_movie_release_info,
+    release_status_expiry,
 )
 
 from config import (
     POSTER_WIDTH,
     POSTER_HEIGHT,
+    LANDSCAPE_WIDTH,
+    LANDSCAPE_HEIGHT,
     LOGO_MAX_W_RATIO,
     LOGO_MAX_H_RATIO,
     LOGO_BOTTOM_RATIO,
@@ -64,6 +70,9 @@ from config import (
     TMDB_POSTER_MIN_VOTES,
     TMDB_POSTER_MAX_SCORE_DROP,
     CINEMA_MAX_AGE_YEARS,
+    TRENDING_SOURCE_MOVIE,
+    TRENDING_SOURCE_TV,
+    TRENDING_SOURCE_MAX_ITEMS,
 )
 
 
@@ -896,6 +905,59 @@ async def fetch_backdrop_image(
     return image
 
 
+def normalise_landscape(image: Image.Image) -> Image.Image:
+    """Fit-cover an image to the landscape canvas.
+
+    Backdrops are already 16:9, so this is effectively a resize; the cover maths
+    is kept so the odd 1.85:1 or 2:1 source is centred rather than squashed.
+    """
+    target_w, target_h = LANDSCAPE_WIDTH, LANDSCAPE_HEIGHT
+    src_w, src_h = image.size
+    scale = max(target_w / src_w, target_h / src_h)
+    new_w, new_h = round(src_w * scale), round(src_h * scale)
+    image = image.resize((new_w, new_h), Image.Resampling.LANCZOS)
+    left = round((new_w - target_w) / 2)
+    top  = round((new_h - target_h) / 2)
+    return image.crop((left, top, left + target_w, top + target_h))
+
+
+async def fetch_landscape_image(
+    client: httpx.AsyncClient,
+    tmdb_id: str,
+    backdrop_path: str,
+) -> Image.Image:
+    """
+    Fetch a TMDB backdrop and fit it to the landscape canvas, uncropped.
+
+    The portrait pipeline's expensive part — saliency and face detection to pick
+    a 2:3 strip out of a 16:9 frame — has nothing to do here: the source and the
+    target are the same shape, so the whole crop stage is skipped.
+
+    Cached separately from the portrait backdrop crop of the same asset; the two
+    are different images and must not share a key.
+    """
+    cache_key = f"landscape_{tmdb_id}_{backdrop_path.strip('/')}_{LANDSCAPE_WIDTH}x{LANDSCAPE_HEIGHT}"
+    cached_bytes = get_cached_tmdb_poster(cache_key)
+
+    if cached_bytes:
+        logger.info(f"TMDB landscape cache hit for {tmdb_id}")
+        image = Image.open(io.BytesIO(cached_bytes)).convert("RGBA")
+        if image.size != (LANDSCAPE_WIDTH, LANDSCAPE_HEIGHT):
+            image = normalise_landscape(image)
+        return image
+
+    logger.info(f"External API Call: Requested landscape backdrop from TMDB for {tmdb_id}")
+    img_resp = await client.get(f"https://image.tmdb.org/t/p/w1280{backdrop_path}")
+    img_resp.raise_for_status()
+    image = normalise_landscape(Image.open(io.BytesIO(img_resp.content)).convert("RGBA"))
+
+    buf = io.BytesIO()
+    image.convert("RGB").save(buf, format="JPEG", quality=92)
+    set_cached_tmdb_poster(cache_key, buf.getvalue())
+
+    return image
+
+
 def _crop_and_normalise_backdrop(image: Image.Image, tmdb_id: str,
                                  avoid_text: bool) -> Image.Image:
     """Synchronous backdrop crop (face-aware → saliency fallback) + normalise.
@@ -1202,6 +1264,191 @@ async def fetch_logo(
 
 _trending_inflight: dict[str, asyncio.Event] = {}
 
+# ---------------------------------------------------------------------------
+# Operator-supplied trending sources
+# ---------------------------------------------------------------------------
+
+# An MDBList list page. The site serves the same list as JSON from a /json
+# suffix with no API key, so a pasted human URL can be used directly.  The list
+# path is captured whole rather than to a fixed depth: truncating it would point
+# a deeper URL at a DIFFERENT list instead of failing, which is the one outcome
+# worse than not accepting it.
+_MDBLIST_LIST_RE = re.compile(
+    r"^https?://(?:www\.)?mdblist\.com/lists/(?P<path>[^\s?#]+)", re.I
+)
+
+
+def trending_source_url(media_type: str) -> str:
+    """Configured trending source for *media_type*, or "" when unset."""
+    return TRENDING_SOURCE_TV if media_type in ("tv", "series") else TRENDING_SOURCE_MOVIE
+
+
+def sanitise_source_url(url: str) -> str:
+    """Scheme, host and path only — safe to log.
+
+    A trending source is an arbitrary operator-supplied URL, so it can carry an
+    api key, a bearer token, a signed query, or basic-auth credentials in the
+    userinfo.  Only the query and the userinfo are dropped, which leaves enough
+    to identify which configured source a message is about.
+    """
+    try:
+        parsed = urlsplit(url.strip())
+    except ValueError:
+        return "<unparseable url>"
+    host = parsed.hostname or ""
+    if not host:
+        return "<invalid url>"
+    if parsed.port:
+        host = f"{host}:{parsed.port}"
+    return f"{parsed.scheme}://{host}{parsed.path}"
+
+
+def trending_source_signature(media_type: str) -> str:
+    """Identity of the trending source, so a cached snapshot from a different
+    one is discarded rather than served until its TTL lapses.
+
+    Hashed rather than stored verbatim: this value is written to the cache DB,
+    and the URL it identifies may contain credentials.  All the signature has to
+    do is differ when the configured source differs.
+    """
+    url = _normalise_trending_url(trending_source_url(media_type))
+    if not url:
+        return "tmdb"
+    return "url:" + hashlib.sha256(url.encode("utf-8")).hexdigest()[:16]
+
+
+def _normalise_trending_url(url: str) -> str:
+    """Rewrite an MDBList list page to its JSON export; leave anything else be.
+
+    The host is rebuilt canonically rather than echoed back: mdblist.com 301s
+    both ``http://`` and ``www.`` to ``https://mdblist.com``, and the fetch that
+    uses this needs the redirect not to matter.
+    """
+    url = url.strip()
+    match = _MDBLIST_LIST_RE.match(url)
+    if not match:
+        return url
+    path = match.group("path").strip("/")
+    if path.endswith("/json"):
+        path = path[: -len("/json")]
+    if not path:
+        return url
+    return f"https://mdblist.com/lists/{path}/json"
+
+
+# A source that just failed is not re-fetched on the next poster request: the
+# rank lookup runs per title, so without this one bad URL means one outbound
+# request (and one error line) per poster served.  Short enough that a blip
+# clears well inside the snapshot TTL.
+_TRENDING_SOURCE_RETRY_SECS = 300
+_trending_source_failed_at: dict[str, float] = {}
+
+
+def _parse_trending_payload(payload, media_type: str) -> list[str]:
+    """Extract an ordered list of TMDB ids from a trending payload.
+
+    Handles the two shapes documented on TRENDING_SOURCE_MOVIE: TMDB's
+    ``{"results": [...]}`` (ranked by array order) and MDBList's bare array
+    (ranked by its own ``rank`` field, which is ascending but not contiguous —
+    real lists step 1000, 2000, 3000).
+
+    MDBList rows carry ``mediatype`` ("movie"/"show"), so a mixed list is
+    filtered down to the type being asked for.  TMDB's own multi-type payloads
+    use the same key with the same values, so one filter covers both.
+    """
+    if isinstance(payload, dict):
+        items = payload.get("results")
+        ranked = False
+    else:
+        items = payload
+        ranked = True
+    if not isinstance(items, list):
+        return []
+
+    wanted = "show" if media_type in ("tv", "series") else "movie"
+    rows: list[tuple[float, str]] = []
+    for position, item in enumerate(items):
+        if not isinstance(item, dict):
+            continue
+        kind = str(item.get("mediatype") or item.get("media_type") or "").lower()
+        # "tv" appears where TMDB is the source, "show" where MDBList is.
+        if kind:
+            if kind in ("tv", "series"):
+                kind = "show"
+            if kind != wanted:
+                continue
+        raw = item.get("id", item.get("tmdb_id", item.get("tmdbid")))
+        # Reject anything that is not a bare TMDB id — an IMDb id here means the
+        # payload is keyed on a different id space and silently importing it
+        # would produce a snapshot that never matches a request.
+        if raw is None or not str(raw).isdigit():
+            continue
+        order = item.get("rank") if ranked else None
+        rows.append((float(order) if isinstance(order, (int, float)) else position, str(raw)))
+
+    rows.sort(key=lambda row: row[0])
+    seen: set[str] = set()
+    out: list[str] = []
+    for _order, tmdb_id in rows:
+        if tmdb_id not in seen:
+            seen.add(tmdb_id)
+            out.append(tmdb_id)
+        if len(out) >= TRENDING_SOURCE_MAX_ITEMS:
+            break
+    return out
+
+
+async def fetch_trending_source_ids(
+    client: httpx.AsyncClient,
+    media_type: str,
+) -> list[str] | None:
+    """Ordered TMDB ids from the operator's trending source.
+
+    Returns None when no source is configured (caller falls back to TMDB), and
+    an empty list when a source IS configured but could not be used — the caller
+    must treat that as "no trending this cycle" rather than reverting to TMDB,
+    so a broken config is visible instead of silently working.
+    """
+    url = trending_source_url(media_type)
+    if not url:
+        return None
+    resolved = _normalise_trending_url(url)
+    # Only ever log the sanitised form: the configured URL can carry a token or
+    # basic-auth credentials, and this runs on the request path.
+    shown = sanitise_source_url(resolved)
+
+    failed_at = _trending_source_failed_at.get(media_type)
+    if failed_at is not None and time.monotonic() - failed_at < _TRENDING_SOURCE_RETRY_SECS:
+        return []
+
+    try:
+        logger.info(f"External API Call: trending source for {media_type} ({shown})")
+        # Redirects are followed here specifically: an operator pastes whatever
+        # their browser showed them, and a host that answers on a canonical
+        # form should not read as a broken config.
+        resp = await client.get(resolved, timeout=20.0, follow_redirects=True)
+        resp.raise_for_status()
+        ids = _parse_trending_payload(resp.json(), media_type)
+    except Exception as exc:
+        _trending_source_failed_at[media_type] = time.monotonic()
+        logger.error(
+            f"Trending source fetch failed ({shown}): {exc} — "
+            f"no trending data will be served for {media_type} this cycle"
+        )
+        return []
+    if not ids:
+        _trending_source_failed_at[media_type] = time.monotonic()
+        logger.error(
+            f"Trending source for {media_type} ({shown}) yielded no usable "
+            "TMDB ids — check the list is not empty and its entries carry "
+            "numeric TMDB ids. No trending data will be served this cycle."
+        )
+        return []
+    _trending_source_failed_at.pop(media_type, None)
+    logger.info(f"Trending source for {media_type}: {len(ids)} titles from {shown}")
+    return ids
+
+
 async def fetch_trending_rank(
     client: httpx.AsyncClient,
     tmdb_id: str,
@@ -1210,44 +1457,63 @@ async def fetch_trending_rank(
 ) -> int | None:
 
     endpoint = "tv" if media_type in ("tv", "series") else "movie"
+    source_sig = trending_source_signature(endpoint)
 
-    snapshot = get_cached_trending_snapshot(endpoint)
+    snapshot = get_cached_trending_snapshot(endpoint, source_sig)
 
     if snapshot is None:
         inflight_event = _trending_inflight.get(endpoint)
         if inflight_event is not None:
             await inflight_event.wait()
-            snapshot = get_cached_trending_snapshot(endpoint)
+            snapshot = get_cached_trending_snapshot(endpoint, source_sig)
         
         if snapshot is None:
             event_to_set = asyncio.Event()
             _trending_inflight[endpoint] = event_to_set
             
             try:
-                logger.info("External API Call: Refreshing TMDB trending snapshot (pages 1-5 concurrent)")
+                # An operator-configured source replaces TMDB's list entirely.
+                # A configured-but-broken source serves no ranks, so the sash
+                # goes quiet instead of falling back to TMDB and looking like
+                # the config worked.
+                source_ids = await fetch_trending_source_ids(client, endpoint)
+                if source_ids is not None:
+                    if not source_ids:
+                        # Deliberately NOT cached.  Writing an empty snapshot
+                        # would pin "no trending" for the full TTL on what is
+                        # usually a transient fetch failure; the source's own
+                        # retry cooldown already stops this from re-fetching per
+                        # request.  Nothing to rank against this time round.
+                        return None
+                    rankings = {
+                        entry_id: position
+                        for position, entry_id in enumerate(source_ids, start=1)
+                    }
+                else:
+                    logger.info("External API Call: Refreshing TMDB trending snapshot (pages 1-5 concurrent)")
 
-                async def _fetch_page(page: int) -> list[dict]:
-                    resp = await client.get(
-                        f"https://api.themoviedb.org/3/trending/{endpoint}/day",
-                        params={"api_key": tmdb_key, "page": page},
-                    )
-                    resp.raise_for_status()
-                    return resp.json().get("results", [])
+                    async def _fetch_page(page: int) -> list[dict]:
+                        resp = await client.get(
+                            f"https://api.themoviedb.org/3/trending/{endpoint}/day",
+                            params={"api_key": tmdb_key, "page": page},
+                        )
+                        resp.raise_for_status()
+                        return resp.json().get("results", [])
 
-                try:
-                    pages = await asyncio.gather(*(_fetch_page(page) for page in range(1, 6)))
-                except Exception as exc:
-                    logger.error(f"TMDB trending fetch error: {exc}")
-                    return None
+                    try:
+                        pages = await asyncio.gather(*(_fetch_page(page) for page in range(1, 6)))
+                    except Exception as exc:
+                        logger.error(f"TMDB trending fetch error: {exc}")
+                        return None
 
-                rankings: dict[str, int] = {}
-                rank = 1
-                for results in pages:
-                    for item in results:
-                        rankings[str(item["id"])] = rank
-                        rank += 1
+                    rankings = {}
+                    rank = 1
+                    for results in pages:
+                        for item in results:
+                            rankings[str(item["id"])] = rank
+                            rank += 1
 
-                set_cached_trending_snapshot(endpoint, rankings)
+                set_cached_trending_snapshot(endpoint, rankings, source_sig)
                 snapshot = rankings
             finally:
                 event_to_set.set()
@@ -1297,11 +1563,44 @@ async def fetch_trending_candidates(
                 results.append({"tmdb_id": str(item["id"]), "media_type": media_type})
         return results
 
+    # Resolve each media type's custom source once. The day/week split is a TMDB
+    # concept; a custom source is a single list, so it stands in for the "day"
+    # pass and the "week" pass contributes nothing rather than duplicating it.
+    sources = dict(zip(
+        ("movie", "tv"),
+        await asyncio.gather(
+            fetch_trending_source_ids(client, "movie"),
+            fetch_trending_source_ids(client, "tv"),
+        ),
+    ))
+
+    # The ranking snapshot and the warm list are the same fetch.  Writing it here
+    # is what makes the scheduled refresh actually refresh the ranks: without it
+    # the warm cycle pulled the operator's list, threw the order away, and the
+    # next /poster request fetched the identical list again to rebuild it — and
+    # a title warmed this cycle could be rendered against yesterday's ranks.
+    # An empty list means the fetch failed; leave the existing snapshot alone.
+    for _media_type, _ids in sources.items():
+        if _ids:
+            set_cached_trending_snapshot(
+                _media_type,
+                {entry_id: position for position, entry_id in enumerate(_ids, start=1)},
+                trending_source_signature(_media_type),
+            )
+
+    async def _source_or_tmdb(media_type: str, window: str) -> list[dict]:
+        ids = sources.get(media_type)
+        if ids is None:
+            return await _fetch_list(media_type, window)
+        if window != "day":
+            return []
+        return [{"tmdb_id": tmdb_id, "media_type": media_type} for tmdb_id in ids]
+
     lists = await asyncio.gather(
-        _fetch_list("movie", "day"),
-        _fetch_list("tv", "day"),
-        _fetch_list("movie", "week"),
-        _fetch_list("tv", "week"),
+        _source_or_tmdb("movie", "day"),
+        _source_or_tmdb("tv", "day"),
+        _source_or_tmdb("movie", "week"),
+        _source_or_tmdb("tv", "week"),
     )
 
     # Round-robin merge so the result mixes movie/tv and prioritises the
@@ -1635,6 +1934,23 @@ def _compute_movie_status_from_dates(
         return "Production"
 
 
+def _release_info_expiry(info: dict) -> int:
+    """Expiry for a release row, clamped to the title's next published date.
+
+    TMDB usually knows a film's digital date before the film gets there, so a
+    title "releasing soon" does not need predicting — it needs its cache row to
+    expire on the day it moves.  Anything already in the past is ignored: it is
+    baked into the status.
+    """
+    upcoming: list[int] = []
+    today = _date.today()
+    for key in ("theatrical_date", "digital_date", "physical_date"):
+        parsed = _parse_tmdb_date(info.get(key))
+        if parsed is not None and parsed > today:
+            upcoming.append(int(_datetime.combine(parsed, _time.min).timestamp()))
+    return release_status_expiry(info.get("status"), upcoming_dates=upcoming)
+
+
 async def fetch_movie_release_info(
     client: httpx.AsyncClient,
     tmdb_id: str,
@@ -1725,7 +2041,7 @@ async def fetch_movie_release_info(
         "physical_date": earliest_physical.isoformat() if earliest_physical else None,
         "digital_latest_date": latest_digital.isoformat() if latest_digital else None,
     }
-    set_cached_movie_release_info(cache_key, info)
+    set_cached_movie_release_info(cache_key, info, _release_info_expiry(info))
     return info
 
 
@@ -1761,22 +2077,21 @@ async def fetch_release_status(
     Determine the current release status for the info sash.
 
     TV shows: mapped from the TMDB ``status`` field (already fetched as part
-    of poster metadata, so no extra API call is needed).
+    of poster metadata, so no extra API call is needed).  That mapping wins over
+    the cached row, which exists only for requests that arrive without a status.
 
     Movies: consults ``/movie/{id}/release_dates`` to determine whether the
     film is on physical media (Physical), digital/streaming (Streaming), still
-    theatrical-only (Cinema), or not yet released (Production).  Result is
-    cached for 7 days via the ``release_status_cache`` table.
+    theatrical-only (Cinema), or not yet released (Production).  The result is
+    cached in ``release_status_cache`` with a per-row deadline — the status tier,
+    or the film's next published release date when TMDB has told us one.
 
     Returns one of: "Physical" | "Streaming" | "Cinema" | "Production" |
                     "Returning" | "Ended" | "Cancelled" | None.
     """
     cache_key = f"{media_type}_{tmdb_id}"
-    cached = get_cached_release_status(cache_key)
-    if cached:
-        return cached
-
     result: str | None = None
+    info: dict | None = None
 
     if media_type in ("tv", "series"):
         # No extra API call — map the TMDB status field we already have.
@@ -1793,13 +2108,35 @@ async def fetch_release_status(
             "Cancelled":        "Cancelled",
             "Canceled":         "Cancelled",
         }
+        # Deliberately ahead of the cache read.  *tmdb_status* arrived with the
+        # poster metadata this request already fetched, so it is both free and
+        # newer than anything stored — and the cached value it replaces has a
+        # 60-90 day tier behind it, which is long enough for a revived show to
+        # sit at "Ended" for two months after TMDB says "Returning Series".
+        # The cache still covers the case where no status came with the request.
         result = _tv_map.get(tmdb_status or "")
-    else:
-        info = await fetch_movie_release_info(client, tmdb_id, tmdb_key, tmdb_status)
-        result = (info or {}).get("status")
+        cached = get_cached_release_status(cache_key)
+        if not result:
+            return cached
+        # Only written when it actually moved (or its row lapsed), so this stays
+        # a rare write rather than one per request.
+        if cached != result:
+            set_cached_release_status(cache_key, result)
+        return result
+
+    cached = get_cached_release_status(cache_key)
+    if cached:
+        return cached
+
+    info = await fetch_movie_release_info(client, tmdb_id, tmdb_key, tmdb_status)
+    result = (info or {}).get("status")
 
     if result:
-        set_cached_release_status(cache_key, result)
+        # Movies carry published dates, so the status row can be told exactly
+        # when it is next allowed to be wrong.
+        set_cached_release_status(
+            cache_key, result, _release_info_expiry(info) if info else None
+        )
     return result
 
 
