@@ -1489,6 +1489,10 @@ def draw_award_badge(
       gold    — dark gradient body with gold trim, white text
       frosted — highly opaque blurred poster pixels, dark text
 
+    Custom style:
+      minimal_pill — solid coloured body from tint_rgb, Ubuntu-Bold font,
+                     FA icons for ★ labels, smart text colour via luminance
+
     sash_type colour wiring is retained for future use.
     Uses Cairo (sub-pixel AA, gradient) with PIL fallback. 3× LANCZOS downscale.
     """
@@ -1599,6 +1603,82 @@ def draw_award_badge(
 
     # Text is geometrically centred; client-specific placement is handled by inset.
     text_cy_ss = bh / 2
+
+    # ── CUSTOM: Minimal Pill ─────────────────────────────────────────────────
+    # Pillola piena colorata con tint_rgb (smart_top_color / vivid_dom_color).
+    # Riutilizza interamente il sizing del Dev (base_h, notch_pad_ratio, floor,
+    # padding, corner radius) — differisce solo per font (Ubuntu-Bold + FA),
+    # sfondo solido (niente blur/frost), e colore testo intelligente.
+    if notch_style == "minimal_pill":
+        # Font: Ubuntu-Bold per il testo, Font Awesome per le icone
+        try:
+            ubuntu_font = ImageFont.truetype(os.path.join(_fonts_dir, "Ubuntu-Bold.ttf"), font_size_ss)
+        except IOError:
+            ubuntu_font = font
+        try:
+            icon_font = ImageFont.truetype(os.path.join(_fonts_dir, "Font Awesome 7 Free-Solid-900.otf"), font_size_ss)
+        except IOError:
+            icon_font = font
+
+        # Rimisura larghezza testo con il font Ubuntu (può differire da Inter)
+        _pill_bbox = _tmp_d.textbbox((0, 0), label, font=ubuntu_font)
+        _pill_text_w = int(_pill_bbox[2] - _pill_bbox[0])
+        badge_w = max(min_badge_w, min(max_badge_w, _pill_text_w // SS + _h_pad))
+        bw = badge_w * SS
+        bx = (width - badge_w) // 2
+
+        # Colore sfondo dalla tint_rgb (smart_top_color o vivid_dom_color)
+        if tint_rgb is not None:
+            bg_r, bg_g, bg_b = int(tint_rgb[0]), int(tint_rgb[1]), int(tint_rgb[2])
+        else:
+            bg_r, bg_g, bg_b = 50, 150, 250  # fallback blu
+
+        # Forma: top piatto, bottom arrotondato (come le altre notch)
+        badge_ss = Image.new("RGBA", (bw, bh), (0, 0, 0, 0))
+        rr_mask_ss = Image.new("L", (bw, bh), 0)
+        _pill_draw = ImageDraw.Draw(rr_mask_ss)
+        _pill_draw.rectangle([(0, 0), (bw - 1, bh - r_ss)], fill=255)
+        _pill_draw.rounded_rectangle(
+            [(0, 0), (bw - 1, bh - 1)], radius=r_ss, fill=255,
+            corners=(False, False, True, True)
+        )
+
+        body = Image.new("RGBA", (bw, bh), (bg_r, bg_g, bg_b, 240))
+        body.putalpha(rr_mask_ss)
+        badge_ss = body
+
+        # Colore testo intelligente con _frost_ink (scuro su sfondo chiaro, chiaro su scuro)
+        _pill_ink = _frost_ink(bg_r, bg_g, bg_b)
+
+        # Disegno testo
+        txt_layer = Image.new("RGBA", (bw, bh), (0, 0, 0, 0))
+        td = ImageDraw.Draw(txt_layer)
+
+        # Split rendering: se la label inizia con ★, sostituiamo con icona FA Award
+        if label.startswith("★"):
+            icon_char = "\uf559"  # FA Award icon
+            rest_str = label.replace("★", "").strip()
+
+            gap = int(font_size_ss * 0.4)
+            icon_w = td.textlength(icon_char, font=icon_font)
+            rest_w = td.textlength(rest_str, font=ubuntu_font)
+            total_w = icon_w + gap + rest_w
+
+            tx = (bw - total_w) / 2
+
+            td.text((tx, text_cy_ss), icon_char, font=icon_font, fill=(*_pill_ink, 245), anchor="lm")
+            td.text((tx + icon_w + gap, text_cy_ss), rest_str, font=ubuntu_font, fill=(*_pill_ink, 245), anchor="lm")
+        else:
+            # Label standard senza stella
+            tx, ty = _text_center(td, label, ubuntu_font, bw / 2, text_cy_ss)
+            td.text((tx, ty), label, font=ubuntu_font, fill=(*_pill_ink, 245))
+
+        badge_ss = Image.alpha_composite(badge_ss, txt_layer)
+
+        badge_final = badge_ss.resize((badge_w, badge_h), Image.Resampling.LANCZOS)
+        result = image.copy()
+        result.alpha_composite(badge_final, (bx, by_composite))
+        return result
 
     if notch_style == "frosted":
         # ── Frosted: blurred poster crop tinted toward the region's dominant colour ──
