@@ -2457,6 +2457,13 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
                   </div>
                 </div>
               </div>
+                <div class="field">
+                  <label class="field-label" data-tip="Optical frosted glass refraction layer with 3-pass blur, edge sharpening and anti-banding grain applied over the bottom 60% of the poster. 0 disables the glass layer.">Frosted Glass Intensity</label>
+                  <div class="range-row">
+                    <input type="range" id="cfg-frosted-glass-intensity" min="0" max="100" step="5" value="0" oninput="updateRange(this,'rng-fgi'); build(); queuePreviewReload()">
+                    <span class="range-val" id="rng-fgi">0</span>
+                  </div>
+                </div>
             </div><!-- /vignette group -->
           </div>
         </div>
@@ -4505,6 +4512,8 @@ function buildBaseParams({ usePlaceholders = false, domainOverride = null } = {}
     params.set('bottom_gradient_height', document.getElementById('cfg-bg-ht').value);
   }
   if (c('tog-top-vignette-sash-only')) params.set('top_vignette_sash_only', 'true');
+  const _fgi = ni('cfg-frosted-glass-intensity');
+  if (_fgi > 0) params.set('frosted_glass_intensity', _fgi);
   // Sliders only ride along when the tint is on, so an untinted URL stays as
   // short (and as cache-compatible) as it was before the option existed.
   { const _vgTop = c('tog-vignette-color-top'), _vgBot = c('tog-vignette-color-bottom');
@@ -4858,6 +4867,7 @@ function resetDefaults() {
   onPrimaryClientChange({ rebuild: false });
   // Re-reads both gradient selects: re-hides the custom opacity/height sliders
   // if the reset moved off "custom", and repaints the segmented controls.
+  if (p.has('frosted_glass_intensity')) _setEl('cfg-frosted-glass-intensity', p.get('frosted_glass_intensity'));
   updateGradientFields();
   buildWeightSection('movie-weights', MOVIE_SOURCES, DEFAULT_MOVIE_W);
   buildWeightSection('tv-weights',    TV_SOURCES,    DEFAULT_TV_W);
@@ -5650,6 +5660,7 @@ function importUrl(urlStr, { silent = false, settingsOnly = false, preserveClien
   // previously generated URL round-trips it (and so does the localStorage
   // restore, which replays the saved params through this same importer).
   if (p.has('stremio_id') || p.has('anilist_id') || p.has('kitsu_id')) _setEl('tog-anime-ids', 'true');
+  if (p.has('frosted_glass_intensity')) _setEl('cfg-frosted-glass-intensity', p.get('frosted_glass_intensity'));
   updateGradientFields();
   if (p.has('fallback_to_imdb')) _setEl('tog-fallback-imdb', p.get('fallback_to_imdb'));
 
