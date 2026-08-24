@@ -1206,6 +1206,7 @@ def build_request_config(params: dict) -> RequestConfig:
     cfg.sash_badge_font_ratio    = _f("sash_badge_font_ratio",    cfg.sash_badge_font_ratio,    0.10, 1.0)
     cfg.use_global_ui_color     = _b("use_global_ui_color",     cfg.use_global_ui_color)
     cfg.text_drop_shadow        = _b("text_drop_shadow",        cfg.text_drop_shadow)
+    cfg.frosted_glass_intensity = _i("frosted_glass_intensity", cfg.frosted_glass_intensity, 0, 100)
     cfg.sash_badge_frost_opacity = _f("sash_badge_frost_opacity", cfg.sash_badge_frost_opacity, 0.0, 1.0)
     cfg.sash_badge_frost_saturation = _f("sash_badge_frost_saturation", cfg.sash_badge_frost_saturation, 0.0, 2.0)
     cfg.notch_vignette_color        = _b("notch_vignette_color", cfg.notch_vignette_color)
@@ -2649,7 +2650,7 @@ def build_poster(
         bottom_overlay = Image.fromarray(bottom_array, mode="L")
         
         if _bottom_enabled and _poster_tint is not None:
-            # Vignetta a colori / Two-Tone Falso Nero
+            # Vignetta a colori Dev (Two-Tone / Single-Tone)
             _b_tint, _b_conf, _b_second = _vignette_band_colour(
                 _frost_color_src,
                 _vignette_seam(width, height, bottom_start, +1, bottom_overlay),
@@ -2666,12 +2667,6 @@ def build_poster(
                 cfg.vignette_color_saturation, cfg.vignette_color_blur, _b_second,
                 cfg.vignette_color_lightness,
             ).convert("RGBA")
-            
-            # Falso Nero Pigmentato (35%): se desiderato, applica il fattore di scurimento preservando la rampa bicolore Two-Tone
-            tint_arr = np.array(bottom_tinted, dtype=np.float32)
-            tint_arr[:, :, :3] = tint_arr[:, :, :3] * 0.35
-            bottom_tinted = Image.fromarray(np.clip(tint_arr, 0, 255).astype(np.uint8), mode="RGBA")
-            
             if _vignette_shown is None and _b_conf >= _VIGNETTE_MATCH_MIN_CONF and _slider_amount > 0:
                 _vignette_shown = _band_paint(bottom_tinted, -1)
         else:
