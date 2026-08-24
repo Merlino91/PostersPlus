@@ -999,6 +999,7 @@ class RequestConfig:
     sash_badge_font_ratio:   float = 0.43  # font size as fraction of badge height
     use_global_ui_color: bool = False
     text_drop_shadow: bool = True
+    frosted_glass_intensity: int = 0
     sash_badge_frost_opacity: float = 0.75 # frosted overlay opacity (0.0–1.0)
     sash_badge_frost_saturation: float = 1.2 # frosted colour-cast strength (0 = grey)
     # Take the frosted notch's colour from whatever a tinted vignette landed on,
@@ -2578,15 +2579,53 @@ def build_poster(
         top_tinted.putalpha(top_overlay)
         image.paste(top_tinted, (0, 0), mask=top_tinted)
 
-    # --- BOTTOM GRADIENT (vectorised) ---
-    # Strength is one of four presets (off / low / medium / high) — see
-    # _BOTTOM_GRADIENT_LEVELS for the (height_ratio, max_alpha) tuple each
-    # level uses.  The previous auto-softening for Minimalist / Compact modes
-    # is dropped now that the user can pick the level themselves; if you'd
-    # like the lighter fade those modes used to get for free, pick "medium".
-    # Unknown level falls back to "high" so a typo can't accidentally turn
-    # the fade off entirely (which would break label legibility).
-    if cfg.bottom_gradient == "custom" and cfg.bottom_gradient_opacity is not None and cfg.bottom_gradient_height is not None:
+    # --- LUMINOSITÀ MEDIA DEL FONDO (per Smart Bottom Gradient Adattivo) ---
+    try:
+        bot_crop_sample = _frost_color_src.crop((0, int(height * 0.75), width, height))
+        bot_crop_sample.thumbnail((50, 50))
+        bot_arr = np.array(bot_crop_sample.convert("RGB"), dtype=np.float32)
+        bottom_avg_lum = float(np.mean(0.299 * bot_arr[:, :, 0] + 0.587 * bot_arr[:, :, 1] + 0.114 * bot_arr[:, :, 2]))
+    except Exception:
+        bottom_avg_lum = 100.0
+
+    # --- FROSTED GLASS 2.0 (Effetto vetro sfumato ottico puro) ---
+    # Dedicato ESCLUSIVAMENTE alla sfocatura lente ed al contrasto visivo.
+    if getattr(cfg, 'frosted_glass_intensity', 0) > 0:
+        from PIL import ImageFilter, ImageEnhance
+        fg_height = int(height * 0.60)
+        fg_start  = height - fg_height
+        bottom_crop = image.crop((0, fg_start, width, height))
+
+        # 1. Sfocatura iterativa a 3 passaggi (simula la rifrazione della luce)
+        box_radius = max(1, int(cfg.frosted_glass_intensity / 20))
+        glass_layer = bottom_crop
+        for _ in range(3):
+            glass_layer = glass_layer.filter(ImageFilter.BoxBlur(radius=box_radius))
+
+        # 2. Accentua i bordi rifratti + boost vividezza 140% e luminosita 70%
+        glass_layer = glass_layer.filter(ImageFilter.UnsharpMask(radius=3, percent=150, threshold=3))
+        glass_layer = ImageEnhance.Color(glass_layer).enhance(1.4)
+        glass_layer = ImageEnhance.Brightness(glass_layer).enhance(0.7)
+
+        # 3. Micro-grana organica anti-banding in NumPy
+        noise = np.random.normal(0, 2, (fg_height, width, 3)).astype(np.float32)
+        glass_np = np.array(glass_layer.convert("RGBA"), dtype=np.float32)
+        glass_np[:, :, :3] = np.clip(glass_np[:, :, :3] + noise, 0, 255)
+        glass_layer = Image.fromarray(glass_np.astype(np.uint8), mode="RGBA")
+
+        # 4. Maschera esponenziale di fusione (1.8)
+        t_blur = np.linspace(0, 1, fg_height, dtype=np.float32)
+        eased_blur = (np.power(t_blur, 1.8) * 255).astype(np.uint8)
+        blur_mask_arr = np.broadcast_to(eased_blur[:, np.newaxis], (fg_height, width)).copy()
+        blur_mask = Image.fromarray(blur_mask_arr, mode="L")
+
+        image.paste(glass_layer, (0, fg_start), mask=blur_mask)
+
+    # --- BOTTOM GRADIENT / VIGNETTE (Falso Nero Pigmentato + Curva 1.2 + Smart Adaptive Softening) ---
+    _bg_preset: tuple[float, int] | None
+    if cfg.bottom_gradient == "off":
+        _bg_preset = None
+    elif cfg.bottom_gradient == "custom" and cfg.bottom_gradient_opacity is not None and cfg.bottom_gradient_height is not None:
         _bg_preset = (cfg.bottom_gradient_height, int(cfg.bottom_gradient_opacity * 255 if cfg.bottom_gradient_opacity <= 1.0 else cfg.bottom_gradient_opacity))
     else:
         _bg_preset = _BOTTOM_GRADIENT_LEVELS.get(cfg.bottom_gradient, _BOTTOM_GRADIENT_LEVELS["high"])
@@ -2595,13 +2634,22 @@ def build_poster(
         bottom_height_ratio, bottom_max_alpha = _bg_preset
         bottom_height = max(1, int(height * bottom_height_ratio))
         bottom_start  = height - bottom_height
+        
+        # --- ADATTAMENTO PROPORZIONALE SMART PER LOCANDINE SCURE (bottom_avg_lum < 40) ---
+        adaptive_scale = 1.0
+        if bottom_avg_lum < 40.0:
+            adaptive_scale = max(0.25, bottom_avg_lum / 40.0)
+
+        effective_max_alpha = int(bottom_max_alpha * adaptive_scale)
+
+        # Curva ad esponente 1.2 applicata all'opacita effettiva scalata
         t_bot         = np.linspace(0, 1, bottom_height, dtype=np.float32)
-        eased_bot     = ((1 - (1 - t_bot) ** _BOTTOM_GRADIENT_CURVE) * bottom_max_alpha).astype(np.uint8)
+        eased_bot     = ((t_bot ** 1.2) * effective_max_alpha).astype(np.uint8)
         bottom_array  = np.broadcast_to(eased_bot[:, np.newaxis], (bottom_height, width)).copy()
         bottom_overlay = Image.fromarray(bottom_array, mode="L")
+        
         if _bottom_enabled and _poster_tint is not None:
-            # ...and the bottom band fades out upward, so its seam sits at
-            # bottom_start.
+            # Vignetta a colori / Two-Tone Falso Nero
             _b_tint, _b_conf, _b_second = _vignette_band_colour(
                 _frost_color_src,
                 _vignette_seam(width, height, bottom_start, +1, bottom_overlay),
@@ -2618,11 +2666,17 @@ def build_poster(
                 cfg.vignette_color_saturation, cfg.vignette_color_blur, _b_second,
                 cfg.vignette_color_lightness,
             ).convert("RGBA")
+            
+            # Falso Nero Pigmentato (35%): se desiderato, applica il fattore di scurimento preservando la rampa bicolore Two-Tone
+            tint_arr = np.array(bottom_tinted, dtype=np.float32)
+            tint_arr[:, :, :3] = tint_arr[:, :, :3] * 0.35
+            bottom_tinted = Image.fromarray(np.clip(tint_arr, 0, 255).astype(np.uint8), mode="RGBA")
+            
             if _vignette_shown is None and _b_conf >= _VIGNETTE_MATCH_MIN_CONF and _slider_amount > 0:
-                # Bottom band: strongest at the poster's edge, so the last row.
                 _vignette_shown = _band_paint(bottom_tinted, -1)
         else:
             bottom_tinted = Image.new("RGBA", (width, bottom_height), (0, 0, 0, 0))
+            
         bottom_tinted.putalpha(bottom_overlay)
         image.paste(bottom_tinted, (0, bottom_start), mask=bottom_tinted)
 
