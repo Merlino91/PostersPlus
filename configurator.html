@@ -2450,20 +2450,13 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
                   </div>
                 </div>
                 <div class="field">
-                  <label class="field-label" data-tip="Frosts the artwork inside the vignette and evens out the tint. Low leaves the art sharp and lets the colour follow it across the poster's width; high melts both into one soft wash of the dominant colour, and holds back how much of the art shows through so the band lands the same on a bright poster as on a dark one. Logos, badges and labels are never blurred.">Blur</label>
+                  <label class="field-label" data-tip="Optical frosted glass refraction layer with 3-pass blur, edge sharpening, 140% saturation boost and anti-banding grain applied over the bottom of the poster. 0 leaves artwork sharp.">Frosted Glass Intensity</label>
                   <div class="range-row">
-                    <input type="range" id="cfg-vignette-blur" min="0.0" max="1.0" step="0.05" value="1.00" oninput="updateRange(this,'rng-vblur'); build(); queuePreviewReload()">
-                    <span class="range-val" id="rng-vblur">1.00</span>
+                    <input type="range" id="cfg-frosted-glass-intensity" min="0" max="100" step="5" value="50" oninput="updateRange(this,'rng-fgi'); build(); queuePreviewReload()">
+                    <span class="range-val" id="rng-fgi">50</span>
                   </div>
                 </div>
               </div>
-                <div class="field">
-                  <label class="field-label" data-tip="Optical frosted glass refraction layer with 3-pass blur, edge sharpening and anti-banding grain applied over the bottom 60% of the poster. 0 disables the glass layer.">Frosted Glass Intensity</label>
-                  <div class="range-row">
-                    <input type="range" id="cfg-frosted-glass-intensity" min="0" max="100" step="5" value="0" oninput="updateRange(this,'rng-fgi'); build(); queuePreviewReload()">
-                    <span class="range-val" id="rng-fgi">0</span>
-                  </div>
-                </div>
             </div><!-- /vignette group -->
           </div>
         </div>
