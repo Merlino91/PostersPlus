@@ -2656,15 +2656,12 @@ def build_poster(
                 _vignette_seam(width, height, bottom_start, +1, bottom_overlay),
                 _whole_colour, cfg.vignette_color_local, cfg.vignette_color_ramp,
             )
-            _vignette_frost_band(
-                image, (0, bottom_start, width, height), bottom_overlay, cfg.vignette_color_blur,
-            )
-            _vignette_level_band(
-                image, (0, bottom_start, width, height), bottom_overlay, _level_amount
-            )
+            # La sfocatura ottica è ora gestita con precisione da Frosted Glass 2.0,
+            # eliminando il Gaussian Blur distruttivo e lo sbiadimento dei neri del Dev.
+            _blur_factor = (cfg.frosted_glass_intensity / 100.0) if getattr(cfg, 'frosted_glass_intensity', 0) > 0 else cfg.vignette_color_blur
             bottom_tinted = _vignette_tint_band(
                 _frost_color_src, (0, bottom_start, width, height), _b_tint, _b_conf,
-                cfg.vignette_color_saturation, cfg.vignette_color_blur, _b_second,
+                cfg.vignette_color_saturation, _blur_factor, _b_second,
                 cfg.vignette_color_lightness,
             ).convert("RGBA")
             if _vignette_shown is None and _b_conf >= _VIGNETTE_MATCH_MIN_CONF and _slider_amount > 0:
