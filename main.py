@@ -2639,10 +2639,10 @@ def build_poster(
         bottom_height = max(1, int(height * bottom_height_ratio))
         bottom_start  = height - bottom_height
         
-        # --- ADATTAMENTO PROPORZIONALE SMART CON FLOOR AL 20% (bottom_avg_lum < 30) ---
+        # --- ADATTAMENTO PROPORZIONALE SMART CON FLOOR AL 30% (bottom_avg_lum < 30) ---
         adaptive_scale = 1.0
         if bottom_avg_lum < 30.0:
-            adaptive_scale = max(0.20, 0.20 + 0.80 * (bottom_avg_lum / 30.0))
+            adaptive_scale = max(0.30, 0.30 + 0.70 * (bottom_avg_lum / 30.0))
 
         effective_max_alpha = int(bottom_max_alpha * adaptive_scale)
 
@@ -2683,7 +2683,7 @@ def build_poster(
                     int(vivid_rgb[2] * 0.35),
                 )
                 vivid_layer = Image.new("RGBA", (width, bottom_height), (*dark_vivid, 255))
-                vivid_blend_factor = (1.0 - (bottom_avg_lum / 30.0)) * 0.65
+                vivid_blend_factor = (1.0 - (bottom_avg_lum / 30.0)) * 0.75
                 bottom_tinted = Image.blend(bottom_tinted, vivid_layer, alpha=vivid_blend_factor)
 
             if _vignette_shown is None and _b_conf >= _VIGNETTE_MATCH_MIN_CONF and _slider_amount > 0:
