@@ -11,14 +11,16 @@ import httpx
 import numpy as np
 from datetime import datetime, timedelta, timezone
 import zoneinfo
+from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass, field
+from functools import lru_cache
 from urllib.parse import parse_qsl, urlencode
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, Response, HTMLResponse
 from fastapi.staticfiles import StaticFiles
-from PIL import Image, ImageDraw, ImageFont, ImageOps
+from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
 
 logging.basicConfig(
     level=logging.INFO,
@@ -437,18 +439,19 @@ _mdblist_key_cooldown: dict[str, float] = {}
 _mdblist_active_key_idx: int = 0
 
 
-def _quality_source_name() -> str:
-    return "scraper" if _cfg.QUALITY_SOURCE == "scraper" else "aiostreams"
-
-
 def _quality_backoff_remaining(now: float | None = None) -> float:
     if now is None:
         now = asyncio.get_running_loop().time()
-    return max(0.0, _quality_source_backoff_until.get(_quality_source_name(), 0.0) - now)
+    return max(0.0, _quality_source_backoff_until.get(active_quality_source(), 0.0) - now)
 
 
 def _record_quality_result(result) -> None:
-    source = _quality_source_name()
+    # QUALITY_PENDING means the source answered and is healthy — it just has no
+    # value for this title yet. It is neither a success to reset the failure
+    # count on nor a failure to count, so the backoff state is left untouched.
+    if result is QUALITY_PENDING:
+        return
+    source = active_quality_source()
     if result is not FETCH_FAILED:
         _quality_source_backoff_until.pop(source, None)
         _quality_source_fail_count.pop(source, None)
@@ -498,7 +501,7 @@ def _mdblist_server_key_label(key: str | None) -> str:
 
 
 def _mark_mdblist_rate_limit(
-    imdb_id: str, key: str, result
+    canonical_id: str, key: str, result
 ) -> tuple[float, str | None]:
     """Cool down a rate-limited key and select a healthy configured fallback."""
     if result.retry_after:
@@ -507,12 +510,12 @@ def _mark_mdblist_rate_limit(
         backoff_secs = 3600.0
     now = asyncio.get_running_loop().time()
     _mdblist_key_cooldown[key] = now + backoff_secs
-    _rating_backoff[_rating_retry_key(imdb_id, key)] = now + backoff_secs
+    _rating_backoff[_rating_retry_key(canonical_id, key)] = now + backoff_secs
     return backoff_secs, _next_mdblist_server_key(key, now)
 
 
 async def _background_quality_fetch(
-    imdb_id: str,
+    quality_id: str,
     media_type: str,
     season: int,
     episode: int,
@@ -529,31 +532,30 @@ async def _background_quality_fetch(
             remaining = _quality_backoff_remaining()
             if remaining > 0:
                 logger.debug(
-                    f"Quality fetch skipped for {imdb_id}; source cooldown has {remaining:.0f}s remaining"
+                    f"Quality fetch skipped for {quality_id}; source cooldown has {remaining:.0f}s remaining"
                 )
                 return
-            if _cfg.QUALITY_SOURCE == "scraper" and _cfg.SCRAPER_URL:
-                result = await _with_retry(
-                    fetch_quality_from_scraper,
-                    _HTTP_CLIENT, _cfg.SCRAPER_URL, imdb_id, media_type, season, episode, release_date,
-                )
-            else:
-                result = await _with_retry(
-                    fetch_quality_from_aiostreams,
-                    _HTTP_CLIENT, imdb_id, media_type, season, episode, release_date,
-                )
+            result = await _with_retry(
+                fetch_quality,
+                _HTTP_CLIENT, quality_id, media_type, season, episode, release_date,
+            )
             _record_quality_result(result)
-            if result is not FETCH_FAILED:
-                logger.info(f"Background quality fetch complete for {imdb_id}")
+            if result is QUALITY_PENDING:
+                # QualiCache is collecting in the background; the next request
+                # for this title picks up the value once it lands.
+                logger.info(f"Background quality fetch pending for {quality_id}")
+            elif result is not FETCH_FAILED:
+                logger.info(f"Background quality fetch complete for {quality_id}")
     except Exception as exc:
         _record_quality_result(FETCH_FAILED)
-        logger.warning(f"Background quality fetch failed for {imdb_id}: {exc}")
+        logger.warning(f"Background quality fetch failed for {quality_id}: {exc}")
     finally:
-        _quality_bg_inflight.discard(imdb_id)
+        _quality_bg_inflight.discard(quality_id)
 
 # Local imports
-from age_badge import draw_quality_age_badge, draw_tier_bar, _score_points
-from awards import dominant_frost_rgb
+from age_badge import draw_quality_age_badge, draw_quality_corner_bookmark, draw_tier_bar, _score_points
+from landscape import build_landscape
+from awards import _dominant_cluster, _is_skin_tone, dominant_frost_rgb
 from awards import FETCH_FAILED, _RateLimited, draw_award_badge, draw_award_sash, parse_mdblist_awards
 from i18n import load_languages, translate_genre, translate_sash
 from cache import (
@@ -571,6 +573,7 @@ from cache import (
     set_cached_rating,
     delete_cached_tmdb_metadata,
     prune_caches,
+    release_status_ttl_seconds,
     get_cache_stats,
     get_app_state,
     set_app_state,
@@ -586,11 +589,14 @@ from discovery import (
     pick_sash,
 )
 from quality import (
+    QUALITY_PENDING,
+    QUALITY_SOURCES,
     BadgeItem,
-    fetch_quality_from_aiostreams,
-    fetch_quality_from_scraper,
+    active_quality_source,
+    fetch_quality,
     get_resized_badge,
     parse_quality,
+    quality_source_configured,
     render_badges_left,
 )
 from ratings import (
@@ -598,7 +604,6 @@ from ratings import (
     calculate_weighted_score,
     draw_frosted_bar,
     draw_score_bar,
-    draw_score_bar_vertical,
     fetch_rating,
     parse_custom_score_palette,
     score_color_for_mode,
@@ -607,7 +612,7 @@ from ratings import (
     _score_color_alt,
     _score_color_metal,
 )
-from tmdb import composite_logo, logo_centre_y, fetch_logo, image_language_order, fetch_poster_metadata, fetch_poster_image, fetch_backdrop_image, fetch_trending_rank, fetch_trending_candidates, fetch_popular_candidates, fetch_supplemental_candidates, fetch_catalog_candidates, fetch_release_status, fetch_recent_movie_digital_release_date, svg_logo_supported, tmdb_metadata_cache_key, _CROP_VERSION, _fetch_metahub_logo, LOGO_ABS_MAX_H, TEXT_FORWARD_PRIORITIES as _TEXT_FORWARD_LOGO_PRIORITIES
+from tmdb import composite_logo, logo_centre_y, fetch_logo, image_language_order, fetch_poster_metadata, fetch_poster_image, fetch_backdrop_image, fetch_landscape_image, fetch_trending_rank, fetch_trending_candidates, fetch_popular_candidates, fetch_supplemental_candidates, fetch_catalog_candidates, fetch_release_status, fetch_recent_movie_digital_release_date, svg_logo_supported, tmdb_metadata_cache_key, _CROP_VERSION, _fetch_metahub_logo, LOGO_ABS_MAX_H, TEXT_FORWARD_PRIORITIES as _TEXT_FORWARD_LOGO_PRIORITIES
 
 # Logo priorities that consult the secondary preferred language ("custom").
 # Elsewhere the secondary language is inert and must be kept out of the image
@@ -617,6 +622,7 @@ _SECONDARY_LANGUAGE_PRIORITIES = frozenset({
     "native_custom_original_text",
 })
 import tvdb
+import anime
 
 # ---------------------------------------------------------------------------
 # Persistent HTTP client
@@ -672,9 +678,111 @@ def _check_imdb_id(val: str) -> None:
         raise HTTPException(status_code=400, detail="Invalid imdb_id")
 
 
+def _normalise_optional_id(raw: str | None, name: str) -> str:
+    """Trim an optional id param, reading an unsubstituted placeholder as absent.
+
+    A template pasted into a metadata provider arrives with the placeholder
+    still in it when that provider has no id for the title — AIOMetadata's
+    optional "{name?}" form is left verbatim by older builds, and some addons
+    reject the "?" syntax outright so operators write the plain form. Either way
+    the value is "no id", not a malformed one, and 400ing it would take down
+    every poster served through that template.
+
+    Deliberately narrow: only this parameter's own two literals. Accepting any
+    brace-wrapped value would silently swallow genuine typos.
+    """
+    value = (raw or "").strip()
+    if value in ("{" + name + "}", "{" + name + "?}"):
+        return ""
+    return value
+
+
+def _canonical_rating_id(imdb_id: str, anime_key: str, tmdb_id: str) -> str:
+    """The immutable cache/coalescing identity for a request.
+
+    Chosen once, before any metadata is fetched, and never revised: it keys the
+    rating cache read, the rating cache write, the coalescing map and the
+    back-off tables, so a value that changed mid-request would read one row and
+    write another — turning every subsequent request for that title into a fresh
+    MDBList call, permanently.
+
+    An IMDb id discovered later from TMDB metadata therefore never lands here.
+    See _quality_identity() for the identity that may use it.
+
+    The "tmdb:" form can't collide with a bare TMDB id or a tt-prefixed IMDb id,
+    and matches the namespacing the anime path already stores in these columns —
+    so no migration is needed.
+    """
+    return imdb_id or anime_key or f"tmdb:{tmdb_id}"
+
+
+def _quality_identity(
+    imdb_id: str, anime_key: str, effective_imdb_id: str | None
+) -> str | None:
+    """The id sent to the configured quality source, or None to skip the lookup.
+
+    Unlike the rating identity this is an *upstream* identity — Torrentio, Comet,
+    AIOStreams and QualiCache have to recognise it — so it is resolved after
+    metadata, and may use an IMDb id that only TMDB knew about.
+
+    Precedence is load-bearing. The anime-native id outranks a TMDB-discovered
+    IMDb id because it is what Stremio itself sends those addons for anime, and
+    because promoting the tt id would orphan every quality row already cached
+    under "kitsu:…". A title with no IMDb id at all yields None: there is no
+    accepted "tmdb:<id>" stream id for the ordinary sources, so the lookup is
+    skipped rather than issued in a form nothing answers.
+    """
+    return imdb_id or anime_key or effective_imdb_id or None
+
+
 def _check_type(val: str) -> None:
     if val not in _VALID_TYPES:
         raise HTTPException(status_code=400, detail="Invalid type")
+
+
+def _resolve_anime_request(
+    anilist_id: str, kitsu_id: str, stremio_id: str = ""
+) -> "tuple[str | None, int | None]":
+    """Select the anime provider for this request, or (None, None) for the
+    ordinary TMDB path.
+
+    *stremio_id* is the preferred input: it carries the raw Stremio meta id
+    ("kitsu:7442", "tt0903747", "tmdb:1396"), so a client can send it with a
+    plain, always-populated placeholder and never needs the optional "{name?}"
+    syntax that some addons reject. Non-anime ids simply yield the TMDB path.
+
+    The per-namespace params remain accepted so URLs generated before this
+    existed keep working.
+
+    A malformed per-namespace id raises 400 rather than falling through to the
+    TMDB path, where it would surface as a confusing "Invalid tmdb_id".  AniList
+    wins when both are supplied — arbitrary, but deterministic, so a client that
+    sends both always lands on the same cache entry.
+    """
+    if not _cfg.ANIME_SOURCES_ENABLED:
+        return None, None
+
+    # A raw Stremio id is never malformed from our point of view — anything we
+    # don't recognise is just a non-anime title — so it never raises.
+    namespace, parsed = anime.parse_stremio_id(stremio_id)
+    if namespace is not None:
+        return namespace, parsed
+    for namespace, raw in (("anilist", anilist_id), ("kitsu", kitsu_id)):
+        raw = (raw or "").strip()
+        if not raw:
+            continue
+        # A template pasted into a metadata provider may arrive with the
+        # placeholder unsubstituted ("{kitsu_id}") when that provider has no id
+        # for the title. Treat it as absent rather than malformed — otherwise a
+        # single anime placeholder in the URL would 400 every live-action
+        # poster served through the same template.
+        if raw.startswith("{") and raw.endswith("}"):
+            continue
+        parsed = anime.parse_anime_id(namespace, raw)
+        if parsed is None:
+            raise HTTPException(status_code=400, detail=f"Invalid {namespace}_id")
+        return namespace, parsed
+    return None, None
 
 
 # ---------------------------------------------------------------------------
@@ -697,9 +805,9 @@ def _resolve_mdblist_key(query_key: str) -> str | None:
     return None
 
 
-def _rating_retry_key(imdb_id: str, mdblist_key: str) -> tuple[str, str]:
+def _rating_retry_key(canonical_id: str, mdblist_key: str) -> tuple[str, str]:
     """Identify retry state for one title on one MDBList API key."""
-    return imdb_id, mdblist_key
+    return canonical_id, mdblist_key
 
 
 def _detection_vote_ok(vote_count: int | None) -> bool:
@@ -764,8 +872,21 @@ class RequestConfig:
     #   0 = Year (Genre + year, rating as a colour-coded pip — the original look)
     #   1 = Rating (Genre | Score, score printed as text)
     #   2 = Year + Rating (Genre | Year | Score)
+    #   3 = Split (the mode-2 group split across both margins)
     minimalist_append_mode: int = 0
     minimalist_score_out_of_10: bool = False
+    # Centre the strip on the poster instead of hanging it off the right margin,
+    # so it sits under the logo (which is centred).  No effect under Split,
+    # whose two groups are defined by the margins they sit on.
+    minimalist_center: bool = False
+    # Separator glyphs.  The field separator (genre | year) is "pip" — the
+    # silver bar — or "bullet"; it covers Year mode's score-coloured separator
+    # too, which takes the same shape in the score's colour.  The rating
+    # separator, immediately before a printed score, adds "star" and defaults
+    # to it.  Both default to what the mode already drew, so nothing changes
+    # for anyone who doesn't ask.
+    minimalist_separator: str = "pip"
+    minimalist_rating_separator: str = "star"
 
     # Frosted bar (rating_display_mode == 4)
     bar_height_ratio:        float = 0.080
@@ -832,11 +953,40 @@ class RequestConfig:
     top_gradient:    str = "high"   # off | low | medium | high | custom - strength of the top vignette
     bottom_gradient: str = "high"   # off | low | medium | high | custom - strength of the bottom vignette
     top_vignette_sash_only: bool = False
+    # Tint a vignette from the poster art instead of painting it black.  Chosen per
+    # band: the top sits under sashes, badges and the age rating while the bottom
+    # sits under the logo and rating bar, so they are not one decision.  Both draw
+    # the same whole-poster colour sample the frosted bar / notch / sash use, so a
+    # tinted vignette always agrees with them.  (Legacy `vignette_poster_color`
+    # sets both — see build_request_config.)
+    vignette_poster_color_top: bool = False
+    vignette_poster_color_bottom: bool = False
+    # Defaults for the sliders and their two toggles are what the tuning settled
+    # on; the two per-band toggles above stay off because tinting a vignette is a
+    # transformative change to every poster on a shelf and belongs opted into.
+    vignette_color_saturation: float = 2.5  # chroma of the tint (0 = plain black vignette)
+    vignette_color_lightness: float = 1.3   # scales the tint's Value (1.0 = the tuned base)
+    vignette_color_blur: float = 1.0        # 0 = follows the art, 1 = flat dominant colour
+    vignette_color_ramp: bool = True        # ramp between the poster's two colours, not one flat tint
+    vignette_color_local: bool = True       # weigh the band's own seam against the whole poster
     top_gradient_opacity: float | None = None
     top_gradient_height: float | None = None
     bottom_gradient_opacity: float | None = None
     bottom_gradient_height: float | None = None
     hide_genre: bool = False
+    # --- Landscape (16:9) rendering -------------------------------------
+    # "portrait" (default, unchanged) | "landscape".  Landscape is a separate
+    # renderer, not a variant of the portrait layout — see landscape.py.
+    shape: str = "portrait"
+    # Which art the landscape renderer draws on:
+    #   "textless" — the language-neutral backdrop, with our logo composited
+    #   "original" — the highest-voted language-tagged backdrop (title treatment
+    #                already baked in), served as-is with no logo of ours
+    landscape_art: str = "textless"
+    # Where the info badge sits: "top_left" | "top_right" | "logo".  "logo"
+    # stacks it above the logo in textless mode; in original-art mode there is
+    # no logo of ours to stack on, so it takes the bottom-left slot itself.
+    landscape_badge_pos: str = "top_left"
     score_color_mode: int = 2
     score_custom_palette: CustomScorePalette | None = None
     sash_badge: bool = False              # legacy; superseded by sash_mode (kept for back-compat parsing)
@@ -845,9 +995,17 @@ class RequestConfig:
     sash_badge_size_w: float = 1.05      # horizontal scale of badge
     sash_badge_size_h: float = 1.05      # vertical scale of badge
     sash_badge_inset: float = 0.0          # top-edge offset as fraction of poster height (± small)
+    sash_badge_pad:   float = 1.0          # vertical padding scale (<1 tightens top/bottom space)
     sash_badge_font_ratio:   float = 0.43  # font size as fraction of badge height
+    use_global_ui_color: bool = False
+    text_drop_shadow: bool = True
+    frosted_glass_intensity: int = 0
     sash_badge_frost_opacity: float = 0.75 # frosted overlay opacity (0.0–1.0)
     sash_badge_frost_saturation: float = 1.2 # frosted colour-cast strength (0 = grey)
+    # Take the frosted notch's colour from whatever a tinted vignette landed on,
+    # instead of from its own whole-poster sample.  Ignored when neither band is
+    # tinted, or when the band that is came out too near black to have a colour.
+    notch_vignette_color: bool = False
     # Reference colour mode: match the frosted tint to the poster's true colour
     # (bolder, un-pastel) instead of the saturation-scaled frosted tint. Global.
     frost_reference:         bool  = False
@@ -858,14 +1016,6 @@ class RequestConfig:
     rating_text_color: tuple[int, int, int] | None = None
     sash_text_color:   tuple[int, int, int] | None = None
 
-    # --- TUE VARIABILI CUSTOM ---
-    frosted_glass_intensity: int = 90
-    gradient_top_intensity: int = 50
-    gradient_bottom_intensity: int = 70
-    grad_color_top: str = "black"  
-    grad_color_bot: str = "global"  
-    use_global_ui_color: bool = False
-    text_drop_shadow: bool = True
 
 def _parse_bool(val: str | None, default: bool) -> bool:
     if val is None:
@@ -1001,6 +1151,18 @@ def build_request_config(params: dict) -> RequestConfig:
         cfg.bottom_gradient = "custom"
 
     cfg.top_vignette_sash_only = _b("top_vignette_sash_only", cfg.top_vignette_sash_only)
+    # vignette_poster_color was a single toggle covering both bands before they were
+    # split. Honour it as the default for each side so existing URLs and presets
+    # keep rendering identically; an explicit per-band param wins over it.
+    _vpc_legacy = _b("vignette_poster_color", False)
+    cfg.vignette_poster_color_top    = _b("vignette_poster_color_top",    _vpc_legacy)
+    cfg.vignette_poster_color_bottom = _b("vignette_poster_color_bottom", _vpc_legacy)
+    cfg.vignette_color_saturation = _f("vignette_color_saturation", cfg.vignette_color_saturation, 0.0, 3.0)
+    cfg.vignette_color_blur       = _f("vignette_color_blur",       cfg.vignette_color_blur,       0.0, 1.0)
+    cfg.vignette_color_lightness  = _f("vignette_color_lightness",  cfg.vignette_color_lightness,
+                                       _VIGNETTE_LIGHT_MIN, _VIGNETTE_LIGHT_MAX)
+    cfg.vignette_color_ramp    = _b("vignette_color_ramp",    cfg.vignette_color_ramp)
+    cfg.vignette_color_local   = _b("vignette_color_local",   cfg.vignette_color_local)
     val_tgo = params.get("top_gradient_opacity")
     if val_tgo is not None:
         try: cfg.top_gradient_opacity = float(val_tgo)
@@ -1019,16 +1181,15 @@ def build_request_config(params: dict) -> RequestConfig:
         except ValueError: pass
     cfg.hide_genre = _b("hide_genre", cfg.hide_genre)
 
-    cfg.frosted_glass_intensity = _i("frosted_glass_intensity", cfg.frosted_glass_intensity, 0, 250)
-    _gct = (params.get("grad_color_top") or "").strip().lower()
-    if _gct in ("black", "local", "global"):
-        cfg.grad_color_top = _gct
-    _gcb = (params.get("grad_color_bot") or "").strip().lower()
-    if _gcb in ("black", "local", "global"):
-        cfg.grad_color_bot = _gcb
-    cfg.use_global_ui_color = _b("use_global_ui_color", cfg.use_global_ui_color)
-    cfg.text_drop_shadow = _b("text_drop_shadow", cfg.text_drop_shadow)
-
+    _shape = (params.get("shape") or "").strip().lower()
+    if _shape in ("portrait", "landscape"):
+        cfg.shape = _shape
+    _ls_art = (params.get("landscape_art") or "").strip().lower()
+    if _ls_art in ("textless", "original"):
+        cfg.landscape_art = _ls_art
+    _ls_badge = (params.get("badge_pos") or "").strip().lower()
+    if _ls_badge in ("top_left", "top_right", "logo"):
+        cfg.landscape_badge_pos = _ls_badge
 
     cfg.sash_badge              = _b("sash_badge",              cfg.sash_badge)
     # sash_mode supersedes the legacy sash_badge bool; fall back to it for old
@@ -1041,9 +1202,14 @@ def build_request_config(params: dict) -> RequestConfig:
     elif "sash_badge" in params:
         cfg.sash_mode = "notch" if cfg.sash_badge else "sash"
     cfg.sash_badge_inset         = _f("sash_badge_inset",         cfg.sash_badge_inset,         -0.02, 0.02)
+    cfg.sash_badge_pad           = _f("sash_badge_pad",           cfg.sash_badge_pad,           0.5, 1.5)
     cfg.sash_badge_font_ratio    = _f("sash_badge_font_ratio",    cfg.sash_badge_font_ratio,    0.10, 1.0)
+    cfg.use_global_ui_color     = _b("use_global_ui_color",     cfg.use_global_ui_color)
+    cfg.text_drop_shadow        = _b("text_drop_shadow",        cfg.text_drop_shadow)
+    cfg.frosted_glass_intensity = _i("frosted_glass_intensity", cfg.frosted_glass_intensity, 0, 100)
     cfg.sash_badge_frost_opacity = _f("sash_badge_frost_opacity", cfg.sash_badge_frost_opacity, 0.0, 1.0)
     cfg.sash_badge_frost_saturation = _f("sash_badge_frost_saturation", cfg.sash_badge_frost_saturation, 0.0, 2.0)
+    cfg.notch_vignette_color        = _b("notch_vignette_color", cfg.notch_vignette_color)
     cfg.sash_badge_size_w       = _f("sash_badge_size_w",       cfg.sash_badge_size_w,       0.5, 2.0)
     cfg.sash_badge_size_h       = _f("sash_badge_size_h",       cfg.sash_badge_size_h,       0.5, 2.0)
     _style_raw = params.get("sash_badge_style", cfg.sash_badge_style)
@@ -1055,7 +1221,7 @@ def build_request_config(params: dict) -> RequestConfig:
     cfg.greyscale_no_quality    = _b("greyscale_no_quality",    cfg.greyscale_no_quality)
     cfg.score_color_mode        = _i("score_color_mode",       cfg.score_color_mode,       0,   3)
     cfg.score_custom_palette    = parse_custom_score_palette(params.get("score_custom_palette"))
-    cfg.badge_display_mode      = _i("badge_display_mode",     cfg.badge_display_mode,     0,   5)
+    cfg.badge_display_mode      = _i("badge_display_mode",     cfg.badge_display_mode,     0,   6)
     cfg.rating_display_mode     = _i("rating_display_mode",    cfg.rating_display_mode,    0,   4)
 
     if "show_quality_badges" in params and "badge_display_mode" not in params:
@@ -1087,8 +1253,17 @@ def build_request_config(params: dict) -> RequestConfig:
     cfg.minimalist_mode_font_size_ratio = _f("minimalist_mode_font_size_ratio", cfg.minimalist_mode_font_size_ratio, 0.0, 0.5)
     cfg.minimalist_mode_font_x_offset = _f("minimalist_mode_font_x_offset", cfg.minimalist_mode_font_x_offset, 0.0, 1.0)
     cfg.minimalist_mode_font_y_offset = _f("minimalist_mode_font_y_offset", cfg.minimalist_mode_font_y_offset, 0.0, 1.0)
-    cfg.minimalist_append_mode = _i("minimalist_append_mode", cfg.minimalist_append_mode, 0, 2)
+    cfg.minimalist_append_mode = _i("minimalist_append_mode", cfg.minimalist_append_mode, 0, 3)
     cfg.minimalist_score_out_of_10 = _b("minimalist_score_out_of_10", cfg.minimalist_score_out_of_10)
+    cfg.minimalist_center = _b("minimalist_center", cfg.minimalist_center)
+    _msep = (params.get("minimalist_separator") or "").strip().lower()
+    if _msep in ("pip", "bullet"):
+        cfg.minimalist_separator = _msep
+    # "star" only here: it labels the score it sits in front of, so it has
+    # nothing to say between a genre and a year.
+    _mrsep = (params.get("minimalist_rating_separator") or "").strip().lower()
+    if _mrsep in ("pip", "bullet", "star"):
+        cfg.minimalist_rating_separator = _mrsep
 
     cfg.bar_height_ratio        = _f("bar_height_ratio",        cfg.bar_height_ratio,        0.04, 0.20)
     cfg.bar_font_size_ratio     = _f("bar_font_size_ratio",     cfg.bar_font_size_ratio,     0.15, 0.70)
@@ -1227,6 +1402,735 @@ _BOTTOM_GRADIENT_LEVELS: dict[str, tuple[float, int] | None] = {
 # other.
 _BOTTOM_GRADIENT_CURVE = 1.5
 
+# --- Poster-coloured vignette ------------------------------------------------
+# HSV Value and Saturation of the tint at full slider strength.  Both are keyed
+# to the *slider*, never to how saturated the source art happens to be: the art
+# contributes hue, the slider contributes intensity.  Deriving intensity from the
+# source instead made output wildly inconsistent across a shelf — a vivid red
+# poster earned both more chroma and more Value and blew out, while a muted one
+# was scaled down twice over and barely showed at the same setting.
+_VIGNETTE_TINT_V = 0.38
+_VIGNETTE_TINT_S = 1.00
+# Slider value at which the tint reaches that full strength.  This is the top of
+# the configurator's range, so the slider maps linearly onto 0 → full.
+_VIGNETTE_SAT_FULL = 3.0
+# The lightness slider scales _VIGNETTE_TINT_V and nothing else, so 1.0 is exactly
+# the tuned value above and the two ends are a near-black band and an airy wash of
+# the same hue.  It deliberately does *not* relax the chroma ceiling: that ceiling
+# exists to stop a band overpowering the art, and a lighter band overpowers more,
+# not less.  Raising lightness alone therefore lifts the band and lets the cap
+# take the colour back out of it — ask for both and you raise saturation too.
+_VIGNETTE_LIGHT_MIN = 0.4
+_VIGNETTE_LIGHT_MAX = 2.5
+# Noise gate on the sampled hue, in chroma (Value × Saturation): below _FLOOR the
+# sample is treated as colourless and the vignette stays black, reaching full
+# trust at _SOLID.  Deliberately generous — this exists only to reject greyscale
+# art and near-black shadow noise, NOT to scale down honestly muted palettes,
+# which is the mistake that made low-saturation posters need a high Value before
+# they read at all.
+_VIGNETTE_HUE_FLOOR = 0.02
+_VIGNETTE_HUE_SOLID = 0.08
+# --- Which hue the poster is "made of" ---------------------------------------
+# The tint's hue is chosen from a chroma-weighted hue histogram of the whole
+# poster rather than from its largest colour cluster.  A cluster pick answers
+# "what is the biggest single colour here", which is the wrong question: it let a
+# red coat covering 1.6% of an otherwise black-and-white Schindler's List beat the
+# greyscale it stands in, and let a saturated 8% brown outrank the pale blue that
+# is half of a hazy landscape.  Summing chroma per hue instead answers "how much
+# of this poster is actually this colour", which is what a whole-band wash needs.
+_VIGNETTE_HUE_BINS = 36
+# Bins either side of a peak that count toward it.  Colour in real art is spread
+# over neighbouring hues — a sunset is not one hue but a band of them — so support
+# is measured over a family (±3 bins ≈ ±30°), not a single slice.
+_VIGNETTE_HUE_SPAN = 3
+# Faces are everywhere in poster art and are nobody's idea of a poster's colour,
+# but they are still part of it — a sepia portrait really is warm.  Half weight
+# keeps skin from *deciding* the hue while letting it corroborate one.
+_VIGNETTE_SKIN_WEIGHT = 0.5
+# ...and a pixel too dark to read as a colour doesn't get a vote at all, however
+# chromatic it measures.  This is where invented reds come from, and why they are
+# nearly always red: black in real artwork is not neutral.  The Wire's lower half
+# is RGB (13, 4, 3) — the eye calls that black, but it is HSV Saturation 0.79 at
+# hue 0.02, and there is enough of it to outvote the poster's actual yellow.  Film
+# stock, colour grading and chroma subsampling all leave warm residue in the
+# shadows; almost nothing leaves green or blue residue there, which is why one
+# colour kept turning up in posters that hadn't got it.  Chroma weighting alone
+# doesn't save you: each pixel counts for little, but half a poster of them adds
+# up to more support than a real colour covering a tenth of it.
+_VIGNETTE_DARK_FLOOR = 0.06   # below this Value a pixel's hue is discarded
+_VIGNETTE_DARK_SOLID = 0.16   # ...and above this it is trusted in full
+# Support (mean chroma per pixel landing in one hue family) at which the tint is
+# fully trusted, and below which it fades to black.  This is the whole
+# black-and-white answer: a poster whose colour is one small prop scores an order
+# of magnitude below one that is genuinely graded, so it keeps the plain black
+# vignette instead of announcing an accent nothing else in the art supports.
+_VIGNETTE_SUPPORT_LOW  = 0.006
+_VIGNETTE_SUPPORT_FULL = 0.028
+# A peak is only worth taking if it actually beat the alternatives.  Where a strip
+# of art is two colours in equal measure — a red jacket against a teal sky, at the
+# depth where the band happens to meet both — the winner is decided by a rounding
+# difference, and the band paints a colour the strip is only half made of.  Worse,
+# it is unstable: the same poster re-encoded picks the other one.  So the tint
+# fades out as its nearest real rival closes in, and a dead heat lands on black,
+# which is the honest answer to "what colour is this" when there are two.
+_VIGNETTE_RIVAL_HUE   = 0.15   # hue distance at which a rival is a *different* colour
+_VIGNETTE_RIVAL_CLEAR = 0.75   # rival/peak below this is a clear win, above it fades
+# Confidence a band has to reach before a frosted notch is allowed to match it.
+# The colour a low-confidence band paints is mostly black however vivid the hue it
+# was found from, and a notch matching that hue would be the one thing on the
+# poster wearing it — the opposite of the agreement the option is asking for.
+_VIGNETTE_MATCH_MIN_CONF = 0.35
+# Perceived brightness of a fully saturated hue swings roughly 8x between blue
+# and yellow at one HSV Value, so matching Value alone still leaves a shelf
+# uneven — it only moves which posters shout.  Pull each hue part of the way
+# toward a common luminance instead: 0.0 would keep raw Value, 1.0 would match
+# luminance exactly and drive blue to a clipped, garish extreme (it cannot be
+# bright without being vivid).  Half cuts the spread from ~8x to under 3x while
+# leaving every hue inside its natural range.
+_VIGNETTE_LUMA_REF     = 0.40
+_VIGNETTE_LUMA_CORRECT = 0.5
+# ...and of that correction, the share taken out of Saturation rather than Value
+# when a hue is *brighter* than the reference.  There is no such thing as a dark
+# yellow: drop a gold's Value far enough to match a blue's luminance and it stops
+# reading as gold and starts reading as olive mud, which is exactly what made
+# yellow and amber posters the worst outputs on a shelf.  Spending half the
+# correction on chroma instead lands the same luminance as a paler, cleaner gold.
+# Only bright hues are affected — a blue or red is already darker than the
+# reference and keeps its full Value boost.
+_VIGNETTE_LUMA_SAT_SHARE = 0.5
+_LUMA_COEFFS = np.array([0.299, 0.587, 0.114], dtype=np.float32)
+# Ceiling on how *colourful* the tint is allowed to be, as CIELAB C* at full
+# slider — the other half of the same job the luma correction above does.  Value
+# and Saturation say nothing about perceived colourfulness: at one luminance a red
+# or a violet carries roughly twice the chroma of a gold or a teal, which is why a
+# shelf matched for brightness still had a few bands that took the poster over
+# while the rest sat under it.  Everything the eye called pleasant measured 15–19,
+# everything called too much measured 29–50, so the budget is set just above the
+# pleasant band and scaled by the slider, leaving the slider live across its range.
+_VIGNETTE_TINT_MAX_CHROMA = 27.0
+_SRGB_TO_XYZ = np.array([[0.4124, 0.3576, 0.1805],
+                         [0.2126, 0.7152, 0.0722],
+                         [0.0193, 0.1192, 0.9505]], dtype=np.float32)
+_D65_WHITE   = np.array([0.95047, 1.0, 1.08883], dtype=np.float32)
+
+
+def _lab_chroma(rgb: np.ndarray) -> np.ndarray:
+    """CIELAB C* of an sRGB array shaped (..., 3) on 0–255.
+
+    Perceptual chroma, not HSV Saturation: the point is to compare how colourful
+    two different hues look, which HSV cannot answer — a fully saturated navy and
+    a fully saturated gold are both S=1 and nowhere near each other on the eye.
+    """
+    c = np.clip(rgb, 0.0, 255.0) / 255.0
+    lin = np.where(c <= 0.04045, c / 12.92, ((c + 0.055) / 1.055) ** 2.4)
+    xyz = (lin @ _SRGB_TO_XYZ.T) / _D65_WHITE
+    f   = np.where(xyz > 0.008856, np.cbrt(xyz), 7.787 * xyz + 16.0 / 116.0)
+    return np.hypot(500.0 * (f[..., 0] - f[..., 1]), 200.0 * (f[..., 1] - f[..., 2]))
+
+
+def _vignette_hue_profile(
+    poster: Image.Image, rows: np.ndarray | None = None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """(rgb, hue, weight, support) for a poster, as flat 64x64 fields plus a
+    per-hue-family support curve.
+
+    ``rows`` optionally weights each row of the region before anything else —
+    used to fade out the part of a seam the band will hide (see
+    _vignette_band_colour).  It is resampled to the working height, so it can be
+    given at the region's own resolution.
+
+    ``weight`` is each pixel's chroma — max minus min channel — so neutrals
+    contribute nothing at any brightness, unlike HSV Saturation which explodes on
+    near-black (pure black plus a little warm noise reads S=0.22 and used to hand
+    black-and-white art an invented olive tint).  It is then faded out over the
+    shadows, where a hue is measurable but not visible, and halved over skin; see
+    _VIGNETTE_DARK_FLOOR and _VIGNETTE_SKIN_WEIGHT.
+
+    ``support[i]`` is the mean weight per pixel falling in bin ``i``'s hue family,
+    i.e. how much of the poster is that colour.  It is both how the hue is chosen
+    (the peak) and how far the tint is trusted (the peak's height).
+    """
+    a = np.asarray(poster.convert("RGB").resize((64, 64), Image.Resampling.BOX),
+                   dtype=np.float32) / 255.0
+    r, g, b = a[..., 0], a[..., 1], a[..., 2]
+    maxc = a.max(axis=-1)
+    chroma = maxc - a.min(axis=-1)
+    safe = np.maximum(chroma, 1e-6)
+    hue = np.where(maxc == r, ((g - b) / safe) % 6.0,
+          np.where(maxc == g, (b - r) / safe + 2.0, (r - g) / safe + 4.0)) / 6.0
+    hue = np.where(chroma <= 1e-6, 0.0, hue)
+    sat = np.where(maxc > 0, chroma / np.maximum(maxc, 1e-6), 0.0)
+    # Vectorised _is_skin_tone (awards.py) — same warm R>G>B band, same limits.
+    skin = ((r > g) & (g > b) & (hue >= 0.015) & (hue <= 0.11)
+            & (sat >= 0.20) & (sat <= 0.68) & (maxc >= 0.35))
+    weight = chroma * np.where(skin, _VIGNETTE_SKIN_WEIGHT, 1.0)
+    weight *= np.clip((maxc - _VIGNETTE_DARK_FLOOR)
+                      / (_VIGNETTE_DARK_SOLID - _VIGNETTE_DARK_FLOOR), 0.0, 1.0)
+    if rows is not None and len(rows):
+        n = weight.shape[0]
+        weight = weight * np.interp(
+            np.linspace(0.0, 1.0, n), np.linspace(0.0, 1.0, len(rows)), rows
+        ).astype(np.float32)[:, None]
+    idx = np.minimum((hue * _VIGNETTE_HUE_BINS).astype(np.int32), _VIGNETTE_HUE_BINS - 1)
+    hist = np.bincount(idx.ravel(), weights=weight.ravel(),
+                       minlength=_VIGNETTE_HUE_BINS) / weight.size
+    support = np.zeros(_VIGNETTE_HUE_BINS, dtype=np.float64)
+    for offset in range(-_VIGNETTE_HUE_SPAN, _VIGNETTE_HUE_SPAN + 1):
+        # Triangular window, wrapped: hue is circular, so bin 35 neighbours bin 0.
+        support += (1.0 - abs(offset) / (_VIGNETTE_HUE_SPAN + 1)) * np.roll(hist, -offset)
+    return a, hue, weight, support
+
+
+def _vignette_family_rgb(
+    a: np.ndarray, hue: np.ndarray, weight: np.ndarray, centre: float
+) -> tuple[float, float, float] | None:
+    """The art's own colour at hue ``centre``: the weighted mean of the pixels in
+    that family, pulled back onto the family's hue.
+
+    Averaging alone drifts the hue toward whatever else is nearby, which is how a
+    family's own colour comes back as a slightly different one.  Saturation and
+    Value are kept from the art, so the result is still a colour the poster has.
+    """
+    dh = np.abs(hue - centre)
+    dh = np.minimum(dh, 1.0 - dh)
+    mask = (dh <= (_VIGNETTE_HUE_SPAN + 0.5) / _VIGNETTE_HUE_BINS) * weight
+    total = mask.sum()
+    if total <= 0:
+        return None
+    import colorsys
+    mean = [float((a[..., i] * mask).sum() / total) for i in range(3)]
+    _h, s, v = colorsys.rgb_to_hsv(*mean)
+    return tuple(c * 255.0 for c in colorsys.hsv_to_rgb(centre, s, v))
+
+
+def _vignette_hue_pick(
+    poster: Image.Image, rows: np.ndarray | None = None,
+) -> tuple[tuple[float, float, float] | None, float]:
+    """(tint colour, confidence) for a region — the hue the most of it is made of.
+
+    ``confidence`` answers "is this colour really what the art is", and it is the
+    same number that chose the hue: the support behind the winning family.  A
+    poster that is genuinely graded — a cold war photo, a navy Terminator, a teal
+    landscape — clears _VIGNETTE_SUPPORT_FULL even when muted, because the cast
+    covers it.  A black-and-white one whose only colour is a coat or a face fades
+    to black instead, and both a plain grey and a warm off-white read as no colour
+    at all.  The tint is never invented, only found.
+    """
+    a, hue, weight, support = _vignette_hue_profile(poster, rows)
+    peak = int(np.argmax(support))
+    return (_vignette_family_rgb(a, hue, weight, (peak + 0.5) / _VIGNETTE_HUE_BINS),
+            _vignette_hue_confidence(support, peak))
+
+
+def _vignette_hue_confidence(support: np.ndarray, peak: int) -> float:
+    """How far a hue peak is to be trusted: how much of the art carries it, and
+    how clearly it beat the best rival far enough away to be a different colour
+    rather than its own family's shoulder."""
+    conf = (support[peak] - _VIGNETTE_SUPPORT_LOW) / (_VIGNETTE_SUPPORT_FULL - _VIGNETTE_SUPPORT_LOW)
+    bins  = np.arange(_VIGNETTE_HUE_BINS)
+    apart = np.minimum(np.abs(bins - peak), _VIGNETTE_HUE_BINS - np.abs(bins - peak))
+    rival = support[apart >= _VIGNETTE_RIVAL_HUE * _VIGNETTE_HUE_BINS]
+    if rival.size and support[peak] > 0:
+        margin = 1.0 - rival.max() / support[peak]
+        conf = min(conf, margin / (1.0 - _VIGNETTE_RIVAL_CLEAR))
+    return float(np.clip(conf, 0.0, 1.0))
+
+
+def _vignette_dominant_rgb(
+    poster: Image.Image,
+) -> tuple[tuple[float, float, float], tuple[float, float, float], float]:
+    """Whole-poster colour for the vignette tint → (strict_pick, vignette_pick,
+    confidence).
+
+    ``strict_pick`` is the ordinary cluster pick the frosted bar / notch / sash
+    use, returned so the caller can share it with them rather than quantising
+    twice.  The vignette's own pick comes from _vignette_hue_pick instead: a
+    frosted element is a small patch that wants to match one prominent colour,
+    while a vignette is a wash across the whole width and wants the colour the
+    poster is mostly made of.  The two agree on ordinary art and part company
+    exactly where they should — on a poster with one vivid accent in a neutral
+    field, which the bar may match and the vignette must not.
+    """
+    rgb, _v, _s, _skin = _dominant_cluster(poster)
+    strict = rgb if rgb is not None else (128.0, 128.0, 128.0)
+    pick, conf = _vignette_hue_pick(poster)
+    return strict, (pick if pick is not None else strict), (conf if pick is not None else 0.0)
+
+
+def _vignette_secondary_rgb(
+    poster: Image.Image, primary: tuple[float, float, float]
+) -> tuple[float, float, float] | None:
+    """Second colour for the two-tone ramp, or None if the art hasn't got one.
+
+    The best-scoring chromatic cluster whose hue is far enough from ``primary`` to
+    actually read as a different colour — a ramp between two shades of one hue is
+    just a flat tint with a smudge in it, so it is better to fall back to flat.
+    Scored by population, biased toward chroma, so the two ends are the poster's
+    two real colours rather than its colour and an incidental highlight.
+
+    Deliberately left on clusters rather than moved onto the hue histogram the
+    primary now uses.  Support answers "how much of the poster is this colour",
+    which is the right question for the wash the whole band takes but the wrong one
+    for its far end: it only ever nominates a *distant* hue, and distant hues blend
+    the short way round the wheel, so the ramp sweeps through violets and magentas
+    the art hasn't got.  Picking the nearest real cluster instead keeps the far end
+    somewhere adjacent, which is what makes the ramp read as depth in the colour
+    rather than as a rainbow laid over the poster.
+
+    Skin is excluded outright, and the coverage bar is high.  Both matter: on a
+    poster that is a man against a blue sky, his face and hands are the only thing
+    far enough from blue to qualify, so without these the ramp announced a second
+    colour — red — that is nowhere in the art.
+    """
+    import colorsys
+    small = poster.convert("RGB")
+    if max(small.size) > 64:
+        small = small.resize((48, 48), Image.Resampling.LANCZOS)
+    try:
+        q = small.quantize(colors=12, method=Image.Quantize.FASTOCTREE)
+    except Exception:
+        q = small.quantize(colors=12)
+    palette, counts = q.getpalette() or [], q.getcolors() or []
+    if not palette or not counts:
+        return None
+    p_h = colorsys.rgb_to_hsv(*(c / 255 for c in primary))[0]
+    total = float(sum(c for c, _ in counts)) or 1.0
+    best, best_score = None, -1.0
+    for count, idx in counts:
+        r, g, b = palette[idx * 3:idx * 3 + 3]
+        h, s, v = colorsys.rgb_to_hsv(r / 255, g / 255, b / 255)
+        if v < _VIGNETTE_RAMP_MIN_V or s < _VIGNETTE_RAMP_MIN_S:
+            continue
+        if v * s < _VIGNETTE_RAMP_MIN_CHROMA:   # a real colour, not compression noise
+            continue
+        if _is_skin_tone(r, g, b):          # a face is not a poster's second colour
+            continue
+        weight = count / total
+        if weight < _VIGNETTE_RAMP_MIN_W:
+            continue
+        dh = abs(h - p_h)
+        dh = min(dh, 1.0 - dh)                           # hue is circular
+        if not _VIGNETTE_RAMP_MIN_HUE <= dh <= _VIGNETTE_RAMP_MAX_HUE:
+            continue
+        score = weight * (0.3 + s * v)
+        if score > best_score:
+            best_score, best = score, (float(r), float(g), float(b))
+    return best
+
+
+def _vignette_level_band(
+    image: Image.Image, box: tuple[int, int, int, int], ramp: Image.Image, amount: float
+) -> None:
+    """Darken over-bright artwork inside one vignette band, in place.
+
+    The tint is composited *over* the art at the vignette's alpha, so whatever the
+    art does at (1 - alpha) lands in the result untouched.  That is the entire
+    reason a poster whose bottom is white cloud reads pale next to one whose bottom
+    is dark, at identical settings — the tint contributes the same to both.  This
+    scales the bright case down so the bleed-through is comparable, weighted by the
+    same alpha ramp so there is no seam, and scaled by ``amount`` — how hard the
+    two sliders are asking for a wash at all — so a faint one doesn't aggressively
+    regrade the poster.
+
+    ``amount`` deliberately does *not* include the tint's confidence.  Hue
+    confidence answers "is this the poster's colour", which has nothing to do with
+    how much art should show through; letting it in meant the posters whose hue was
+    least trusted — the near-monochrome ones — were also the only ones that kept
+    their art legible under the band, which is exactly the inconsistency this
+    function exists to remove.
+
+    Only ever darkens: art already below the bleed budget is left exactly alone.
+    """
+    if amount <= 0:
+        return
+    x0, y0, x1, y1 = box
+    prof = np.asarray(ramp, dtype=np.float32)
+    peak = float(prof.max())
+    if peak <= 0:
+        return
+    band = image.crop(box)
+    art  = np.asarray(band.convert("RGB"), dtype=np.float32)
+    # Alpha-weighted mean luminance of the art, i.e. what actually reaches the eye.
+    w = prof / peak
+    art_luma = float((art @ _LUMA_COEFFS * w).sum() / max(w.sum(), 1e-6))
+    bleed = (1.0 - peak / 255.0) * art_luma
+    if bleed <= _VIGNETTE_ART_BLEED:
+        return
+    k = max(_VIGNETTE_LEVEL_FLOOR, _VIGNETTE_ART_BLEED / bleed)
+    k = 1.0 - (1.0 - k) * min(1.0, amount)
+    mask = ramp.point(lambda a, _p=peak: min(255, int(a * 255 / _p)))
+    # Scale the RGB array rather than Image.point, which on an RGBA band would
+    # scale the alpha channel too.
+    levelled = Image.fromarray(np.clip(art * k, 0, 255).astype(np.uint8), "RGB")
+    image.paste(levelled, (x0, y0), mask=mask)
+
+
+def _vignette_band_colour(
+    poster: Image.Image,
+    seam: tuple[tuple[int, int, int, int], np.ndarray],
+    whole: tuple[tuple[float, float, float], float, tuple[float, float, float] | None,
+                 np.ndarray],
+    local: bool,
+    want_ramp: bool,
+) -> tuple[tuple[float, float, float], float, tuple[float, float, float] | None]:
+    """(tint, confidence, secondary) for one vignette band.
+
+    With ``local`` off this is just the whole-poster pick, so both bands agree and
+    so does every frosted element.
+
+    With it on there are two candidates and a rule for choosing between them.  The
+    seam — the window around the band's inner edge, see _vignette_seam — is where
+    the tint and the artwork are seen together, so a band that matches it reads as
+    the poster's own colour deepening rather than as a different colour arriving.
+    But the seam is a sliver, and a sliver can be unrepresentative: a red coat, a
+    lit shoulder, one lamp.  The whole poster is representative by construction and
+    can be a colour that is nowhere near the join.  Each is right where the other
+    is wrong, and neither is right often enough to use alone.
+
+    So a candidate is scored by the *weaker* of its two supports — how much of the
+    join carries that hue, and how much of the poster does — and the better score
+    wins.  A colour has to be earned twice.  A prop at the join fails on the
+    poster; a poster colour absent from the join fails at the join; a colour that
+    is genuinely both is the one the band should be.  The scores are directly
+    comparable because both curves are in the same units, mean weighted chroma per
+    pixel, and only the two candidates are scored — taking the best hue of the
+    combined curve instead would invent a third colour that neither sample chose.
+
+    Confidence comes from that same combined curve, so a band whose colour only
+    one side supports fades out rather than committing.
+
+    The winner brings its own ramp partner, from the sample that chose it: pairing
+    a seam primary with a secondary from the far end of the poster would ramp
+    toward a colour that isn't anywhere near the join.
+    """
+    if not local:
+        return whole[:3]
+    box, rows = seam
+    region = poster.crop(box)
+    _a, _hue, _w, seam_sup = _vignette_hue_profile(region, rows)
+    both = np.minimum(seam_sup, whole[3])
+    seam_peak, whole_peak = int(np.argmax(seam_sup)), int(np.argmax(whole[3]))
+    peak = seam_peak if both[seam_peak] > both[whole_peak] else whole_peak
+    conf = _vignette_hue_confidence(both, peak)
+    if conf <= 0.0:
+        return whole[:3]
+    if peak == whole_peak and whole[0] is not None:
+        return whole[0], conf, whole[2]
+    tint = _vignette_family_rgb(_a, _hue, _w, (peak + 0.5) / _VIGNETTE_HUE_BINS)
+    if tint is None:
+        return whole[:3]
+    return tint, conf, (_vignette_secondary_rgb(region, tint) if want_ramp else None)
+
+
+def _vignette_hue_gate(field: np.ndarray) -> np.ndarray:
+    """0–1 confidence that each cell of ``field`` carries a usable hue.
+
+    Keyed on chroma — HSV Value x Saturation, which reduces to (max - min) / 255 —
+    so it rejects white, grey and near-black equally, and accepts a dark but vivid
+    hue.  0 means there is nothing there worth tinting from.
+    """
+    maxc = field.max(axis=-1)
+    minc = field.min(axis=-1)
+    chroma = np.where(maxc > 0, (maxc - minc) / 255.0, 0.0)
+    return np.clip(
+        (chroma - _VIGNETTE_HUE_FLOOR) / (_VIGNETTE_HUE_SOLID - _VIGNETTE_HUE_FLOOR), 0.0, 1.0
+    )
+# Horizontal resolution the band is reduced to at blur=0, before being smoothed
+# back up.  High enough that the band visibly follows the art (which is the whole
+# point of the low end of the slider), low enough that faces and title text stay
+# a colour haze rather than a legible ghost.
+_VIGNETTE_TINT_COLUMNS = 64
+# Easing exponents for the blur slider.  Both are front-loaded so the flattening
+# is obvious within the first half of the travel — at a linear ramp the top end
+# was indistinguishable from the bottom, since even a coarse sample is already
+# smooth once it has been scaled back up.
+_VIGNETTE_BLUR_DETAIL_CURVE = 3.0   # how fast the sampled detail collapses
+_VIGNETTE_BLUR_MIX_CURVE    = 0.7   # how fast it commits to the flat dominant colour
+# Peak Gaussian radius applied to the artwork inside the band, as a fraction of
+# poster width so it is resolution-independent.  Flattening the *tint* alone left
+# the art underneath perfectly sharp, which reads as a plain colour cast rather
+# than as blur; frosting the art is what actually sells the top of the slider.
+# The ceiling is what decides whether a busy poster (a spider's legs, a cartoon
+# background) reads as a deliberate wash or as colour sprayed over legible art —
+# at 0.09 even the top of the slider left too much of it standing.  Returns
+# diminish fast above this: a Gaussian takes away detail but not contrast, so
+# doubling the radius again buys a few percent where the bleed budget below buys
+# a third.  Frosting the art is what sells the top of the slider; levelling it is
+# what makes the top of the slider look the same on every poster.
+_VIGNETTE_BLUR_MAX_RATIO = 0.24
+# How much of the artwork's own luminance the band tolerates bleeding through the
+# vignette, in luma units at peak alpha.  The tint's own contribution is already
+# near-constant across posters (~33); what made a bright poster look washed next
+# to a dark one was purely this bleed — a poster whose bottom is white cloud sends
+# ~30 luma through a "high" vignette, a dark one ~3.  Levelling only ever darkens,
+# so dark art is untouched by construction and can never be made worse.
+#
+# This budget, not the blur radius, is what decides whether a band reads as mist
+# or as art seen through a colour cast: blur removes *detail* but keeps contrast,
+# and it is surviving contrast that the eye reads as "the background is still
+# there".  Doubling the radius barely moves that; halving the budget does.
+_VIGNETTE_ART_BLEED  = 3.0
+# ...and the floor has to be low enough for the budget to be reachable on bright
+# art.  At 0.30 a poster whose band is white paper or cloud hit the floor before
+# it hit the budget, so the very posters that showed the most kept showing it.
+_VIGNETTE_LEVEL_FLOOR = 0.12   # never darken the art below this fraction
+# Columns the two-tone ramp is drawn at.  It needs its own floor because the blur
+# slider collapses the sample to a single cell at the top end, which would leave
+# the ramp with nowhere to ramp.
+_VIGNETTE_RAMP_COLUMNS = 24
+# Hue separation (0–1) the ramp's second colour has to sit in.  Below the minimum
+# the two ends are shades of one hue and the ramp reads as a flat tint with a
+# smudge.  Above the maximum they are too far apart to join: the blend takes the
+# short way round the wheel, so a blue reaching for a red goes through violet and
+# magenta, and the band ends up mostly made of colours the poster hasn't got.  A
+# gold to a green is a gradient; a blue to a red is a rainbow.  Flat is the honest
+# fallback for the second case, which is why the window is closed at both ends
+# rather than the minimum simply being raised.
+_VIGNETTE_RAMP_MIN_HUE = 0.08
+_VIGNETTE_RAMP_MAX_HUE = 0.30
+# A ramp endpoint must be a real presence in the art, not a passing accent — it
+# claims half the band.  A 1% highlight promoted to a co-headline colour is a
+# colour the poster does not actually have.
+_VIGNETTE_RAMP_MIN_W = 0.06
+# ...and bright enough to be a colour statement rather than a shadow: a dark brown
+# that is really hair or shading passes a low bar easily and then gets announced
+# as half the poster's palette.
+_VIGNETTE_RAMP_MIN_V = 0.40
+# How chromatic a cluster must be to be a ramp endpoint at all.  Saturation alone
+# is close to meaningless on dark clusters — pure black plus a little warm
+# compression noise reads S=0.22 while its chroma is 0.03 — so both are checked.
+_VIGNETTE_RAMP_MIN_S      = 0.12
+_VIGNETTE_RAMP_MIN_CHROMA = 0.10
+# Depth of the seam window either side of a band's inner edge, as a fraction of
+# the poster.  The window spans both: outside it is the art the band fades into,
+# inside it is the art the band has begun to cover but not yet hidden, and the
+# join the eye actually sees is made of both.  Thin on purpose — reach further and
+# the sample starts answering for content nowhere near the join.
+_VIGNETTE_SEAM_H = 0.08
+
+
+def _vignette_seam(
+    width: int, height: int, edge: int, inward: int, ramp: Image.Image
+) -> tuple[tuple[int, int, int, int], np.ndarray]:
+    """(crop rect, per-row weights) for the seam around a band's inner edge.
+
+    ``edge`` is that edge's y; ``inward`` is +1 when the band lies below it (the
+    bottom vignette) and -1 when it lies above (the top).
+
+    Rows are weighted by how much of the artwork still shows at that height — one
+    minus the band's own alpha — so the window fades out exactly as the art it is
+    reading disappears under the wash.  A flat window would let the first rows
+    inside the band vote as loudly as the untouched art beside them at a shallow
+    setting and be nearly hidden at a deep one, which is what made the tint jump
+    around as the vignette level was changed: the sample was moving over the art
+    without any regard for how much of that art would survive.
+    """
+    depth = max(1, int(height * _VIGNETTE_SEAM_H))
+    y0, y1 = max(0, edge - depth), min(height, edge + depth)
+    if y1 - y0 < 2:                     # degenerate band: read whatever is there
+        y0, y1 = max(0, min(height - 2, y0)), min(height, max(2, y1))
+    alpha = np.asarray(ramp, dtype=np.float32)
+    alpha = alpha.mean(axis=1) if alpha.ndim > 1 else alpha
+    peak  = max(float(alpha.max()), 1.0)
+    # The ramp is stored top-down over the band's own rows, so the band starts at
+    # the edge going down and ends at it going up.
+    start = edge if inward > 0 else edge - len(alpha)
+    into  = np.arange(y0, y1) - start
+    rows  = 1.0 - np.where(
+        (into >= 0) & (into < len(alpha)), alpha[np.clip(into, 0, len(alpha) - 1)], 0.0
+    ) / peak
+    return (0, y0, width, y1), rows.astype(np.float32)
+
+
+def _vignette_tint_band(
+    src: Image.Image,
+    box: tuple[int, int, int, int],
+    dominant: tuple[float, float, float],
+    confidence: float,
+    saturation: float,
+    blur: float,
+    secondary: tuple[float, float, float] | None = None,
+    lightness: float = 1.0,
+) -> Image.Image:
+    """Colour field to paint one vignette band with, sampled from the poster art.
+
+    ``box`` is the band's crop rect in ``src`` — the artwork snapshot taken
+    *before* any gradient darkened it, since sampling the graded image would just
+    return the near-black a previous band already painted.
+
+    ``blur`` (0–1) trades local colour for the whole-poster ``dominant``: at 0 the
+    band follows the art across its width (a red left edge stays red), at 1 it is
+    one flat wash of the dominant colour.  It drives both the coarseness of the
+    downsample and the mix toward the dominant, each on its own front-loaded curve
+    (see _VIGNETTE_BLUR_*_CURVE) so the two ends read as clearly different.  The
+    same slider also frosts the art itself — see _vignette_frost_band, which is
+    what makes the high end read as blur rather than as a flat colour cast.
+
+    ``confidence`` (0–1, from _vignette_hue_pick) is how much of the art actually
+    carries the chosen hue.  It is the only thing besides the slider allowed to
+    affect strength, and it is judged once for the whole region.
+
+    ``saturation`` (0–_VIGNETTE_SAT_FULL) sets the tint's strength on its own; the
+    art supplies only the hue.  Two posters at the same setting therefore land on
+    the same intensity however saturated their art is, differing in hue alone —
+    without that, a shelf of posters is wildly uneven, since a vivid one earns
+    both more chroma and more Value while a muted one is scaled down twice over.
+    0 is exactly black, i.e. the untinted vignette.  Strength moves Value and
+    Saturation together, so the band always darkens the poster as hard as a black
+    vignette would: the slider changes how much hue shows, never how much light
+    the vignette takes away.
+
+    ``lightness`` is the one control that does move it, scaling the tint's Value
+    alone — 1.0 is the tuned default, below it the band tends to black and above
+    it to an airy wash of the same hue.  It cannot lighten a band that has no
+    colour: Value is still multiplied by strength, so saturation 0 stays exactly
+    black however light this is set, and the guarantee that a colourless vignette
+    is pixel-identical to the untinted one survives.
+    """
+    band = src.crop(box).convert("RGB")
+    bw, bh = band.size
+    if bw <= 0 or bh <= 0:
+        return Image.new("RGB", (max(bw, 1), max(bh, 1)), (0, 0, 0))
+
+    # Downsample to a handful of colour cells (BOX = area average, so every pixel
+    # contributes), then let the upscale do the smoothing — far cheaper than a
+    # Gaussian over the full-size band and indistinguishable at this softness.
+    detail = (1.0 - blur) ** _VIGNETTE_BLUR_DETAIL_CURVE
+    cols   = max(1, min(bw, int(round(_VIGNETTE_TINT_COLUMNS * detail))))
+    if secondary is not None:
+        # The ramp needs columns to ramp across, and blur has just taken them away
+        # at the top of its range — give it back a floor of its own.
+        cols = max(1, min(bw, max(cols, _VIGNETTE_RAMP_COLUMNS)))
+    rows   = max(1, min(bh, max(1, cols // 2)))
+    field  = np.asarray(band.resize((cols, rows), Image.Resampling.BOX), dtype=np.float32)
+    if secondary is None:
+        dom = np.asarray(dominant, dtype=np.float32)
+    else:
+        # Two-tone: the poster's two real colours, ramped left to right across the
+        # band, shaped (1, cols, 3) to broadcast over the rows.
+        #
+        # Interpolated along the *hue arc*, not through RGB. A straight RGB lerp
+        # between distant hues passes through desaturated mud — blue to red goes via
+        # grey, which reads as two flat zones butted together rather than a blend.
+        # Walking the short way round the hue wheel keeps every intermediate fully
+        # saturated, so blue to red travels through purple as a gradient should.
+        import colorsys
+        h1, s1, v1 = colorsys.rgb_to_hsv(*(c / 255.0 for c in dominant))
+        h2, s2, v2 = colorsys.rgb_to_hsv(*(c / 255.0 for c in secondary))
+        dh = (h2 - h1 + 0.5) % 1.0 - 0.5          # shortest way round the wheel
+        dom = np.asarray(
+            [
+                [c * 255.0 for c in colorsys.hsv_to_rgb(
+                    (h1 + dh * t) % 1.0, s1 + (s2 - s1) * t, v1 + (v2 - v1) * t)]
+                for t in np.linspace(0.0, 1.0, cols)
+            ],
+            dtype=np.float32,
+        )[None, :, :]
+    if blur > 0:
+        mix   = blur ** _VIGNETTE_BLUR_MIX_CURVE
+        field = field * (1.0 - mix) + dom * mix
+
+    # A cell with no colour of its own borrows the poster's rather than dropping to
+    # black.  White and black are the two things local sampling handles worst — a
+    # snowfield or a shadow has no hue to offer, and leaving those cells black made
+    # whole bands of monochrome posters look untinted.  Borrowing keeps the band
+    # coloured wherever the poster has any colour at all; if the poster has none,
+    # `dominant` is neutral too and the gate below still takes the band to black.
+    borrow = (1.0 - _vignette_hue_gate(field))[..., None]
+    field  = field * (1.0 - borrow) + dom * borrow
+
+    # Per-cell HSV, vectorised.  `full` is the cell's hue at full saturation and
+    # value — i.e. hsv_to_rgb(h, 1, 1) — which lets the tint be rebuilt with the
+    # identity hsv_to_rgb(h, s, v) == v * (1 - s * (1 - full)), no colorsys loop.
+    minc  = field.min(axis=-1)
+    chrom = np.maximum(field.max(axis=-1) - minc, 1e-6)
+    full  = (field - minc[..., None]) / chrom[..., None]
+
+    # Strength comes from the slider and the poster-level `confidence` only — never
+    # from how chromatic this particular cell happens to be.  Cells vary in hue
+    # across the band; they must not vary in intensity, or the band ends up
+    # brighter over the colourful half of the art than the muted half.
+    strength = min(1.0, max(0.0, saturation) / _VIGNETTE_SAT_FULL) * max(0.0, min(1.0, confidence))
+
+    # Equalise across hues as well as across sources: scale each cell's Value by
+    # how far its hue's own luminance sits from the reference, so a yellow band
+    # and a blue band at the same setting land near the same brightness.  A hue
+    # brighter than the reference gives part of that back as chroma instead of
+    # Value (see _VIGNETTE_LUMA_SAT_SHARE), because a gold darkened far enough to
+    # match a navy is no longer gold, it is mud.
+    hue_luma  = np.maximum(full @ _LUMA_COEFFS, 1e-6)
+    hue_ratio = _VIGNETTE_LUMA_REF / hue_luma
+    v_scale   = hue_ratio ** _VIGNETTE_LUMA_CORRECT
+    s_scale   = np.minimum(1.0, hue_ratio) ** _VIGNETTE_LUMA_SAT_SHARE
+    s_eff = _VIGNETTE_TINT_S * strength * s_scale
+    v_eff = np.minimum(
+        1.0,
+        _VIGNETTE_TINT_V * strength * v_scale
+        * min(_VIGNETTE_LIGHT_MAX, max(_VIGNETTE_LIGHT_MIN, lightness)),
+    )
+    # Both stay per-cell: strength is poster-level, but the hue correction varies
+    # with each cell's own hue.
+    tint  = 255.0 * v_eff[..., None] * (1.0 - s_eff[..., None] * (1.0 - full))
+
+    # Clip the result to a perceptual chroma budget, per cell, by pulling it toward
+    # its own luminance — which holds the hue and the brightness and takes only the
+    # colourfulness away.  A clip, not an equalisation: a hue already inside the
+    # budget is left exactly alone, so the quiet posters stay exactly as quiet and
+    # only the ones taking their poster over come down.  Two-tone is clipped end by
+    # end for the same reason, since it is usually one end that goes too far.
+    ceiling = _VIGNETTE_TINT_MAX_CHROMA * strength
+    keep    = np.minimum(1.0, ceiling / np.maximum(_lab_chroma(tint), 1e-6))[..., None]
+    grey    = (tint @ _LUMA_COEFFS)[..., None]
+    tint    = grey + (tint - grey) * keep
+
+    small = Image.fromarray(np.clip(tint, 0, 255).astype(np.uint8), mode="RGB")
+    return small if (cols, rows) == (bw, bh) else small.resize((bw, bh), Image.Resampling.BICUBIC)
+
+
+def _vignette_frost_band(
+    image: Image.Image, box: tuple[int, int, int, int], ramp: Image.Image, blur: float
+) -> None:
+    """Blur the artwork inside one vignette band, in place, before it is tinted.
+
+    ``ramp`` is the band's own alpha gradient.  Reusing it as the paste mask makes
+    the blur strongest exactly where the darkening is and zero where the band
+    fades out, so the frosted area has no visible seam against the sharp art below
+    it.  The ramp is normalised first, so the blur reaches full strength at the
+    poster's edge whatever vignette level is set — the two sliders stay
+    independent rather than "low vignette" quietly capping the blur.
+
+    Runs before the tint is composited so the tint lands on frosted art, and
+    before every badge, logo, label and sash, none of which should be blurred.
+    """
+    if blur <= 0:
+        return
+    x0, y0, x1, y1 = box
+    radius = (x1 - x0) * _VIGNETTE_BLUR_MAX_RATIO * blur
+    if radius < 0.5:
+        return
+    peak = ramp.getextrema()[1]
+    if not peak:
+        return
+    mask = ramp.point(lambda a, _p=peak: min(255, int(a * 255 / _p)))
+
+    # Blur by reduction rather than running a wide Gaussian at full size: a box
+    # downscale, a small Gaussian, then a bicubic upscale is indistinguishable at
+    # these radii (max channel delta ~4/255) and roughly halves the cost at the
+    # default blur.  PIL's Gaussian is a box approximation whose cost barely moves
+    # with radius, so below a 3x reduction the resizes cost more than they save —
+    # hence the threshold rather than always taking this path.
+    band   = image.crop(box)
+    shrink = max(1, int(radius / 4))
+    if shrink > 2:
+        small   = band.resize((max(1, band.width // shrink), max(1, band.height // shrink)),
+                              Image.Resampling.BOX)
+        small   = small.filter(ImageFilter.GaussianBlur(radius / shrink))
+        blurred = small.resize(band.size, Image.Resampling.BICUBIC)
+    else:
+        blurred = band.filter(ImageFilter.GaussianBlur(radius))
+    image.paste(blurred, (x0, y0), mask=mask)
+
+
 # Genre-specific tint multipliers (R, G, B) for the fallback canvas.
 # Applied to a dark base luminance of 10–18, so the dominant channel peaks
 # around 30–55 at canvas midpoint — atmospheric rather than vivid.
@@ -1267,7 +2171,15 @@ _GENRE_LABEL_OVERRIDES: dict[str, str] = {
 }
 
 
-def _make_fallback_canvas(genre_ids: list[int] | None = None) -> Image.Image:
+def _make_landscape_canvas(genre_ids: list[int] | None = None) -> Image.Image:
+    """The no-art canvas at 16:9.  Same genre tint and gradient as the portrait
+    one — only the canvas it is painted on differs."""
+    return _make_fallback_canvas(genre_ids,
+                                 size=(_cfg.LANDSCAPE_WIDTH, _cfg.LANDSCAPE_HEIGHT))
+
+
+def _make_fallback_canvas(genre_ids: list[int] | None = None,
+                          size: tuple[int, int] | None = None) -> Image.Image:
     """
     Dark gradient canvas served when a title has no poster art on TMDB.
 
@@ -1288,7 +2200,7 @@ def _make_fallback_canvas(genre_ids: list[int] | None = None) -> Image.Image:
                     break
 
     r_mult, g_mult, b_mult = tint
-    W, H = _cfg.POSTER_WIDTH, _cfg.POSTER_HEIGHT
+    W, H = size or (_cfg.POSTER_WIDTH, _cfg.POSTER_HEIGHT)
     t    = np.linspace(0, np.pi, H, dtype=np.float32)
     # sin curve: peaks at midheight (~18), dark at top/bottom (~10)
     v    = (10 + 8 * np.sin(t)).astype(np.float32)
@@ -1340,9 +2252,7 @@ def _draw_combined_text_badge(
     elif "WEBDL" in token_set:
         sep_color = (192, 192, 200)   # silver
     else:
-        # Se la sorgente è sconosciuta, applichiamo l'argento di default 
-        # invece di interrompere il disegno.
-        sep_color = (192, 192, 200)
+        return
 
     if "DV" in token_set:
         fmt = "DV"
@@ -1355,11 +2265,14 @@ def _draw_combined_text_badge(
 
     # Verifichiamo la presenza della lingua italiana
     is_ita = "ITA" in token_set
-    
+
     try:
         font = ImageFont.truetype(os.path.join(_FONTS_DIR, "Ubuntu-Bold.ttf"), font_size)
     except IOError:
-        font = ImageFont.load_default()
+        try:
+            font = ImageFont.truetype(os.path.join(_FONTS_DIR, "Inter-Bold.ttf"), font_size)
+        except IOError:
+            font = ImageFont.load_default()
 
     draw = ImageDraw.Draw(image)
     ink  = (235, 235, 235, 255)
@@ -1411,7 +2324,6 @@ def _draw_combined_text_badge(
         cx = x
         draw.text((cx, y), res, font=font, fill=ink)
         cx += round(draw.textlength(res, font=font)) + pip_gap
-        
         if is_ita:
             # Dividiamo l'altezza in 3 e disegniamo la bandiera in verticale
             top_y = pip_cy - pip_h // 2
@@ -1421,7 +2333,6 @@ def _draw_combined_text_badge(
             draw.rectangle([cx, top_y + int(h_third * 2), cx + pip_w, top_y + pip_h], fill=(206, 43, 55))           # Rosso
         else:
             _draw_solid_pip(image, x=cx, y_center=pip_cy, width=pip_w, height=pip_h, color=sep_color)
-            
         cx += pip_w + pip_gap
         draw.text((cx, y), fmt, font=font, fill=ink)
 
@@ -1438,6 +2349,7 @@ def build_poster(
     release_year: str | None = None,
     age_rating: int | None = None,
     no_poster: bool = False,
+    has_burned_in_text: bool = False,
 ) -> Image.Image:
 
     width, height = image.size
@@ -1492,26 +2404,21 @@ def build_poster(
         if discovery_meta is not None
         else None
     )
+    # Resolved here rather than at the draw site because the top vignette needs it
+    # too — see the top gradient below.
+    _sash_shown = cfg.sash_mode != "hidden" and sash_result is not None
 
     # Snapshot the artwork *before* the vignette gradients darken it. The frosted
     # bar/notch/sash sample their tint colour from this, not the graded image —
     # otherwise the near-black top/bottom the gradients paint on drags the sampled
     # colour to grey (e.g. a blue sky reads as white behind the notch).
-    # =========================================================================
-    # ESTRAZIONE COLORI CENTRALIZZATA SU IMMAGINE PULITA (_frost_color_src)
-    # =========================================================================
-    # Scattiamo una copia dell'immagine originale PRIMA che i gradienti top/bottom
-    # o l'effetto vetro applichino toni scuri o filtri. Tutti gli estrattori usano
-    # esclusivamente questo snapshot pulito per non essere inquinati da vignettature.
     _frost_color_src = image.copy()
 
     # -------------------------------------------------------------------------
-    # ESTRATTORE VIVIDEZZA DOMINANTE PERSONALE (_get_vivid_dominant_color)
-    # Algoritmo da main-personale.py: calcola il punteggio in spazio colore HSV:
-    #   score = Saturazione * Brillantezza * (c_count ^ 0.2)
-    # Scarta neri, bianchi e grigi sbiaditi (s < 0.15 o v < 0.15 o v > 0.92) per
-    # selezionare il colore piu VIVIDO e ricco dell'intera locandina.
-    # Campiona a 40x60 px per mantenere il rapporto di forma reale 2:3 del poster.
+    # CUSTOM: Vivid Dominant Color extractor
+    # Calcola il colore più vivido e saturo dell'intero poster usando HSV.
+    # Usato da use_global_ui_color per forzare un colore unico su tutti gli
+    # elementi frosted/pill, e come fallback per smart_top_color.
     # -------------------------------------------------------------------------
     def _get_vivid_dominant_color(img: Image.Image) -> tuple[int, int, int]:
         import colorsys
@@ -1520,7 +2427,7 @@ def build_poster(
         colors = small_img.convert("RGB").getcolors(25000)
         if not colors:
             return (100, 100, 100)
-        
+
         def color_vividness_score(c_count, c_rgb):
             r, g, b = c_rgb[0] / 255.0, c_rgb[1] / 255.0, c_rgb[2] / 255.0
             h, s, v = colorsys.rgb_to_hsv(r, g, b)
@@ -1535,17 +2442,14 @@ def build_poster(
         colors.sort(key=lambda t: t[0], reverse=True)
         return colors[0][1]
 
-    # In main-personale.py, global_dom_color era proprio _get_dominant_color(image)
-    vivid_dom_color  = _get_vivid_dominant_color(_frost_color_src)
-    global_dom_color = vivid_dom_color
-    smart_top_color  = (100, 100, 100)
+    vivid_dom_color = _get_vivid_dominant_color(_frost_color_src)
 
     # -------------------------------------------------------------------------
-    # ESTRATTORE LOCALE SUPERIORE (smart_top_color)
-    # Ritaglia l'angolo in alto a destra (20% altezza, 40% larghezza) dove risiede la Notch.
-    # USO: Gradiente Top quando 'grad_color_top' e 'local', e Notch 'Minimal Pill'
-    # quando 'use_global_ui_color' e DISATTIVO.
+    # CUSTOM: Smart Top Color extractor
+    # Ritaglia l'angolo in alto a destra (20% altezza, 40% larghezza) dove
+    # risiede la Notch. Usato come colore di default per Minimal Pill.
     # -------------------------------------------------------------------------
+    smart_top_color: tuple[int, int, int] = (100, 100, 100)
     try:
         clean_top_crop = _frost_color_src.crop((width - int(width * 0.4), 0, width, int(height * 0.2)))
         clean_top_crop.thumbnail((40, 40))
@@ -1560,43 +2464,73 @@ def build_poster(
             else:
                 smart_top_color = top_colors[0][1]
     except Exception:
-        smart_top_color = global_dom_color
+        smart_top_color = vivid_dom_color
 
-    # -------------------------------------------------------------------------
-    # 4. ESTRATTORE LOCALE/FROSTED INFERIORE (local_bot_color / dominant_frost_rgb)
-    #    - Algoritmo originale UmbraProject (awards.py: dominant_frost_rgb):
-    #      Campiona 40x60 px ed usa l'istogramma HSV a 24 bin per trovare la tinta vetro.
-    #    - USO: Gradiente Bottom quando 'grad_color_bot' e 'local', e Frosted Notch/Bar
-    #      quando 'use_global_ui_color' e DISATTIVO.
-    # -------------------------------------------------------------------------
-    local_top_color = smart_top_color
-    local_bot_color = dominant_frost_rgb(_frost_color_src)
+    # Whole-poster colour sample.  The strict pick is shared with every frosted
+    # element further down so they agree without re-quantising; the vignette's own
+    # pick differs only on art where the strict one found no colour at all.
+    _strict_tint: tuple[float, float, float] | None = None
+    _poster_tint: tuple[float, float, float] | None = None
+    _poster_conf = 0.0
+    _poster_tint2: tuple[float, float, float] | None = None
+    _poster_support = np.zeros(_VIGNETTE_HUE_BINS)
+    # Skipped entirely on burned-in-text posters: neither band will be tinted
+    # (see _top_enabled below), so the hue histogram would be thrown away.
+    if ((cfg.vignette_poster_color_top or cfg.vignette_poster_color_bottom)
+            and not has_burned_in_text):
+        _strict_tint, _poster_tint, _poster_conf = _vignette_dominant_rgb(_frost_color_src)
+        if cfg.vignette_color_ramp and _poster_conf > 0:
+            _poster_tint2 = _vignette_secondary_rgb(_frost_color_src, _poster_tint)
+        # Kept whole so a band can weigh its own seam's colour against how much of
+        # the poster carries it — see _vignette_band_colour.
+        _poster_support = _vignette_hue_profile(_frost_color_src)[3]
+    # Whole-poster result, used directly unless a band finds something its seam and
+    # the poster agree on better.
+    _whole_colour = (_poster_tint, _poster_conf, _poster_tint2, _poster_support)
+    _slider_amount = min(1.0, max(0.0, cfg.vignette_color_saturation) / _VIGNETTE_SAT_FULL)
+    # How hard the band is being asked to wash the art out, for the levelling pass.
+    # Both sliders ask for it — colour lays a tint over the art, blur melts it — so
+    # the stronger of the two drives it, and a poster is levelled the same whether
+    # the wash it is under is a vivid tint or a heavy frost.
+    _level_amount  = max(_slider_amount, min(1.0, max(0.0, cfg.vignette_color_blur)))
 
-    # -------------------------------------------------------------------------
-    # 5. LUMINOSITÀ MEDIA DEL FONDO (per Smart Bottom Gradient Adattivo)
-    #    - Calcola la luminosita percepita media nel 25% inferiore del poster.
-    # -------------------------------------------------------------------------
-    try:
-        bot_crop_sample = _frost_color_src.crop((0, int(height * 0.75), width, height))
-        bot_crop_sample.thumbnail((50, 50))
-        bot_arr = np.array(bot_crop_sample.convert("RGB"), dtype=np.float32)
-        bottom_avg_lum = float(np.mean(0.299 * bot_arr[:, :, 0] + 0.587 * bot_arr[:, :, 1] + 0.114 * bot_arr[:, :, 2]))
-    except Exception:
-        bottom_avg_lum = 100.0
+    # A sash or notch sits on top of the top vignette, and tinting that band lifts
+    # it toward the sash's own colour — which is sampled from the same art, so the
+    # two converge and the label stops reading. The top band therefore stays plain
+    # black whenever one is shown; the bottom band is unaffected. Same reasoning as
+    # the existing "Vignette Only On Sash" option, which also lets the sash decide
+    # what the top of the poster does.
+    #
+    # Burned-in text is the other case that has to opt out. The tinted vignette
+    # frosts the art it sits on (see _vignette_frost_band), and it knows to leave
+    # OUR logo alone because we composite that afterwards — but a poster whose
+    # title is baked into the artwork has no separate layer to protect, so the
+    # blur lands squarely on the title and smears it into an unreadable mush.
+    # Text detection has already told us which posters those are, so when it
+    # confirms burned-in text both bands fall back to plain black. Only a
+    # confirmed detection counts: has_burned_in_text is False both for a clean
+    # poster and for one that was never scanned, and an unscanned poster should
+    # keep the tint it has always had rather than be penalised for the gap.
+    _top_enabled    = (cfg.vignette_poster_color_top and not _sash_shown
+                       and not has_burned_in_text)
+    _bottom_enabled = cfg.vignette_poster_color_bottom and not has_burned_in_text
+    # What colour a tinted band actually *paints*, kept for the frosted notch to
+    # match if it is asked to (see _frost_tint below).  Read off the band's own
+    # tint field at its deepest row rather than taken from the sample the hue was
+    # picked from: those two share a hue and nothing else.  The sample is the art's
+    # own colour — a bright sky blue at V 0.88 — while the band lays down that hue
+    # at the tint's Value and Saturation, which at any setting is a dark shade of
+    # it, and lower saturation makes it darker still.  Matching the sample gave a
+    # notch far brighter and more colourful than the band beside it.  The top
+    # band's is preferred when both are tinted, since that is the one a notch sits
+    # on.
+    _vignette_shown: tuple[float, float, float] | None = None
 
-    if cfg.grad_color_top == "global":
-        top_color = global_dom_color
-    elif cfg.grad_color_top == "local":
-        top_color = local_top_color
-    else:
-        top_color = (0, 0, 0)
-
-    if cfg.grad_color_bot == "global":
-        bot_color = global_dom_color
-    elif cfg.grad_color_bot == "local":
-        bot_color = local_bot_color
-    else:
-        bot_color = (0, 0, 0)
+    def _band_paint(field: Image.Image, deepest_row: int) -> tuple[float, float, float]:
+        """Mean colour along a tint field's peak-alpha edge — what the eye sees
+        where the band is strongest, before the art bleeding through lightens it."""
+        row = np.asarray(field.convert("RGB"), dtype=np.float32)[deepest_row]
+        return tuple(float(c) for c in row.mean(axis=0))
 
     # --- TOP GRADIENT (vectorised) ---
     # Darkens the top of the poster so the age-rating numeral and quality
@@ -1618,13 +2552,46 @@ def build_poster(
         eased_top = ((1 - t_top) * top_max_alpha).astype(np.uint8)
         top_array = np.broadcast_to(eased_top[:, np.newaxis], (top_height, width)).copy()
         top_overlay = Image.fromarray(top_array, mode="L")
-        top_tinted = Image.new("RGBA", (width, top_height), (int(top_color[0]), int(top_color[1]), int(top_color[2]), 0))
+        # Black by default; a poster-coloured vignette swaps in a tint field
+        # sampled from the art under this band.  Only the RGB changes — the alpha
+        # ramp, and so how hard the band darkens, is identical either way.
+        if _top_enabled and _poster_tint is not None:
+            # The top band fades out downward, so its seam sits at top_height.
+            _t_tint, _t_conf, _t_second = _vignette_band_colour(
+                _frost_color_src,
+                _vignette_seam(width, height, top_height, -1, top_overlay),
+                _whole_colour, cfg.vignette_color_local, cfg.vignette_color_ramp,
+            )
+            _vignette_frost_band(
+                image, (0, 0, width, top_height), top_overlay, cfg.vignette_color_blur,
+            )
+            _vignette_level_band(
+                image, (0, 0, width, top_height), top_overlay, _level_amount
+            )
+            top_tinted = _vignette_tint_band(
+                _frost_color_src, (0, 0, width, top_height), _t_tint, _t_conf,
+                cfg.vignette_color_saturation, cfg.vignette_color_blur, _t_second,
+                cfg.vignette_color_lightness,
+            ).convert("RGBA")
+            if _t_conf >= _VIGNETTE_MATCH_MIN_CONF and _slider_amount > 0:
+                # Top band: strongest at the poster's edge, so row 0.
+                _vignette_shown = _band_paint(top_tinted, 0)
+        else:
+            top_tinted = Image.new("RGBA", (width, top_height), (0, 0, 0, 0))
         top_tinted.putalpha(top_overlay)
         image.paste(top_tinted, (0, 0), mask=top_tinted)
 
+    # --- LUMINOSITÀ MEDIA DEL FONDO (per Smart Bottom Gradient Adattivo) ---
+    try:
+        bot_crop_sample = _frost_color_src.crop((0, int(height * 0.75), width, height))
+        bot_crop_sample.thumbnail((50, 50))
+        bot_arr = np.array(bot_crop_sample.convert("RGB"), dtype=np.float32)
+        bottom_avg_lum = float(np.mean(0.299 * bot_arr[:, :, 0] + 0.587 * bot_arr[:, :, 1] + 0.114 * bot_arr[:, :, 2]))
+    except Exception:
+        bottom_avg_lum = 100.0
+
     # --- FROSTED GLASS 2.0 (Effetto vetro sfumato ottico puro) ---
     # Dedicato ESCLUSIVAMENTE alla sfocatura lente ed al contrasto visivo.
-    # Non applica maschere scure di propria iniziativa per non inquinare il Bottom Gradient.
     if getattr(cfg, 'frosted_glass_intensity', 0) > 0:
         from PIL import ImageFilter, ImageEnhance
         fg_height = int(height * 0.60)
@@ -1657,16 +2624,13 @@ def build_poster(
         image.paste(glass_layer, (0, fg_start), mask=blur_mask)
 
     # --- BOTTOM GRADIENT / VIGNETTE (Falso Nero Pigmentato + Curva 1.2 + Smart Adaptive Softening) ---
-    # Gestito dai preset UI (off / low / medium / high / custom) per altezza e opacita.
-    # Se la luminosita media del fondo e < 40 (locandina scura o nera), riduce in percentuale l'opacita
-    # e sfuma delicatamente il pigmento verso il nero per evitare aloni colorati invasivi.
     _bg_preset: tuple[float, int] | None
     if cfg.bottom_gradient == "off":
         _bg_preset = None
     elif cfg.bottom_gradient == "custom" and cfg.bottom_gradient_opacity is not None and cfg.bottom_gradient_height is not None:
         _bg_preset = (cfg.bottom_gradient_height, int(cfg.bottom_gradient_opacity * 255 if cfg.bottom_gradient_opacity <= 1.0 else cfg.bottom_gradient_opacity))
     else:
-        _bg_preset = _BOTTOM_GRADIENT_LEVELS.get(cfg.bottom_gradient, None)
+        _bg_preset = _BOTTOM_GRADIENT_LEVELS.get(cfg.bottom_gradient, _BOTTOM_GRADIENT_LEVELS["high"])
         
     if _bg_preset is not None:
         bottom_height_ratio, bottom_max_alpha = _bg_preset
@@ -1676,33 +2640,38 @@ def build_poster(
         # --- ADATTAMENTO PROPORZIONALE SMART PER LOCANDINE SCURE (bottom_avg_lum < 40) ---
         adaptive_scale = 1.0
         if bottom_avg_lum < 40.0:
-            # Scala proporzionale in base all'oscurita (es. lum=20 -> scale=0.5 -> riduzione 50% dell'opacita attiva)
-            # Limite minimo di sicurezza 0.25 (25%) per non annullare del tutto la protezione testo.
             adaptive_scale = max(0.25, bottom_avg_lum / 40.0)
 
         effective_max_alpha = int(bottom_max_alpha * adaptive_scale)
 
         # Curva ad esponente 1.2 applicata all'opacita effettiva scalata
-        t_bot     = np.linspace(0, 1, bottom_height, dtype=np.float32)
-        eased_bot = ((t_bot ** 1.2) * effective_max_alpha).astype(np.uint8)
+        t_bot         = np.linspace(0, 1, bottom_height, dtype=np.float32)
+        eased_bot     = ((t_bot ** 1.2) * effective_max_alpha).astype(np.uint8)
         bottom_array  = np.broadcast_to(eased_bot[:, np.newaxis], (bottom_height, width)).copy()
         bottom_overlay = Image.fromarray(bottom_array, mode="L")
         
-        # Falso Nero Pigmentato al 35%: mantiene la saturazione del colore estratto
-        # senza desaturarlo verso il nero. Solo l'opacita (effective_max_alpha) si addolcisce.
-        if bot_color != (0, 0, 0):
-            dark_bot_color = (
-                int(bot_color[0] * 0.35),
-                int(bot_color[1] * 0.35),
-                int(bot_color[2] * 0.35)
+        if _bottom_enabled and _poster_tint is not None:
+            # Vignetta a colori Dev (Two-Tone / Single-Tone)
+            _b_tint, _b_conf, _b_second = _vignette_band_colour(
+                _frost_color_src,
+                _vignette_seam(width, height, bottom_start, +1, bottom_overlay),
+                _whole_colour, cfg.vignette_color_local, cfg.vignette_color_ramp,
             )
+            # La sfocatura ottica è ora gestita con precisione da Frosted Glass 2.0,
+            # eliminando il Gaussian Blur distruttivo e lo sbiadimento dei neri del Dev.
+            _blur_factor = (cfg.frosted_glass_intensity / 100.0) if getattr(cfg, 'frosted_glass_intensity', 0) > 0 else cfg.vignette_color_blur
+            bottom_tinted = _vignette_tint_band(
+                _frost_color_src, (0, bottom_start, width, height), _b_tint, _b_conf,
+                cfg.vignette_color_saturation, _blur_factor, _b_second,
+                cfg.vignette_color_lightness,
+            ).convert("RGBA")
+            if _vignette_shown is None and _b_conf >= _VIGNETTE_MATCH_MIN_CONF and _slider_amount > 0:
+                _vignette_shown = _band_paint(bottom_tinted, -1)
         else:
-            dark_bot_color = (0, 0, 0)
-
-        bottom_tinted = Image.new("RGBA", (width, bottom_height), (*dark_bot_color, 0))
+            bottom_tinted = Image.new("RGBA", (width, bottom_height), (0, 0, 0, 0))
+            
         bottom_tinted.putalpha(bottom_overlay)
         image.paste(bottom_tinted, (0, bottom_start), mask=bottom_tinted)
-
 
     # --- Badge / quality overlay ---
     mode   = cfg.badge_display_mode
@@ -1713,7 +2682,7 @@ def build_poster(
         # badge renders silver/default rather than a misleadingly coloured tier.
         _tokens_1 = (
             tokens
-            if (not tokens or _score_points(tokens) >= cfg.badge_min_score)
+            if (not tokens or "ITA" in tokens or _score_points(tokens) >= cfg.badge_min_score)
             else []
         )
         draw_quality_age_badge(
@@ -1739,13 +2708,22 @@ def build_poster(
 
     elif mode == 4:
         # Accent bar — small vertical pill in tier colour, no text
-        if not tokens or _score_points(tokens) >= cfg.badge_min_score:
+        if not tokens or "ITA" in tokens or _score_points(tokens) >= cfg.badge_min_score:
             draw_tier_bar(
                 image,
                 tokens,
                 anchor_x_ratio=cfg.badge_anchor_x,
                 anchor_y_ratio=cfg.badge_anchor_y,
                 bar_height=cfg.badge_height,
+            )
+
+    elif mode == 6:
+        # Corner bookmark — fixed to the poster top-left and coloured by tier.
+        if not tokens or "ITA" in tokens or _score_points(tokens) >= cfg.badge_min_score:
+            draw_quality_corner_bookmark(
+                image,
+                tokens,
+                bookmark_size=cfg.badge_height,
             )
 
     elif mode == 2:
@@ -1873,16 +2851,48 @@ def build_poster(
         # high to low and take the first fit. Text fallbacks use the same hard
         # width/height envelope as image logos, including the absolute height cap
         # and bottom-anchor baseline semantics.
+        _sizes = list(range(int(height * 0.26), 7, -2))
+
+        def _widest_word(current_font) -> int:
+            """Width of the widest single word at this size (0 for empty input)."""
+            return max(
+                (_line_width(word, current_font) for word in fallback_title.split()),
+                default=0,
+            )
+
+        def _first_viable_index() -> int:
+            """Index into _sizes of the largest size not ruled out on width alone.
+
+            _wrap_lines places a word on a line even when it alone exceeds max_w
+            (the `or not current` branch), so any size whose widest word overflows
+            is guaranteed to produce a block wider than max_w and fail the test
+            below.  Unlike the full fit test — which is *not* monotone, because a
+            larger font can push a word onto line two and make the block narrower
+            — single-word width rises monotonically with size, so the first
+            viable size can be found by bisection.  Skipping straight to it avoids
+            measuring dozens of oversized candidates that cannot possibly fit,
+            which used to dominate the cost of rendering a text fallback.
+            """
+            lo, hi, first = 0, len(_sizes) - 1, 0
+            while lo <= hi:
+                mid = (lo + hi) // 2
+                _fs = _sizes[mid]
+                if _widest_word(_load_font(FONT_PATH, _fs)) + max(2, int(_fs * 0.04)) <= max_w:
+                    first, hi = mid, mid - 1
+                else:
+                    lo = mid + 1
+            return first
+
         try:
             font_size = MIN_FONT_SIZE
-            font      = ImageFont.truetype(FONT_PATH, font_size)
+            font      = _load_font(FONT_PATH, font_size)
             lines     = _wrap_lines(fallback_title, font)
             shadow_offset = max(2, int(font_size * 0.04))
             block_w, block_h, line_boxes = _measure_block(
                 lines, font, max(1, int(font_size * 0.12))
             )
-            for _fs in range(int(height * 0.26), 7, -2):
-                _f  = ImageFont.truetype(FONT_PATH, _fs)
+            for _fs in _sizes[_first_viable_index():]:
+                _f  = _load_font(FONT_PATH, _fs)
                 _ls = _wrap_lines(fallback_title, _f)
                 if len(_ls) > MAX_LINES:
                     continue
@@ -1940,23 +2950,48 @@ def build_poster(
     # from ONE whole-poster colour sample, taken from the un-graded artwork. Since
     # they all draw from the same sample they always match automatically — so the
     # bar simply adopts the notch's colour (and, below, its saturation) whenever a
-    # frosted notch is shown, with no separate "match" toggle needed.
-    _sash_shown    = cfg.sash_mode != "hidden" and sash_result is not None
-    _notch_pill    = _sash_shown and cfg.sash_mode == "notch" and cfg.sash_badge_style == "minimal_pill"
+    # frosted notch is shown, with no separate "match" toggle needed. A tinted
+    # vignette drew from the same sample above; reuse it rather than re-quantising.
     _notch_frosted = _sash_shown and cfg.sash_mode == "notch" and cfg.sash_badge_style == "frosted"
+    _notch_pill    = _sash_shown and cfg.sash_mode == "notch" and cfg.sash_badge_style == "minimal_pill"
     _sash_poster   = _sash_shown and cfg.sash_mode == "sash" and cfg.sash_poster_color
     _bar_frosted   = cfg.rating_display_mode == 4 and cfg.bar_style in ("frosted", "rating_frosted")
 
-    _frost_tint: tuple[float, float, float] | None
-    if getattr(cfg, 'use_global_ui_color', False) and (_bar_frosted or _notch_frosted or _notch_pill or _sash_poster):
+    # A tinted vignette and a frosted notch sample the same artwork but answer
+    # different questions — the vignette asks what the band's own stretch of art is
+    # made of, the notch what colour the poster is — so they can land some way
+    # apart, which reads as two elements disagreeing.  This option settles it in
+    # the vignette's favour.  It can only ever adopt a colour the vignette is
+    # actually wearing: a band that came out black has no colour to match, and the
+    # notch keeps its own logic rather than tinting from a hue nothing else on the
+    # poster shows.  The frosted bar follows, as it already follows the notch.
+    _frost_matched = (
+        cfg.notch_vignette_color and _notch_frosted and _vignette_shown is not None
+        and not cfg.use_global_ui_color and not _notch_pill
+    )
+
+    # CUSTOM: use_global_ui_color forces vivid_dom_color on all UI elements
+    if cfg.use_global_ui_color and (_bar_frosted or _notch_frosted or _notch_pill or _sash_poster):
         _frost_tint = vivid_dom_color
     elif _notch_pill:
         _frost_tint = smart_top_color
+    elif _frost_matched:
+        _frost_tint = _vignette_shown
     elif (_bar_frosted or _notch_frosted or _sash_poster):
-        _frost_tint = dominant_frost_rgb(_frost_color_src)
+        _frost_tint = (
+            (_strict_tint if _strict_tint is not None else dominant_frost_rgb(_frost_color_src))
+        )
     else:
         _frost_tint = None
-
+    # Matching gets its own mode rather than the saturation slider or plain
+    # reference.  The slider turns a poster colour into a pastel that is not that
+    # colour any more; reference keeps the saturation but lifts the Value to make
+    # the panel light, and since chroma is S x V that alone hands a dark muted band
+    # back as a bright one.  "match" holds chroma where the band had it.  The two
+    # controls are mutually exclusive in the configurator for the same reason.
+    _frost_ref: bool | str = "match" if _frost_matched else cfg.frost_reference
+    # One saturation for every frosted element: a frosted notch or pill owns it;
+    # otherwise the rating bar's slider drives it. Sharing keeps them identical.
     _frost_sat = cfg.sash_badge_frost_saturation if (_notch_frosted or _notch_pill) else cfg.bar_frost_saturation
 
     # --- Rating / genre label ---
@@ -1964,16 +2999,6 @@ def build_poster(
 
         if cfg.rating_display_mode == 1:
             font_size = int(width * cfg.accent_bar_font_size_ratio)
-            # Label suffix is configurable: append year, append sash text, or
-            # append both joined by " · ".  Missing data degrades gracefully —
-            # if "sash" is requested but no sash triggered, we just show the
-            # genre; if "both" but only one is present, we show whichever did.
-            #
-            # The separator immediately before the sash text becomes "★" when
-            # the sash is a winner (sash_type == "win") rather than "·".  Same
-            # disambiguation trick used by Compact mode — festival wins and
-            # nominees can share their label text, so without this they'd be
-            # indistinguishable here.
             _append_year = cfg.accent_bar_append_mode in (0, 2)
             _append_sash = cfg.accent_bar_append_mode in (1, 2)
             _sash_text_for_label, _sash_type_for_label = (
@@ -1992,9 +3017,12 @@ def build_poster(
             rating_cy = height * cfg.accent_bar_y_offset
 
             try:
-                font_meta = ImageFont.truetype(os.path.join(_FONTS_DIR, "Inter-Bold.ttf"), font_size)
+                font_meta = ImageFont.truetype(os.path.join(_FONTS_DIR, "Ubuntu-Bold.ttf"), font_size)
             except IOError:
-                font_meta = ImageFont.load_default()
+                try:
+                    font_meta = ImageFont.truetype(os.path.join(_FONTS_DIR, "Inter-Bold.ttf"), font_size)
+                except IOError:
+                    font_meta = ImageFont.load_default()
 
             tx, ty = _text_center(draw, label, font_meta, width / 2, rating_cy)  # type: ignore
             draw.text(
@@ -2022,113 +3050,122 @@ def build_poster(
 
         elif cfg.rating_display_mode == 2:
             font_size = int(width * cfg.numeric_score_font_size_ratio)
-            # Riduciamo la grandezza dell'icona del 15% rispetto al testo
             icon_size = max(10, int(font_size * 0.85))
-            # Score formatting:
-            #   out of 100 (default): "87", "100", "N/A"
-            #   out of 10:            "8.7", "8.0" (always one decimal), "10"
-            #                         (no decimal — already two glyphs wide)
-            # Non-numeric scores ("N/A") pass through unchanged in either mode.
             if cfg.score_out_of_10 and isinstance(score, (int, float)):
                 _score_text = "10" if score >= 100 else f"{score / 10:.1f}"
             else:
                 _score_text = str(score)
-            label = f"{genre_label} ★ {_score_text}" if genre_label else f"★ {_score_text}"
             rating_cy = height * cfg.numeric_score_y_offset
 
             try:
                 font_meta = ImageFont.truetype(os.path.join(_FONTS_DIR, "Ubuntu-Bold.ttf"), font_size)
+            except IOError:
+                try:
+                    font_meta = ImageFont.truetype(os.path.join(_FONTS_DIR, "Inter-Bold.ttf"), font_size)
+                except IOError:
+                    font_meta = ImageFont.load_default()
+
+            try:
                 font_icon = ImageFont.truetype(os.path.join(_FONTS_DIR, "Font Awesome 7 Free-Solid-900.otf"), icon_size)
             except IOError:
-                font_meta = ImageFont.load_default()
-                font_icon = ImageFont.load_default()
+                font_icon = font_meta
                 icon_size = font_size
 
-            star_icon = "\uf005"
-            
-            len_genre = draw.textlength(f"{genre_label}  ", font=font_meta) 
-            len_icon = draw.textlength(f"{star_icon} ", font=font_icon)     
+            star_icon = ""
+            _ink = (*cfg.rating_text_color, 255) if cfg.rating_text_color else (200, 200, 200, 255)
+
+            len_genre = draw.textlength(f"{genre_label}  ", font=font_meta) if genre_label else 0
+            len_icon = draw.textlength(f"{star_icon} ", font=font_icon)
             len_score = draw.textlength(_score_text, font=font_meta)
-            
+
             total_width = len_genre + len_icon + len_score
             ox = (width - total_width) // 2
-            
-            _, ty = _text_center(draw, genre_label, font_meta, width / 2, rating_cy)
-            adjusted_oy = ty - int(font_size * 0.10)
-            
-            # Compensazione Y per mantenere la stella piccola perfettamente centrata al testo
-            icon_oy = adjusted_oy + (font_size - icon_size) // 2 
-            
-            draw.text((ox, adjusted_oy), f"{genre_label}  ", font=font_meta, fill=(200, 200, 200, 255))
-            draw.text((ox + len_genre, icon_oy), f"{star_icon} ", font=font_icon, fill=(200, 200, 200, 255))
-            draw.text((ox + len_genre + len_icon, adjusted_oy), _score_text, font=font_meta, fill=(200, 200, 200, 255))
 
+            _, ty = _text_center(draw, genre_label or _score_text, font_meta, width / 2, rating_cy)
+            adjusted_oy = ty - int(font_size * 0.10)
+            icon_oy = adjusted_oy + (font_size - icon_size) // 2
+
+            if genre_label:
+                draw.text((ox, adjusted_oy), f"{genre_label}  ", font=font_meta, fill=_ink)
+            draw.text((ox + len_genre, icon_oy), f"{star_icon} ", font=font_icon, fill=_ink)
+            draw.text((ox + len_genre + len_icon, adjusted_oy), _score_text, font=font_meta, fill=_ink)
 
         elif cfg.rating_display_mode == 3:
             font_size = int(width * cfg.minimalist_mode_font_size_ratio)
-            # Riduciamo la grandezza dell'icona del 15%
             icon_size = max(10, int(font_size * 0.85))
 
             try:
-                # LA TUA MODIFICA: Caricamento font personalizzati e icone
                 font_meta = ImageFont.truetype(os.path.join(_FONTS_DIR, "Ubuntu-Bold.ttf"), font_size)
+            except IOError:
+                try:
+                    font_meta = ImageFont.truetype(os.path.join(_FONTS_DIR, "Inter-Bold.ttf"), font_size)
+                except IOError:
+                    font_meta = ImageFont.load_default()
+
+            try:
                 font_icon = ImageFont.truetype(os.path.join(_FONTS_DIR, "Font Awesome 7 Free-Solid-900.otf"), icon_size)
             except IOError:
-                font_meta = ImageFont.load_default()
-                font_icon = ImageFont.load_default()
+                font_icon = font_meta
                 icon_size = font_size
 
             y = round(height * cfg.minimalist_mode_font_y_offset)
             right_edge = width - int(width * cfg.minimalist_mode_font_x_offset)
-            
-            # Manteniamo la logica originale per supportare il colore testo dalla UI, con il tuo fallback
             _ink = (*cfg.rating_text_color, 255) if cfg.rating_text_color else (235, 235, 235, 255)
 
             _has_score = score not in ("N/A", None)
-
-            if _has_score:
-                if cfg.minimalist_score_out_of_10:
-                    _score_str = "10" if int(score) >= 100 else f"{int(score) / 10:.1f}"
-                else:
-                    _score_str = str(score)
-
-                # LA TUA MODIFICA: Estrazione colore in base alla palette (aggiornata alla nuova funzione di backend!)
-                try:
-                    star_color = score_color_for_mode(
-                        int(score),
-                        cfg.score_color_mode,
-                        cfg.score_custom_palette
-                    )[0]
-                except ValueError:
-                    star_color = _ink
+            if _has_score and cfg.minimalist_score_out_of_10:
+                _score_str = "10" if int(score) >= 100 else f"{int(score) / 10:.1f}"
             else:
-                _score_str = "N/A"
-                star_color = _ink
+                _score_str = str(score)
 
             parts = [(genre_label, None)] if genre_label else []
+            left_parts: list[tuple[str, str | None]] = []
             if cfg.minimalist_append_mode == 0:
                 if release_year:
-                    # LA TUA MODIFICA: Forza l'inserimento del "rpip"
-                    parts.append((str(release_year), "rpip"))
+                    parts.append((str(release_year), "rfield" if parts else None))
             elif cfg.minimalist_append_mode == 1:
                 if _has_score:
-                    parts.append((_score_str, "star"))
-            else:  # 2 — Year + Rating
+                    parts.append((_score_str, "rating" if parts else None))
+            elif cfg.minimalist_append_mode == 3:   # Split
                 if release_year:
-                    parts.append((str(release_year), "pip"))
+                    parts.append((str(release_year), "field" if parts else None))
+                left_parts, parts = parts, ([(_score_str, None)] if _has_score else [])
+            else:  # 2 — Both
+                if release_year:
+                    parts.append((str(release_year), "field" if parts else None))
                 if _has_score:
-                    parts.append((_score_str, "star"))
+                    parts.append((_score_str, "rating" if parts else None))
 
-            # LA TUA MODIFICA: Costanti e calcoli per la stella Awesome Font
-            star_glyph = "\uf005"
             pip_gap = int(font_size * 0.55)
             pip_w   = max(4, int(font_size * 0.18))
             pip_h   = int(font_size * 1.4)
             pip_cy  = round(y + font_size * 0.60)
-            star_w  = draw.textlength(star_glyph, font=font_icon)
 
+            _SEP_GLYPH = {"pip": None, "bullet": "•", "star": ""}
+
+            def _sep_style(role: str) -> str:
+                return (cfg.minimalist_rating_separator if role == "rating"
+                        else cfg.minimalist_separator)
+
+            def _sep_glyph(role: str) -> str | None:
+                return _SEP_GLYPH.get(_sep_style(role))
+
+            def _sep_width(role: str) -> float:
+                glyph = _sep_glyph(role)
+                if glyph is None:
+                    return pip_w
+                if glyph == "":
+                    return draw.textlength(glyph, font=font_icon)
+                return draw.textlength(glyph, font=font_meta)
+
+            def _score_int(value) -> "int | None":
+                try:
+                    return max(0, min(int(value), 100))
+                except (TypeError, ValueError):
+                    return None
+
+            ops    = []
             cursor = right_edge
-            ops    = []   
             for i in range(len(parts) - 1, -1, -1):
                 seg, sep = parts[i]
                 seg_x = int(cursor - draw.textlength(seg, font=font_meta))
@@ -2136,33 +3173,54 @@ def build_poster(
                 cursor = seg_x
                 if sep:
                     cursor -= pip_gap
-                    sep_w  = star_w if sep == "star" else pip_w
+                    sep_w  = _sep_width(sep)
                     sep_x  = cursor - sep_w
                     ops.append((sep, sep_x))
                     cursor = sep_x - pip_gap
 
-            # LA TUA MODIFICA: Calcolo per centrare verticalmente l'icona (spinta in basso dell'8%)
+            if cfg.minimalist_center and cfg.minimalist_append_mode != 3 and ops:
+                _shift = round(width / 2 - (cursor + right_edge) / 2)
+                ops = [(op[0], op[1] + _shift, *op[2:]) for op in ops]
+
+            cursor = width - right_edge
+            for seg, sep in left_parts:
+                if sep:
+                    cursor += pip_gap
+                    ops.append((sep, int(cursor)))
+                    cursor += _sep_width(sep) + pip_gap
+                ops.append(("text", int(cursor), seg))
+                cursor += draw.textlength(seg, font=font_meta)
+
             icon_y_offset = ((font_size - icon_size) // 2) + int(font_size * 0.08)
 
             for op in ops:
                 kind, ox = op[0], op[1]
                 if kind == "text":
                     draw.text((ox, y), op[2], font=font_meta, fill=_ink)
-                elif kind == "star":
-                    # LA TUA MODIFICA: Disegna la stella con il SUO COLORE calcolato dalla palette e la centra
-                    draw.text((ox, y + icon_y_offset), star_glyph, font=font_icon, fill=star_color)
-                elif kind == "rpip":
-                    draw_score_bar_vertical(image, score, x=ox, y_center=pip_cy,
-                                            height=pip_h, width=pip_w,
-                                            color_mode=cfg.score_color_mode,
-                                            custom_palette=cfg.score_custom_palette)
-                else:  # "pip"
+                    continue
+
+                glyph = _sep_glyph(kind)
+                if kind in ("rfield", "rating"):
+                    _sc = _score_int(score)
+                    if _sc is not None:
+                        _fill = score_color_for_mode(
+                            _sc, cfg.score_color_mode, cfg.score_custom_palette)[0]
+                    else:
+                        _fill = _ink[:3]
+                else:
+                    _fill = _ink[:3]
+
+                if glyph is None:
                     _draw_solid_pip(image, x=ox, y_center=pip_cy,
-                                    width=pip_w, height=pip_h, color=(192, 192, 200))
+                                    width=pip_w, height=pip_h, color=_fill)
+                elif glyph == "":
+                    draw.text((ox, y + icon_y_offset), glyph, font=font_icon, fill=(*_fill, 255))
+                else:
+                    draw.text((ox, y), glyph, font=font_meta, fill=(*_fill, 255))
 
         elif cfg.rating_display_mode == 4:
             # Frosted bar — centred dot-separated label at the bottom.
-            # Format: Year · Genre · IMDb Rating  (omit any missing field)
+            # Format: Year · Genre · ★ Rating  (omit any missing field)
             _has_score = score not in ("N/A", None)
             if _has_score:
                 if cfg.bar_score_out_of_10:
@@ -2173,21 +3231,16 @@ def build_poster(
                 _score_str = ""
             _year_str  = str(release_year) if release_year else ""
             _bar_sash, _ = sash_result if sash_result else (None, None)
-            
-            # LA TUA MODIFICA: Sostituzione della stella testuale con "IMDb"
             if cfg.bar_append == "rating_year":
-                _parts = [_year_str, genre_label or "", f"IMDb {_score_str}" if _score_str else ""]
+                _parts = [_year_str, genre_label or "", f"★ {_score_str}" if _score_str else ""]
             elif cfg.bar_append == "rating":
-                _parts = [genre_label or "", f"IMDb {_score_str}" if _score_str else ""]
+                _parts = [genre_label or "", f"★ {_score_str}" if _score_str else ""]
             elif cfg.bar_append == "year":
                 _parts = [_year_str, genre_label or ""]
             else:  # "sash"
                 _parts = [genre_label or "", translate_sash(_bar_sash, cfg.logo_language) if _bar_sash else ""]
-            
             _parts = [p for p in _parts if p]
             _sep = "  ·  " if len(_parts) <= 2 else " · "
-            
-            # Utilizzo della funzione draw_frosted_bar ORIGINALE per mantenere tutte le nuove funzionalità
             image = draw_frosted_bar(
                 image,
                 left_text   = "",
@@ -2197,7 +3250,7 @@ def build_poster(
                 font_size_ratio  = cfg.bar_font_size_ratio,
                 frost_opacity    = cfg.bar_frost_opacity,
                 frost_saturation = _frost_sat,
-                frost_reference  = cfg.frost_reference,
+                frost_reference  = _frost_ref,
                 bottom_inset     = cfg.bar_bottom_inset,
                 style            = cfg.bar_style,
                 score            = score if score not in ("N/A", None) else None,
@@ -2224,47 +3277,39 @@ def build_poster(
         _is_star  = cfg.sash_winner_star and sash_type == "win"
         _label_tr = translate_sash(label, cfg.logo_language)
         if cfg.sash_mode == "notch":
-            if getattr(cfg, 'text_drop_shadow', False):
+            if cfg.text_drop_shadow:
                 from PIL import ImageFilter
-                
-                # 1. Creiamo un livello vuoto e disegniamo la forma della tacca
-                shadow_layer = Image.new("RGBA", image.size, (0,0,0,0))
+                shadow_layer = Image.new("RGBA", image.size, (0, 0, 0, 0))
                 shadow_layer = draw_award_badge(
-                    shadow_layer, _label_tr, sash_type=sash_type, 
-                    size_ratio_w=cfg.sash_badge_size_w, size_ratio_h=cfg.sash_badge_size_h, 
-                    notch_style="black", notch_inset=cfg.sash_badge_inset, 
-                    font_size_ratio=cfg.sash_badge_font_ratio, frost_opacity=1.0, 
-                    tint_rgb=(0,0,0), star=_is_star
+                    shadow_layer, _label_tr, sash_type=sash_type,
+                    size_ratio_w=cfg.sash_badge_size_w,
+                    size_ratio_h=cfg.sash_badge_size_h,
+                    notch_style="black",
+                    notch_inset=cfg.sash_badge_inset,
+                    notch_pad_ratio=cfg.sash_badge_pad,
+                    font_size_ratio=cfg.sash_badge_font_ratio,
+                    frost_opacity=1.0,
+                    frost_saturation=cfg.sash_badge_frost_saturation,
+                    frost_reference=_frost_ref,
+                    tint_rgb=(0, 0, 0),
+                    star=_is_star,
+                    text_color=cfg.sash_text_color,
                 )
-                
-                # 2. Estraiamo ESCLUSIVAMENTE il canale Alpha e lo sfochiamo
-                alpha_mask = shadow_layer.split()[3]
-                alpha_mask = alpha_mask.filter(ImageFilter.GaussianBlur(radius=4)) 
-                
-                # 3. Rendiamo l'ombra più leggera riducendone l'opacità globale al 40%
-                alpha_mask = alpha_mask.point(lambda p: int(p * 0.40))
-                
-                # 4. Applichiamo la maschera a un livello di nero puro
-                pure_shadow = Image.new("RGBA", image.size, (0, 0, 0, 255))
-                pure_shadow.putalpha(alpha_mask)
-                
-                # 5. Spostiamo l'ombra in basso e la incolliamo USANDO LA MASCHERA
-                shifted_shadow = Image.new("RGBA", image.size, (0,0,0,0))
-                shifted_shadow.paste(pure_shadow, (0, 3), pure_shadow)
-                
-                # 6. Uniamo l'ombra all'immagine principale
-                image = Image.alpha_composite(image.convert("RGBA"), shifted_shadow)
+                shadow_layer = shadow_layer.filter(ImageFilter.GaussianBlur(radius=3))
+                alpha = shadow_layer.split()[-1].point(lambda p: int(p * 0.45))
+                shadow_layer.putalpha(alpha)
+                image.alpha_composite(shadow_layer, dest=(0, 2))
 
-            # Il resto del codice originale per disegnare la vera tacca colorata
             image = draw_award_badge(image, _label_tr, sash_type=sash_type,
                                      size_ratio_w=cfg.sash_badge_size_w,
                                      size_ratio_h=cfg.sash_badge_size_h,
                                      notch_style=cfg.sash_badge_style,
                                      notch_inset=cfg.sash_badge_inset,
+                                     notch_pad_ratio=cfg.sash_badge_pad,
                                      font_size_ratio=cfg.sash_badge_font_ratio,
                                      frost_opacity=cfg.sash_badge_frost_opacity,
                                      frost_saturation=cfg.sash_badge_frost_saturation,
-                                     frost_reference=cfg.frost_reference,
+                                     frost_reference=_frost_ref,
                                      tint_rgb=_frost_tint,
                                      star=_is_star,
                                      text_color=cfg.sash_text_color)
@@ -2275,7 +3320,7 @@ def build_poster(
                                     height_ratio=cfg.sash_height_ratio,
                                     poster_color=_poster_color,
                                     frost_saturation=_frost_sat,
-                                    frost_reference=cfg.frost_reference,
+                                    frost_reference=_frost_ref,
                                     star=_is_star,
                                     text_color=cfg.sash_text_color)
 
@@ -2286,6 +3331,29 @@ def build_poster(
 # Lifecycle
 # ---------------------------------------------------------------------------
 
+def prune_rating_state(now: float) -> tuple[int, int]:
+    """Drop rating back-off entries that have expired, and the failure counters
+    left behind by ones that already went.  Returns how many of each.
+
+    Both dicts are keyed by (imdb_id, API key) and are written and cleared
+    together everywhere a request touches them: a failure sets the counter and
+    the back-off, an expiry on access deletes both, a success clears both.  Only
+    this sweep could separate them, by deleting an expired back-off and leaving
+    its counter — which is why the counters are swept by *absence* of a back-off
+    rather than against the list just expired.  That also collects anything
+    stranded before this function existed, without which a long-lived instance
+    keeps a counter for every title that ever failed a rating fetch and was never
+    asked for again.
+    """
+    expired = [k for k, v in _rating_backoff.items() if v <= now]
+    for k in expired:
+        del _rating_backoff[k]
+    orphans = [k for k in _rating_fail_count if k not in _rating_backoff]
+    for k in orphans:
+        del _rating_fail_count[k]
+    return len(expired), len(orphans)
+
+
 async def _cache_prune_loop() -> None:
     """Periodically prune expired rows from all cache tables."""
     # Wait a few minutes after startup before the first run so the service
@@ -2295,15 +3363,12 @@ async def _cache_prune_loop() -> None:
         logger.info("Running scheduled cache prune")
         await asyncio.get_running_loop().run_in_executor(None, prune_caches)
 
-        # Evict expired entries from the in-process rating backoff dict.
-        # Entries are also removed lazily on access, but titles that are never
-        # re-requested would otherwise accumulate indefinitely.
-        _now = asyncio.get_running_loop().time()
-        expired = [k for k, v in _rating_backoff.items() if v <= _now]
-        for k in expired:
-            del _rating_backoff[k]
-        if expired:
-            logger.debug(f"Pruned {len(expired)} expired rating backoff entries")
+        expired, orphans = prune_rating_state(asyncio.get_running_loop().time())
+        if expired or orphans:
+            logger.debug(
+                f"Pruned {expired} expired rating backoff entries "
+                f"and {orphans} stranded failure counters"
+            )
 
         await asyncio.sleep(6 * 3600)   # every 6 hours
 
@@ -2538,39 +3603,40 @@ async def _run_cache_warm_cycle(client: httpx.AsyncClient) -> None:
         # warm of the most commonly requested entry point. Off by default;
         # see CACHE_WARM_QUALITY_ENABLED for why.
         if _cfg.CACHE_WARM_QUALITY_ENABLED and imdb_id:
-            _has_quality_source = (
-                bool(_cfg.AIOSTREAMS_URL and _cfg.AIOSTREAMS_AUTH)
-                or (_cfg.QUALITY_SOURCE == "scraper" and bool(_cfg.SCRAPER_URL))
-            )
-            if _has_quality_source and _quality_backoff_remaining() <= 0:
+            if quality_source_configured() and _quality_backoff_remaining() <= 0:
                 if get_cached_quality(imdb_id, release_year) is None:
                     if _quality_bg_semaphore is None:
                         _quality_bg_semaphore = asyncio.Semaphore(_cfg.QUALITY_BG_CONCURRENCY)
                     try:
                         async with _quality_bg_semaphore:
-                            if _cfg.QUALITY_SOURCE == "scraper" and _cfg.SCRAPER_URL:
-                                q_result = await _with_retry(
-                                    fetch_quality_from_scraper,
-                                    client, _cfg.SCRAPER_URL, imdb_id, media_type, 1, 1, release_year,
-                                )
-                            else:
-                                q_result = await _with_retry(
-                                    fetch_quality_from_aiostreams,
-                                    client, imdb_id, media_type, 1, 1, release_year,
-                                )
+                            q_result = await _with_retry(
+                                fetch_quality,
+                                client, imdb_id, media_type, 1, 1, release_year,
+                            )
                         quality_calls += 1
                         _record_quality_result(q_result)
-                        if q_result is FETCH_FAILED:
+                        if q_result is QUALITY_PENDING:
+                            # Still counts as a warm: the lookup registered the
+                            # title with QualiCache, which now queues it.
+                            logger.debug(f"Cache warm: quality pending for {imdb_id}")
+                        elif q_result is FETCH_FAILED:
                             logger.warning(f"Cache warm: quality fetch failed for {imdb_id}")
                     except Exception as exc:
                         quality_calls += 1
                         _record_quality_result(FETCH_FAILED)
                         logger.warning(f"Cache warm: quality fetch failed for {imdb_id}: {exc}")
 
-        if mdblist_calls >= mdblist_budget or not imdb_id:
+        if mdblist_calls >= mdblist_budget:
             continue
 
-        if get_cached_rating(imdb_id) is not None:
+        # Warm under exactly the identity /poster reads, or the row is written
+        # where nothing looks for it. A title TMDB has no IMDb link for is warmed
+        # through the TMDB route rather than skipped.
+        warm_canonical_id = _canonical_rating_id(imdb_id or "", "", tmdb_id)
+        warm_provider     = "imdb" if imdb_id else "tmdb"
+        warm_media_id     = imdb_id or tmdb_id
+
+        if get_cached_rating(warm_canonical_id) is not None:
             continue  # rating already fresh — nothing to do
 
         await asyncio.sleep(0.25)
@@ -2578,16 +3644,17 @@ async def _run_cache_warm_cycle(client: httpx.AsyncClient) -> None:
         async def _fetch_rating_warm(_key: str):
             async with _mdblist_semaphore:
                 return await fetch_rating(
-                    client, imdb_id, _key, genre_ids, media_type,
+                    client, _key, genre_ids, media_type,
+                    media_id=warm_media_id, provider=warm_provider,
                 )
 
         result = await _fetch_rating_warm(effective_mdblist_key)
         mdblist_calls += 1
 
         if isinstance(result, _RateLimited):
-            backoff_secs, replacement = _mark_mdblist_rate_limit(imdb_id, effective_mdblist_key, result)
+            backoff_secs, replacement = _mark_mdblist_rate_limit(warm_canonical_id, effective_mdblist_key, result)
             logger.warning(
-                f"Cache warm: MDBList rate-limited on {imdb_id}; "
+                f"Cache warm: MDBList rate-limited on {warm_canonical_id}; "
                 f"key cooling down for {backoff_secs:.0f}s"
             )
             if replacement:
@@ -2598,7 +3665,7 @@ async def _run_cache_warm_cycle(client: httpx.AsyncClient) -> None:
             continue
 
         if result is FETCH_FAILED:
-            logger.warning(f"Cache warm: MDBList fetch failed for {imdb_id} — stopping MDBList warming for this cycle")
+            logger.warning(f"Cache warm: MDBList fetch failed for {warm_canonical_id} — stopping MDBList warming for this cycle")
             mdblist_budget = mdblist_calls  # stop further MDBList attempts
             continue
 
@@ -2614,7 +3681,7 @@ async def _run_cache_warm_cycle(client: httpx.AsyncClient) -> None:
         is_metacritic = "metacritic-must-see" in kw_names
 
         set_cached_rating(
-            imdb_id,
+            warm_canonical_id,
             ratings_dict if isinstance(ratings_dict, dict) else {},
             genre or "Unknown",
             rel,
@@ -2870,37 +3937,50 @@ async def lifespan(app: FastAPI):
     _HTTP_CLIENT = _make_http_client()
     logger.info("HTTP client initialised")
     # Warn on quality source misconfiguration
-    if _cfg.QUALITY_SOURCE == "scraper" and (bool(_cfg.AIOSTREAMS_URL) or bool(_cfg.AIOSTREAMS_AUTH)):
+    _quality_source = active_quality_source()
+    if _cfg.QUALITY_SOURCE not in QUALITY_SOURCES:
         logger.warning(
-            "QUALITY_SOURCE=scraper but AIOSTREAMS_URL/AIOSTREAMS_AUTH are also set — "
-            "scraper will be used; AIOSTREAMS settings are ignored. "
+            f"Unknown QUALITY_SOURCE={_cfg.QUALITY_SOURCE!r} — expected one of "
+            f"{', '.join(QUALITY_SOURCES)}; defaulting to aiostreams behaviour."
+        )
+    elif _quality_source != "aiostreams" and (bool(_cfg.AIOSTREAMS_URL) or bool(_cfg.AIOSTREAMS_AUTH)):
+        logger.warning(
+            f"QUALITY_SOURCE={_quality_source} but AIOSTREAMS_URL/AIOSTREAMS_AUTH are also set — "
+            f"{_quality_source} will be used; AIOSTREAMS settings are ignored. "
             "Unset AIOSTREAMS_URL and AIOSTREAMS_AUTH to silence this warning."
         )
-    if _cfg.QUALITY_SOURCE == "scraper" and not _cfg.SCRAPER_URL:
+    if _quality_source == "scraper" and not _cfg.SCRAPER_URL:
         logger.warning("QUALITY_SOURCE=scraper but SCRAPER_URL is not set — quality fetching is disabled.")
-    if _cfg.QUALITY_SOURCE not in ("aiostreams", "scraper"):
-        logger.warning(f"Unknown QUALITY_SOURCE={_cfg.QUALITY_SOURCE!r} — defaulting to aiostreams behaviour.")
+    if _quality_source == "qualicache" and not _cfg.QUALICACHE_URL:
+        logger.warning("QUALITY_SOURCE=qualicache but QUALICACHE_URL is not set — quality fetching is disabled.")
+    if _quality_source == "qualicache" and _cfg.QUALICACHE_URL:
+        logger.info(f"Quality source: QualiCache at {_cfg.QUALICACHE_URL}")
     _configurator_html = _load_configurator_html()
     load_languages()   # poster-output translations (English fallback if absent)
     _render_assets_signature = _compute_render_assets_signature()
-    # Warm the genre fallback backgrounds into memory so no-art posters render
-    # with zero extra latency (same idea as the badge cache warm-up).
+    # Count the genre fallback backgrounds without decoding them.  These are only
+    # used when a title has no usable art at all, so warming the whole set into
+    # memory cost ~172 MB resident for a path most requests never touch; they now
+    # load on demand into a bounded LRU (see _load_genre_background).  The count
+    # still logs, because "no art found" is worth telling the operator about.
     try:
-        _warmed = 0
+        _available = 0
         for _style in _GENRE_BG_STYLES:
             _sdir = os.path.join(_GENRE_BG_DIR, _style)
             if not os.path.isdir(_sdir):
                 continue
-            for _fn in os.listdir(_sdir):
-                if _fn.lower().endswith(".png"):
-                    if _load_genre_background(_fn[:-4], _style) is not None:
-                        _warmed += 1
-        if _warmed:
-            logger.info(f"Genre backgrounds warmed: {_warmed} entries")
+            _available += sum(
+                1 for _fn in os.listdir(_sdir) if _fn.lower().endswith(".png")
+            )
+        if _available:
+            logger.info(
+                f"Genre backgrounds available: {_available} entries "
+                f"(loaded on demand, cache limit {_GENRE_BG_CACHE_MAX})"
+            )
         else:
             logger.info("No genre background art found — using gradient fallbacks")
     except Exception as exc:
-        logger.warning(f"Genre background warm-up skipped: {exc}")
+        logger.warning(f"Genre background scan skipped: {exc}")
     # Burned-in-text detection: fetch + load PP-OCRv5 Mobile in the background so
     # the first textless request isn't blocked by the one-time ~4.6 MB
     # download.  On by default; skipped when the operator has opted out.
@@ -2964,6 +4044,15 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 _FONTS_DIR = os.path.join(BASE_DIR, "fonts")
 
 
+# Font objects are immutable once built and re-parsing the TTF per size adds up
+# fast in the fallback-title fit loop, which probes many sizes for one title.
+# Shared across render threads, matching what quality.py and age_badge.py
+# already do with their own font caches.
+@lru_cache(maxsize=256)
+def _load_font(path: str, size: int) -> ImageFont.FreeTypeFont:
+    return ImageFont.truetype(path, size)
+
+
 # ── Genre fallback backgrounds ────────────────────────────────────────────
 # Atmospheric 500x750 PNGs (procedurally generated by genre_backgrounds.py, or
 # hand-made overrides dropped into the same folder) used as the base for no-art
@@ -2974,7 +4063,16 @@ _GENRE_BG_DIR = os.path.join(BASE_DIR, "static", "genre_bg")
 # fallback_bg_style: "minimal" (procedural textured) or "photoreal" (hand-made
 # photographic art that blends with real posters).
 _GENRE_BG_STYLES = ("minimal", "photoreal")
-_genre_bg_cache: dict[str, "Image.Image | None"] = {}   # keyed "style/genre"
+# Bounded LRU, keyed "style/genre", holding decoded RGBA at canvas size.
+#
+# Both bounds matter.  Decoded, the full set is ~172 MB (the photoreal art ships
+# at 1024x1536, 6 MB each as RGBA), and it used to be loaded in full at startup
+# and held forever — a permanent cost for a path that only fires when a title has
+# no usable art at all.  Capping the cache keeps the resident set to the handful
+# of genres a given library actually hits; entries are cheap to reload (one PNG
+# decode) on the rare miss.
+_GENRE_BG_CACHE_MAX = 8
+_genre_bg_cache: "OrderedDict[str, Image.Image | None]" = OrderedDict()
 
 
 def _genre_bg_path(style: str, name: str) -> "str | None":
@@ -2988,11 +4086,18 @@ def _load_genre_background(genre: str, style: str = "minimal") -> "Image.Image |
     None if none exists.  A missing image degrades gracefully: the style's
     default.png → the minimal set's genre/default → None (caller then renders the
     procedural gradient canvas).  So selecting a not-yet-populated style never
-    breaks — it just falls back to minimal."""
+    breaks — it just falls back to minimal.
+
+    The returned canvas is always POSTER_WIDTH x POSTER_HEIGHT.  build_poster
+    takes its geometry from the canvas it is handed, so returning the photoreal
+    art at its native 1024x1536 made those fallbacks render at a different size
+    from every other poster — and paid a 4x encode for the privilege."""
     if style not in _GENRE_BG_STYLES:
         style = "minimal"
     key = f"{style}/{genre}"
-    if key not in _genre_bg_cache:
+    if key in _genre_bg_cache:
+        _genre_bg_cache.move_to_end(key)
+    else:
         path = (
             _genre_bg_path(style, genre)
             or _genre_bg_path(style, "default")
@@ -3000,11 +4105,34 @@ def _load_genre_background(genre: str, style: str = "minimal") -> "Image.Image |
             or _genre_bg_path("minimal", "default")
         )
         try:
-            _genre_bg_cache[key] = Image.open(path).convert("RGBA") if path else None
+            _genre_bg_cache[key] = (
+                _normalise_fallback_canvas(Image.open(path)) if path else None
+            )
         except Exception:
             _genre_bg_cache[key] = None
+        while len(_genre_bg_cache) > _GENRE_BG_CACHE_MAX:
+            _evicted = _genre_bg_cache.popitem(last=False)[1]
+            if _evicted is not None:
+                _evicted.close()
     base = _genre_bg_cache[key]
     return base.copy() if base is not None else None
+
+
+def _normalise_fallback_canvas(image: Image.Image) -> Image.Image:
+    """Fit-cover a fallback background to the poster canvas, as RGBA.
+
+    Fit-cover rather than a plain resize so a background authored at some other
+    aspect ratio is centre-cropped instead of squashed.  The shipped art is
+    already 2:3, for which this is just the resize."""
+    target_w, target_h = _cfg.POSTER_WIDTH, _cfg.POSTER_HEIGHT
+    src_w, src_h = image.size
+    if (src_w, src_h) != (target_w, target_h):
+        scale = max(target_w / src_w, target_h / src_h)
+        new_w, new_h = round(src_w * scale), round(src_h * scale)
+        image = image.resize((new_w, new_h), Image.Resampling.LANCZOS)
+        left, top = round((new_w - target_w) / 2), round((new_h - target_h) / 2)
+        image = image.crop((left, top, left + target_w, top + target_h))
+    return image.convert("RGBA")
 
 
 app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")
@@ -3048,10 +4176,8 @@ async def server_caps(access_key: str = ""):
         "mdblist_key_set":       bool(_cfg.SERVER_MDBLIST_KEYS),
         "mdblist_key_count":     len(_cfg.SERVER_MDBLIST_KEYS),
         "aiostreams_configured": bool(_cfg.AIOSTREAMS_URL and _cfg.AIOSTREAMS_AUTH),
-        "quality_configured":    (
-            bool(_cfg.AIOSTREAMS_URL and _cfg.AIOSTREAMS_AUTH)
-            or (_cfg.QUALITY_SOURCE == "scraper" and bool(_cfg.SCRAPER_URL))
-        ),
+        "quality_source":        active_quality_source(),
+        "quality_configured":    quality_source_configured(),
         "trending_fetch_count":  _cfg.TRENDING_FETCH_COUNT,
         "trending_fetch_time":   _cfg.TRENDING_FETCH_TIME,
         "trending_fetch_timezone": _cfg.TRENDING_FETCH_TIMEZONE,
@@ -3070,7 +4196,15 @@ _configurator_html: str | None = None
 # which is what made sliders / dropdowns drift out of sync with the new
 # defaults until a manual Reset.
 _configurator_etag: str | None = None
-_RENDER_CACHE_VERSION = "2"
+# "3": photoreal genre fallback backgrounds now render at the poster canvas size
+#      rather than their native 1024x1536, so previously cached oversized
+#      composites must be re-rendered.
+# "4": the tinted vignette no longer frosts posters with confirmed burned-in
+#      text, so composites cached with a blurred-over title must be re-rendered.
+# "5": mode 6 adds a tier-coloured bookmark at the poster top-left corner.
+# "6": the mode 6 bookmark is redrawn with rounded tips and a curved inner edge,
+#      so composites cached with the old hard-edged triangle look stale.
+_RENDER_CACHE_VERSION = "6"
 _render_assets_signature = "startup"
 
 
@@ -3172,6 +4306,9 @@ async def stats(access_key: str = ""):
             "rating_fetches_in_flight":  len(_rating_fetch_inflight),
             "rating_backoff_titles":     len({imdb_id for imdb_id, _ in _rating_backoff}),
             "rating_backoff_entries":    len(_rating_backoff),
+            # Should track the line above: a persistent gap means counters are
+            # outliving their back-off entries again.
+            "rating_fail_counters":      len(_rating_fail_count),
             "mdblist_keys":              mdblist_keys,
             "composite_cache_disabled":  _cfg.DISABLE_COMPOSITE_CACHE,
             "svg_logo_support":          svg_logo_supported(),
@@ -3460,8 +4597,11 @@ async def get_logo(
 @app.get("/poster")
 async def get_poster(
     request: Request,
-    tmdb_id: str,
-    imdb_id: str,
+    tmdb_id: str = "",
+    imdb_id: str = "",
+    anilist_id: str = "",
+    kitsu_id: str = "",
+    stremio_id: str = "",
     type: str = "movie",
     quality: str = "",
     season: int = 1,
@@ -3497,36 +4637,42 @@ async def get_poster(
     muted: str | None = None,
     textless: str | None = None,
     score_color_mode: str | None = None,
+    shape: str | None = None,
+    landscape_art: str | None = None,
+    badge_pos: str | None = None,
     debug: str | None = None,
     nocache: str | None = None,
 ):
     if _cfg.ACCESS_KEY and not hmac.compare_digest(access_key, _cfg.ACCESS_KEY):
         raise HTTPException(status_code=403, detail="Unauthorized, your access key is not valid for this instance.")
 
-    # =======================================================================
-    # --- NUOVO: PONTE DI SALVATAGGIO (BYPASS PER WATCHLY / RPDB) ---
-    # =======================================================================
-    
-    # 1. Filtro "Graffe": Se Watchly invia le variabili non compilate, le consideriamo nulle.
-    if "{" in tmdb_id:
-        tmdb_id = ""
-    if "{" in imdb_id:
-        imdb_id = ""
+    _check_type(type)
 
-    # 2. Ponte API: Se manca il TMDB ID ma abbiamo un IMDB ID valido, chiediamo a TheMovieDB.
-    # Questo bypassa completamente il problema dei client che inviano solo ID incompleti.
-    if not tmdb_id and imdb_id:
-        effective_tmdb_key = _resolve_tmdb_key(tmdb_key)
+    # Done before anything reads imdb_id — the composite cache key is built from
+    # it further down, and a literal "{imdb_id?}" baked into cache keys would
+    # fragment the cache per client build.
+    imdb_id = _normalise_optional_id(imdb_id, "imdb_id")
+    tmdb_id = _normalise_optional_id(tmdb_id, "tmdb_id")
+    anilist_id = _normalise_optional_id(anilist_id, "anilist_id")
+    kitsu_id = _normalise_optional_id(kitsu_id, "kitsu_id")
+    stremio_id = _normalise_optional_id(stremio_id, "stremio_id")
+
+    # -----------------------------------------------------------------------
+    # PONTE DI SALVATAGGIO (BYPASS PER WATCHLY / RPDB / IMDB-ONLY CLIENTS)
+    # Se manca il TMDB ID ma abbiamo un IMDB ID valido, chiediamo a TheMovieDB.
+    # Questo risolve automaticamente il problema dei client che inviano solo IMDB.
+    # -----------------------------------------------------------------------
+    if not tmdb_id and imdb_id and _IMDB_ID_RE.match(imdb_id):
+        effective_tmdb_key = _resolve_tmdb_key((tmdb_key or "").strip())
         if effective_tmdb_key and _HTTP_CLIENT:
             try:
                 find_resp = await _HTTP_CLIENT.get(
                     f"https://api.themoviedb.org/3/find/{imdb_id}",
-                    params={"api_key": effective_tmdb_key, "external_source": "imdb_id"}
+                    params={"api_key": effective_tmdb_key, "external_source": "imdb_id"},
+                    timeout=10.0
                 )
                 if find_resp.status_code == 200:
                     find_data = find_resp.json()
-                    
-                    # Cerca in automatico il tipo di media e ne estrae il VERO ID numerico.
                     if find_data.get("movie_results"):
                         tmdb_id = str(find_data["movie_results"][0]["id"])
                         type = "movie"
@@ -3540,22 +4686,108 @@ async def get_poster(
                         tmdb_id = str(find_data["tv_season_results"][0]["show_id"])
                         type = "tv"
             except Exception as e:
-                logger.error(f"Ponte IMDB->TMDB fallito per {imdb_id}: {e}")
+                logger.warning(f"Ponte IMDB->TMDB per Watchly fallito per {imdb_id}: {e}")
 
-    # 3. Controllo finale: se dopo tutti i tentativi non abbiamo ottenuto un TMDB ID valido, blocchiamo.
-    if not tmdb_id:
-        raise HTTPException(status_code=400, detail="Missing valid tmdb_id and mapping via imdb_id failed")
-    
-    # =======================================================================
+    # AIOMetadata's "{id}" is the raw Stremio meta id, and for an ordinary title
+    # that IS the IMDb id ("tt0903747"). Generated templates no longer send
+    # imdb_id — a required placeholder with no value nulls the whole url — so
+    # when a template carries {id} and nothing else identifies the title to
+    # IMDb, take it from there. Request-supplied and available before any
+    # metadata fetch, so unlike an id discovered from TMDB later it is safe to
+    # key the cache on: it makes the row shared with every other client that
+    # sends an IMDb id, rather than a second row under the tmdb: form.
+    #
+    # Parsed here rather than in _resolve_anime_request because that returns
+    # early when anime sources are disabled, and this is not an anime concern.
+    if not imdb_id and stremio_id:
+        _stremio_hint = stremio_id.strip()
+        if _IMDB_ID_RE.match(_stremio_hint):
+            imdb_id = _stremio_hint
 
-    # Adesso passiamo ai controlli rigidi. A questo punto arriveranno solo ID corretti.
-    _check_tmdb_id(tmdb_id)
-    
-    # Controlliamo l'imdb_id rigorosamente solo se esiste ancora (se non lo abbiamo svuotato al punto 1)
+    # -----------------------------------------------------------------------
+    # Anime-native ids (AniList / Kitsu).
+    #
+    # A client that can supply one — AIOMetadata and similar advanced metadata
+    # providers — gets art, titles, genres and a community score straight from
+    # the anime provider, with no id conversion anywhere. Clients that only
+    # speak imdb/tmdb/tvdb pass neither param and take the unchanged TMDB path.
+    #
+    # The anime id governs the ART and the metadata spine only. AIOMetadata
+    # sends tmdb_id and imdb_id alongside it whenever it has them, and those are
+    # worth keeping: MDBList ratings, awards, keywords, age rating and digital
+    # release are all IMDb-keyed, and trending and movie release status are
+    # TMDB-keyed. Discarding them leaves the info sash with nothing to say
+    # beyond the foreign-language label. So enrichment still runs on whatever
+    # ids the client supplied; only the art comes from the anime provider.
+    #
+    # `canonical_id` is the identity for the rating cache table: the IMDb id
+    # when there is one (so the row is shared with the ordinary path), else the
+    # "<namespace>:<id>" anime form, which can't collide with a bare TMDB id or
+    # a tt-prefixed IMDb id. See _canonical_rating_id(); the stream id sent to
+    # quality sources is resolved separately, after metadata.
+    # -----------------------------------------------------------------------
+    anime_namespace, anime_id = _resolve_anime_request(anilist_id, kitsu_id, stremio_id)
+    is_anime = anime_namespace is not None
+    anime_key = anime.namespaced_id(anime_namespace, anime_id) if is_anime else ""
+
+    if is_anime:
+        # Both are optional on this path, but must still be well-formed if sent.
+        if imdb_id:
+            _check_imdb_id(imdb_id)
+        if tmdb_id:
+            _check_tmdb_id(tmdb_id)
+        has_tmdb_id = bool(tmdb_id)
+        # Downstream art fetching, log lines and detection keys are written in
+        # terms of tmdb_id. Keep the real one when supplied (better cache keys,
+        # and it re-enables the TMDB-only lookups); otherwise stand in the
+        # anime id so those paths keep working without a second id threaded
+        # through them.
+        if not tmdb_id:
+            tmdb_id = anime_key
+    else:
+        # tmdb_id is the one required identity: it selects the artwork and the
+        # metadata spine, and nothing renders without it. imdb_id is optional
+        # enrichment.
+        #
+        # It used to be required too, which meant a title TMDB has no IMDb link
+        # for — TMDB returns imdb_id: null for these — could not be rendered at
+        # all, and the 400 named a parameter the caller had no way to supply.
+        # Handing the empty string to the format checks was worse still: it
+        # reported a missing id as malformed, and named whichever param happened
+        # to be checked first.
+        if not tmdb_id:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Missing required parameter: tmdb_id. /poster needs tmdb_id — "
+                    "it selects the artwork and metadata. imdb_id is optional; "
+                    "supplying it adds the IMDb-keyed enrichment (Metahub logo "
+                    "fallback, digital-release detection, stream-quality badges)."
+                ),
+            )
+        _check_tmdb_id(tmdb_id)
+        if imdb_id:
+            _check_imdb_id(imdb_id)
+        has_tmdb_id = True
+
+    canonical_id = _canonical_rating_id(imdb_id, anime_key, tmdb_id)
+
+    # The MDBList lookup route — what we ask upstream, as opposed to what we key
+    # the cache on. MDBList serves the same record under /imdb/… and /tmdb/…, so
+    # a title with no IMDb id still has ratings, awards, keywords and an age
+    # rating available; it just has to be asked for by its TMDB id.
+    #
+    # Anime is deliberately excluded from the TMDB route: those titles take their
+    # score, genre and age rating from the anime provider, and routing them to
+    # MDBList as well would start putting awards and festival sashes on a whole
+    # catalogue that has never had them. That is a rendering change to make on
+    # purpose, not a side effect of this one.
     if imdb_id:
-        _check_imdb_id(imdb_id)
-        
-    _check_type(type)
+        rating_provider, rating_media_id = "imdb", imdb_id
+    elif has_tmdb_id and not is_anime:
+        rating_provider, rating_media_id = "tmdb", tmdb_id
+    else:
+        rating_provider, rating_media_id = None, None
 
     # -----------------------------------------------------------------------
     # Single-user mode: check for a cached final poster first.
@@ -3568,7 +4800,25 @@ async def get_poster(
     effective_tmdb_key    = _resolve_tmdb_key(tmdb_key)
     effective_mdblist_key = _resolve_mdblist_key(mdblist_key)
 
-    if not effective_tmdb_key:
+    # Only null the key when the request has no MDBList-resolvable identity at
+    # all — that makes every downstream MDBList gate (cooldown, back-off,
+    # coalescing, the fetch itself) skip naturally rather than needing a branch
+    # at each one.
+    #
+    # This used to trigger on a missing IMDb id, which quietly made the lookup
+    # unreachable for TMDB-only titles no matter how the fetch itself was
+    # routed. It is now the absence of a route: an anime request that carries
+    # neither an IMDb id nor a TMDB id. When AIOMetadata does send an IMDb id
+    # alongside the anime id, the normal fetch runs and the provider score is
+    # merged into its result, so the sash gets awards, keywords and an age
+    # rating too.
+    if rating_media_id is None:
+        effective_mdblist_key = None
+
+    # An anime request gets its art and metadata from the provider, so a TMDB
+    # key is optional there even when a tmdb_id is supplied — it only unlocks
+    # the extra TMDB-keyed lookups (trending, movie release status).
+    if not effective_tmdb_key and not is_anime:
         raise HTTPException(
             status_code=400,
             detail=(
@@ -3580,11 +4830,33 @@ async def get_poster(
     raw_params = {
         k: v for k, v in request.query_params.items()
         if k not in (
-            "tmdb_id", "imdb_id", "mdblist_key", "tmdb_key", "type",
+            "tmdb_id", "imdb_id", "anilist_id", "kitsu_id", "stremio_id",
+            # Not art sources here (MAL needs auth, AniDB's API is heavily
+            # restricted), but AIOMetadata templates carry the full placeholder
+            # set. Excluded so their presence — substituted or not — can't
+            # fragment the composite cache key across otherwise identical
+            # requests.
+            "mal_id", "anidb_id",
+            "mdblist_key", "tmdb_key", "type",
             "quality", "season", "episode", "access_key", "debug", "nocache",
         )
     }
     rcfg = build_request_config(raw_params)
+
+    # Anime is essentially always Japanese, so the foreign-language slot says
+    # nothing here — but ranked highly (a reasonable choice for live-action,
+    # where it is a real signal) it would mask every sash below it on every
+    # anime title. Demote it to last rather than dropping it, so a title with
+    # nothing else to say still gets a label; a user who removed the slot
+    # entirely keeps it removed.
+    #
+    # Applied to rcfg itself rather than at the pick_sash call sites because
+    # build_poster derives its own ordering from cfg.sash_priority, and that is
+    # the one that ends up on the rendered poster.
+    if is_anime and "foreign" in rcfg.sash_priority:
+        rcfg.sash_priority = (
+            [s for s in rcfg.sash_priority if s != "foreign"] + ["foreign"]
+        )
 
     # Operator force-refresh: ?nocache=1 skips the composite cache READ so a fresh
     # render is produced (and re-cached), letting an operator invalidate a single
@@ -3630,7 +4902,18 @@ async def get_poster(
                 + _server_sig
             ).encode()
         ).hexdigest()[:16]
-        final_cache_key = f"{imdb_id}:{tmdb_id}:{type}:{_params_hash}"
+        # The anime key has to be part of this: the same imdb/tmdb pair renders
+        # different art depending on whether an anime id came with it, so the
+        # two must not share a composite cache entry.
+        # Non-anime uses canonical_id rather than the raw imdb_id so a TMDB-only
+        # title gets "tmdb:1698026:…" instead of a leading empty segment. For a
+        # title that has an IMDb id the two are the same string, so existing
+        # cache entries stay valid.
+        final_cache_key = (
+            f"{anime_key}:{imdb_id}:{tmdb_id}:{type}:{_params_hash}"
+            if is_anime
+            else f"{canonical_id}:{tmdb_id}:{type}:{_params_hash}"
+        )
         cached_jpeg = None if _force_refresh else get_cached_final_poster(final_cache_key)
         if _force_refresh:
             logger.info(f"Force refresh (nocache) for {final_cache_key} — bypassing cache read")
@@ -3683,7 +4966,7 @@ async def get_poster(
     # doesn't complain about use-before-global-declaration.
     global _mdblist_active_key_idx
 
-    cached_rating = get_cached_rating(imdb_id)
+    cached_rating = get_cached_rating(canonical_id)
 
     if cached_rating is not None:
         (
@@ -3718,14 +5001,14 @@ async def get_poster(
     # ------------------------------------------------------------------
     # Rating fetch coalescing + back-off
     #
-    # Goal: ensure at most one MDBList call per imdb_id per worker at a
+    # Goal: ensure at most one MDBList call per canonical_id per worker at a
     # time, and suppress repeated failures with key-scoped cooldowns.
     #
     # Back-off check: if a recent fetch failed, skip that title-key pair
     # until its escalating retry delay expires.
     #
     # Coalescing: if another coroutine in this worker is already fetching
-    # the same imdb_id, wait for its asyncio.Event, then re-read the DB.
+    # the same canonical_id, wait for its asyncio.Event, then re-read the DB.
     # If it succeeded we get the cached data for free; if it failed we
     # re-check the back-off (now set by the other coroutine) before
     # deciding whether to attempt our own call.
@@ -3745,12 +5028,12 @@ async def get_poster(
             if _replacement is not None:
                 effective_mdblist_key = _replacement
                 logger.info(
-                    f"MDBList key rotated to key #{_mdblist_active_key_idx + 1} for {imdb_id}"
+                    f"MDBList key rotated to key #{_mdblist_active_key_idx + 1} for {canonical_id}"
                 )
             else:
                 _remaining = _mdblist_key_cooldown.get(_cooling_key, 0.0) - _loop_now
                 logger.debug(
-                    f"Rating fetch for {imdb_id} skipped "
+                    f"Rating fetch for {canonical_id} skipped "
                     f"(selected MDBList key cooling down; {_remaining:.0f}s remaining)"
                 )
                 effective_mdblist_key = None
@@ -3759,11 +5042,11 @@ async def get_poster(
 
         # Per-title and key backoff (network failures, or this title-key pair's last 429).
         if effective_mdblist_key:
-            _retry_key = _rating_retry_key(imdb_id, effective_mdblist_key)
+            _retry_key = _rating_retry_key(canonical_id, effective_mdblist_key)
             _backoff_until = _rating_backoff.get(_retry_key)
             if _backoff_until is not None:
                 if _loop_now < _backoff_until:
-                    logger.debug(f"Rating fetch for {imdb_id} skipped (MDBList back-off active for selected key)")
+                    logger.debug(f"Rating fetch for {canonical_id} skipped (MDBList back-off active for selected key)")
                     effective_mdblist_key = None
                     _rating_backoff_active = True
                     _mdblist_unavailable_reason = "selected key is in back-off for this title"
@@ -3772,12 +5055,12 @@ async def get_poster(
                     _rating_fail_count.pop(_retry_key, None)  # reset escalation for clean slate
 
     if not rating_already_cached and effective_mdblist_key:
-        _inflight_event = _rating_fetch_inflight.get(imdb_id)
+        _inflight_event = _rating_fetch_inflight.get(canonical_id)
         if _inflight_event is not None:
             # Another coroutine is mid-fetch — wait and piggyback on its result.
-            logger.info(f"Rating fetch coalesced for {imdb_id} — awaiting in-flight fetch")
+            logger.info(f"Rating fetch coalesced for {canonical_id} — awaiting in-flight fetch")
             await _inflight_event.wait()
-            _refreshed = get_cached_rating(imdb_id)
+            _refreshed = get_cached_rating(canonical_id)
             if _refreshed is not None:
                 (
                     cached_ratings_dict,
@@ -3794,67 +5077,28 @@ async def get_poster(
                 ) = _refreshed
                 rating_already_cached        = True
                 release_date_for_quality_ttl = cached_release_date
-                logger.info(f"Rating coalesce succeeded for {imdb_id} — using cached result")
+                logger.info(f"Rating coalesce succeeded for {canonical_id} — using cached result")
             else:
                 # The owner already made the MDBList attempt for this title.
                 # If it did not produce a cache row, do not launch a second
                 # same-content request from a waiter in the same burst.
                 logger.debug(
-                    f"Rating fetch for {imdb_id} suppressed after coalescence "
+                    f"Rating fetch for {canonical_id} suppressed after coalescence "
                     "(owner did not cache rating)"
                 )
                 effective_mdblist_key = None
                 _rating_backoff_active = True
                 _mdblist_unavailable_reason = "coalesced fetch did not cache rating"
         else:
-            # First request for this imdb_id — claim the fetch slot.
+            # First request for this canonical_id — claim the fetch slot.
             _rating_event_to_set              = asyncio.Event()
-            _rating_fetch_inflight[imdb_id]   = _rating_event_to_set
+            _rating_fetch_inflight[canonical_id] = _rating_event_to_set
 
-    # Quality tokens — cache checked exactly once here; fetch fn only writes.
-    if quality:
-        quality_tokens = parse_quality(quality)
-        cached_tokens  = None
-    else:
-        cached_tokens  = get_cached_quality(imdb_id, release_date_for_quality_ttl)
-        quality_tokens = cached_tokens or []
-
-    # A quality source is available when the server has AIOStreams configured,
-    # or QUALITY_SOURCE=scraper with a valid SCRAPER_URL.
-    _has_quality_source = (
-        bool(_cfg.AIOSTREAMS_URL and _cfg.AIOSTREAMS_AUTH)
-        or (_cfg.QUALITY_SOURCE == "scraper" and bool(_cfg.SCRAPER_URL))
-    )
-    _quality_cooldown_active = _has_quality_source and _quality_backoff_remaining() > 0
-    quality_needs_fetch = (
-        rcfg.badge_display_mode in (1, 2, 4, 5)
-        and not quality
-        and cached_tokens is None
-        and _has_quality_source
-        and not _quality_cooldown_active
-    )
-
-    quality_pending = bool(_quality_cooldown_active and cached_tokens is None)
-    if quality_needs_fetch and not rcfg.wait_for_quality:
-        # Fire-and-forget background fetch — poster is served immediately
-        # without badges; the cache will be warm on the next request.
-        if imdb_id not in _quality_bg_inflight:
-            _quality_bg_inflight.add(imdb_id)
-            asyncio.create_task(
-                _background_quality_fetch(
-                    imdb_id, type, season, episode,
-                    release_date_for_quality_ttl,
-                )
-            )
-            logger.info(f"Quality fetch deferred to background for {imdb_id}")
-        else:
-            logger.info(f"Quality background fetch already in progress for {imdb_id}")
-        quality_needs_fetch = False
-        quality_pending = True
-
-    if not rating_already_cached and not effective_mdblist_key:
+    # A request with no MDBList route (anime carrying neither an IMDb nor a TMDB
+    # id) nulls the key deliberately, so this would be noise rather than a warning.
+    if not rating_already_cached and not effective_mdblist_key and rating_media_id:
         logger.warning(
-            f"MDBList unavailable for {imdb_id}: {_mdblist_unavailable_reason} — "
+            f"MDBList unavailable for {canonical_id}: {_mdblist_unavailable_reason} — "
             "poster will be served without rating/award data."
         )
 
@@ -3875,15 +5119,148 @@ async def get_poster(
     global _active_poster_renders
     _active_poster_renders += 1
     try:
-        genre_ids, is_textless, logos, release_year, title, poster_path, backdrop_path, tmdb_data = (
-            await _coalesced_fetch_poster_metadata(
-                client, tmdb_id, effective_tmdb_key, type, rcfg.logo_language,
-                _effective_secondary,
+        # True only while we are actually rendering the anime provider's cover
+        # art, which is what the art-specific rules key off. Distinct from
+        # is_anime, which stays true for a request that fell back to TMDB art.
+        using_anime_art = False
+        _anime_art_missing = False
+        if is_anime:
+            # Neither provider ships title logos, so when a tmdb_id came with
+            # the request pull TMDB's metadata alongside — purely for its logo
+            # list, which is language-aware and has good anime coverage. The
+            # art, title, genres, dates and score still come from the anime
+            # provider. This is cached for a week and coalesced, so the
+            # amortised cost is one extra call per title per week.
+            _anime_meta, _logo_meta = await asyncio.gather(
+                anime.fetch_anime_metadata(client, anime_namespace, anime_id),
+                _coalesced_fetch_poster_metadata(
+                    client, tmdb_id, effective_tmdb_key, type,
+                    rcfg.logo_language, _effective_secondary,
+                ) if (has_tmdb_id and effective_tmdb_key) else _resolved(None),
+                return_exceptions=True,
             )
-        )
+            if isinstance(_anime_meta, BaseException):
+                logger.warning(f"Anime metadata fetch failed for {anime_key}: {_anime_meta}")
+                _anime_meta = None
+            # A failed logo lookup is never fatal — it just means no logo.
+            if isinstance(_logo_meta, BaseException):
+                logger.warning(f"TMDB logo lookup failed for {tmdb_id}: {_logo_meta}")
+                _logo_meta = None
+
+            using_anime_art = _anime_meta is not None
+            if _anime_meta is None and _logo_meta is not None:
+                # The provider has no entry, or was throttled or unreachable.
+                # TMDB's metadata is already in hand (fetched for the logo), so
+                # serve its art rather than dropping to a genre canvas — a
+                # strictly better poster, and it degrades gracefully if the
+                # provider has an outage. Rendering reverts to the normal TMDB
+                # rules; only the anime-specific ART behaviour is skipped.
+                logger.info(
+                    f"No {anime_namespace} entry for {anime_key} — falling back to TMDB art"
+                )
+                _anime_meta = _logo_meta
+                _anime_art_missing = True
+            elif _anime_meta is None:
+                # Nothing from either source — same genre canvas path a TMDB
+                # title with no art takes.
+                _anime_meta = anime.empty_metadata(anime_namespace)
+                _anime_art_missing = True
+            else:
+                _anime_art_missing = False
+
+            (
+                genre_ids, is_textless, logos, release_year, title,
+                poster_path, backdrop_path, tmdb_data,
+            ) = _anime_meta
+            if using_anime_art and _logo_meta is not None:
+                logos = _logo_meta[2]
+        else:
+            genre_ids, is_textless, logos, release_year, title, poster_path, backdrop_path, tmdb_data = (
+                await _coalesced_fetch_poster_metadata(
+                    client, tmdb_id, effective_tmdb_key, type, rcfg.logo_language,
+                    _effective_secondary,
+                )
+            )
         # Canonical IMDb id for downstream lookups (e.g. TVDB remoteid resolution):
         # the request param if supplied, else the one TMDB returned in external_ids.
+        # Optional: TMDB returns imdb_id: null for titles it has no IMDb link for.
         effective_imdb_id = (imdb_id or "").strip() or tmdb_data.get("imdb_id") or None
+
+        # ------------------------------------------------------------------
+        # Quality tokens — cache checked exactly once here; fetch fn only writes.
+        #
+        # This runs *after* metadata on purpose. The id a quality source will
+        # recognise is not always one the caller sent: for an ordinary title
+        # whose URL carries no imdb_id, the IMDb id TMDB just returned is the
+        # only thing Torrentio/Comet/AIOStreams/QualiCache can be asked about.
+        # Resolving quality before metadata would have silently dropped the
+        # badges from every normally-linked title the moment generated templates
+        # stopped sending imdb_id.
+        #
+        # quality_id is None when nothing upstream would recognise the title —
+        # then the lookup is skipped rather than issued in a form that can only
+        # 404. An explicit quality= override needs no lookup and is unaffected.
+        # ------------------------------------------------------------------
+        quality_id = _quality_identity(imdb_id, anime_key, effective_imdb_id)
+
+        if quality:
+            quality_tokens = parse_quality(quality)
+            cached_tokens  = None
+        elif quality_id is None:
+            cached_tokens  = None
+            quality_tokens = []
+        else:
+            cached_tokens  = get_cached_quality(quality_id, release_date_for_quality_ttl)
+            quality_tokens = cached_tokens or []
+
+        # A quality source is available when the backend QUALITY_SOURCE selects has
+        # the settings it needs — AIOStreams URL + auth, SCRAPER_URL, or QUALICACHE_URL.
+        _has_quality_source = quality_source_configured()
+        _quality_cooldown_active = _has_quality_source and _quality_backoff_remaining() > 0
+
+        # The landscape renderer has no quality badges — build_landscape drops the
+        # tokens — so fetching them buys nothing and costs plenty: wait_for_quality
+        # would block every landscape request on a provider whose answer is thrown
+        # away, and a pending fetch would keep the composite out of the cache, so a
+        # slow source turned every request into a fresh render.
+        _is_landscape = rcfg.shape == "landscape"
+
+        quality_needs_fetch = (
+            rcfg.badge_display_mode in (1, 2, 4, 5, 6)
+            and not quality
+            and quality_id is not None
+            and cached_tokens is None
+            and _has_quality_source
+            and not _quality_cooldown_active
+            and not _is_landscape
+        )
+
+        quality_pending = bool(
+            _quality_cooldown_active
+            and quality_id is not None
+            and cached_tokens is None
+            and not _is_landscape
+        )
+        if quality_needs_fetch and not rcfg.wait_for_quality:
+            # Fire-and-forget background fetch — poster is served immediately
+            # without badges; the cache will be warm on the next request.
+            # Torrentio, Comet and AIOStreams all accept an anime-native stream id
+            # ("kitsu:12345:1:1") because that is exactly what Stremio sends them
+            # for Kitsu-catalogue items, so that form passes straight through and
+            # the quality badge keeps working without an IMDb id.
+            if quality_id not in _quality_bg_inflight:
+                _quality_bg_inflight.add(quality_id)
+                asyncio.create_task(
+                    _background_quality_fetch(
+                        quality_id, type, season, episode,
+                        release_date_for_quality_ttl,
+                    )
+                )
+                logger.info(f"Quality fetch deferred to background for {quality_id}")
+            else:
+                logger.info(f"Quality background fetch already in progress for {quality_id}")
+            quality_needs_fetch = False
+            quality_pending = True
         _text_titles = tuple(dict.fromkeys(
             value for value in (title, tmdb_data.get("original_title")) if value
         ))
@@ -3893,7 +5270,10 @@ async def get_poster(
         # fallback if the rating fetch fails or is skipped entirely.
         _gid_set = set(genre_ids)
         _tmdb_genre = "Unknown"
-        for _gid in _cfg.GENRE_PRIORITY:
+        _genre_priority = (
+            _cfg.ANIME_GENRE_PRIORITY if is_anime else _cfg.GENRE_PRIORITY
+        )
+        for _gid in _genre_priority:
             if _gid in _gid_set:
                 _candidate = _cfg.GENRE_MAP.get(_gid, "")
                 if _candidate:
@@ -3952,7 +5332,45 @@ async def get_poster(
             logger.info(f"Original-art mode for {tmdb_id} — poster {poster_path} "
                         f"(priority={rcfg.logo_priority})")
 
-        if rating_already_cached or not effective_mdblist_key:
+        # Anime providers ship exactly one cover image per title and it
+        # essentially always has the title logotype baked into the art, so it is
+        # served as-is under the same rules as original-art mode: no logo
+        # composited over it, no burned-in-text scan (it would reject nearly
+        # every one, at the cost of an OCR pass), and no backdrop rescue —
+        # AniList banners are 1900x400 and the portrait crop would destroy them.
+        #
+        # ANIME_COMPOSITE_LOGO (default on) overrides the logo half of that.
+        # In practice anime cover art either carries no logotype at all or a
+        # small block of Japanese text in a corner that most viewers can't read,
+        # so a composited title logo is an improvement often enough to be worth
+        # doing unconditionally. Text detection stays off either way: it would
+        # flag that Japanese corner text on most titles and suppress the logo
+        # inconsistently, which reads worse than always printing it.
+        # Gated on using_anime_art, not is_anime: when the provider missed and we
+        # fell back to TMDB art, that art follows the ordinary TMDB rules
+        # (textless selection, backdrop rescue, text detection) as it would for
+        # any other title.
+        if using_anime_art and poster_path:
+            _use_original_art = True
+            _use_backdrop     = False
+            is_textless       = bool(_cfg.ANIME_COMPOSITE_LOGO)
+
+        if is_anime and not rating_already_cached and not effective_mdblist_key:
+            # No IMDb id (or no key), so MDBList can't be asked. Supply what the
+            # provider gave us instead of nothing. With an IMDb id this branch is
+            # skipped and the normal MDBList fetch runs; the provider score is
+            # merged into its result below either way.
+            rating_coro = _resolved((
+                None,
+                (
+                    {},
+                    _tmdb_genre,
+                    tmdb_data.get("tmdb_release_date"),
+                    [],
+                    tmdb_data.get("anime_age_rating"),
+                ),
+            ))
+        elif rating_already_cached or not effective_mdblist_key:
             rating_coro = _resolved((
                 None,
                 (cached_ratings_dict, cached_genre, cached_release_date, [], cached_age_rating),
@@ -3963,8 +5381,8 @@ async def get_poster(
                 _mdblist_semaphore = asyncio.Semaphore(_cfg.MDBLIST_CONCURRENCY)
 
             async def _fetch_rating_gated(
-                _key: str, _client=client, _imdb_id=imdb_id,
-                _gids=genre_ids, _type=type,
+                _key: str, _client=client, _media_id=rating_media_id,
+                _provider=rating_provider, _gids=genre_ids, _type=type,
                 _mw=effective_movie_weights, _tw=effective_tv_weights,
             ):
                 nonlocal _rating_backoff_active, _mdblist_unavailable_reason
@@ -3979,7 +5397,7 @@ async def get_poster(
                         if _replacement_key is None:
                             _remaining = _mdblist_key_cooldown.get(_fetch_key, 0.0) - _fetch_now
                             logger.debug(
-                                f"Rating fetch for {_imdb_id} skipped "
+                                f"Rating fetch for {canonical_id} skipped "
                                 f"({_mdblist_server_key_label(_fetch_key)} cooling down; "
                                 f"{_remaining:.0f}s remaining)"
                             )
@@ -3991,12 +5409,13 @@ async def get_poster(
                             )
                         logger.info(
                             f"MDBList key rotated from {_mdblist_server_key_label(_fetch_key)} "
-                            f"to {_mdblist_server_key_label(_replacement_key)} for {_imdb_id} "
+                            f"to {_mdblist_server_key_label(_replacement_key)} for {canonical_id} "
                             "before outbound fetch"
                         )
                         _fetch_key = _replacement_key
                     return _fetch_key, await fetch_rating(
-                        _client, _imdb_id, _fetch_key, _gids, _type,
+                        _client, _fetch_key, _gids, _type,
+                        media_id=_media_id, provider=_provider,
                         movie_weights=_mw, tv_weights=_tw,
                     )
 
@@ -4032,7 +5451,50 @@ async def get_poster(
                 return False
 
         is_no_poster = poster_path is None and not _use_backdrop
-        if _use_backdrop:
+
+        # ------------------------------------------------------------------
+        # Landscape short-circuit.
+        #
+        # The whole portrait art chain above — textless poster selection,
+        # backdrop-to-portrait rescue, TVDB fallbacks — exists to manufacture a
+        # 2:3 image.  Landscape wants the backdrop as shot, so none of it
+        # applies: pick a backdrop, fit it, done.  Falls back to the portrait
+        # decisions only for the genre canvas, which has no aspect of its own.
+        #
+        #   textless — the language-neutral backdrop; our logo goes on top
+        #   original — the highest-voted language-tagged one, title treatment
+        #              already in the art, so is_textless stays False and every
+        #              existing gate skips our logo for us
+        #
+        # Both modes fall back, and the fallback flips that: a title with no
+        # text-bearing backdrop lands on the neutral one (or the genre canvas),
+        # which carries no title, so is_textless goes True and our logo IS
+        # wanted.  is_textless — not the requested mode — is what the renderer
+        # must key off; deciding it from cfg.landscape_art downstream is how
+        # these fallbacks ended up rendering with no title at all.
+        # ------------------------------------------------------------------
+        if _is_landscape:
+            _ls_text_bd = tmdb_data.get("text_backdrop_path")
+            if rcfg.landscape_art == "original":
+                _ls_path = _ls_text_bd or backdrop_path
+                # Only the text-bearing pick carries its own title; if the title
+                # had none and we fell back to the neutral backdrop, our logo is
+                # wanted after all.
+                is_textless = _ls_text_bd is None and _ls_path is not None
+            else:
+                _ls_path = backdrop_path or _ls_text_bd
+                # Falling through to a text-bearing backdrop means the title is
+                # already in the art; don't double it with our logo.
+                is_textless = bool(backdrop_path)
+            _use_backdrop = False
+            is_no_poster  = _ls_path is None
+            if _ls_path is None:
+                logger.info(f"No backdrop for {tmdb_id} — landscape falls back to genre canvas")
+                _image_coro = _resolved(_make_landscape_canvas(genre_ids))
+                is_textless = True
+            else:
+                _image_coro = fetch_landscape_image(client, tmdb_id, _ls_path)
+        elif _use_backdrop:
             # Text-aware backdrop cropping also invokes PP-OCR, so apply the
             # same foreground vote gate used by the final burned-in-text scan.
             _backdrop_avoid_text = (
@@ -4179,6 +5641,14 @@ async def get_poster(
             and is_textless
             and not is_no_poster
             and not _backdrop_rescued
+            # Anime art is deliberately composited with a logo regardless of any
+            # Japanese corner text, so the scan would only burn an OCR pass to
+            # produce an inconsistent result. See the is_textless assignment.
+            # TMDB fallback art is scanned normally.
+            and not using_anime_art
+            # Landscape picks its art by TMDB's own language tag rather than by
+            # scanning it, so there is nothing here for OCR to decide.
+            and not _is_landscape
         )
         if _scan_selected_image:
             from text_detect import DETECT_RES_SIG
@@ -4296,7 +5766,10 @@ async def get_poster(
             _image_coro,
             _resolve_logo() if (is_textless and not is_no_poster) else _resolved(None),
             rating_coro,
-            fetch_trending_rank(client, tmdb_id, effective_tmdb_key, type),
+            # Trending rank is a TMDB list lookup, so it needs a real tmdb_id —
+            # which AIOMetadata does send alongside the anime id when it has one.
+            fetch_trending_rank(client, tmdb_id, effective_tmdb_key, type)
+            if has_tmdb_id and effective_tmdb_key else _resolved(None),
         )
 
         rating_key_used, rating_result = rating_fetch_result
@@ -4316,16 +5789,16 @@ async def get_poster(
         if isinstance(rating_result, _RateLimited) and effective_mdblist_key:
             _failed_key = effective_mdblist_key
             _backoff_secs, _rescue_key = _mark_mdblist_rate_limit(
-                imdb_id, _failed_key, rating_result
+                canonical_id, _failed_key, rating_result
             )
             logger.warning(
                 f"MDBList {_mdblist_server_key_label(_failed_key)} rate-limited "
-                f"for {imdb_id}; cooling down for {_backoff_secs:.0f}s"
+                f"for {canonical_id}; cooling down for {_backoff_secs:.0f}s"
             )
             if _rescue_key is not None:
                 effective_mdblist_key = _rescue_key
                 logger.warning(
-                    f"Retrying MDBList for {imdb_id} with "
+                    f"Retrying MDBList for {canonical_id} with "
                     f"{_mdblist_server_key_label(_rescue_key)}"
                 )
                 _rescue_used_key, rating_result = await _fetch_rating_gated(_rescue_key)
@@ -4337,37 +5810,38 @@ async def get_poster(
         # Inline quality wait — runs after gather so rating coalescing is never
         # blocked.  Used for poster-warm workflows where latency doesn't matter.
         if quality_needs_fetch and rcfg.wait_for_quality:
-            async def _inline_fetch():
-                if _cfg.QUALITY_SOURCE == "scraper" and _cfg.SCRAPER_URL:
-                    return await _with_retry(
-                        fetch_quality_from_scraper,
-                        client, _cfg.SCRAPER_URL,
-                        imdb_id, type, season, episode, release_date_for_quality_ttl,
-                    )
-                return await _with_retry(
-                    fetch_quality_from_aiostreams,
-                    client, imdb_id, type, season, episode, release_date_for_quality_ttl,
-                )
             try:
                 fetched = await asyncio.wait_for(
-                    _inline_fetch(), timeout=_cfg.QUALITY_WAIT_TIMEOUT
+                    _with_retry(
+                        fetch_quality,
+                        client, quality_id, type, season, episode, release_date_for_quality_ttl,
+                    ),
+                    timeout=_cfg.QUALITY_WAIT_TIMEOUT,
                 )
                 _record_quality_result(fetched)
-                if fetched is not FETCH_FAILED:
+                if fetched is QUALITY_PENDING:
+                    # QualiCache has queued this title but has no value yet.
+                    # Waiting longer wouldn't help — it collects out of band.
+                    logger.info(
+                        f"Inline quality fetch pending for {quality_id} "
+                        "— serving without quality, composite not cached"
+                    )
+                    quality_pending = True
+                elif fetched is not FETCH_FAILED:
                     quality_tokens = fetched
-                    logger.info(f"Inline quality fetch complete for {imdb_id}: {quality_tokens}")
+                    logger.info(f"Inline quality fetch complete for {quality_id}: {quality_tokens}")
                 else:
-                    # AIOStreams/scraper returned a transient error — don't cache
+                    # The quality source returned a transient error — don't cache
                     # the composite poster without quality so the next request retries.
                     logger.warning(
-                        f"Inline quality fetch failed for {imdb_id} "
+                        f"Inline quality fetch failed for {quality_id} "
                         "— serving without quality, composite not cached"
                     )
                     quality_pending = True
             except asyncio.TimeoutError:
                 _record_quality_result(FETCH_FAILED)
                 logger.warning(
-                    f"Quality wait timed out for {imdb_id} "
+                    f"Quality wait timed out for {quality_id} "
                     f"after {_cfg.QUALITY_WAIT_TIMEOUT:.0f}s — serving without quality, "
                     "composite not cached so next request retries"
                 )
@@ -4386,29 +5860,29 @@ async def get_poster(
 
         if rating_failed:
             if rate_limited:
-                _retry_key = _rating_retry_key(imdb_id, effective_mdblist_key)
+                _retry_key = _rating_retry_key(canonical_id, effective_mdblist_key)
                 if _retry_key not in _rating_backoff:
                     backoff_secs, _ = _mark_mdblist_rate_limit(
-                        imdb_id, effective_mdblist_key, rating_result
+                        canonical_id, effective_mdblist_key, rating_result
                     )
                     logger.warning(
-                        f"MDBList rate-limited {imdb_id}; key cooling down for "
+                        f"MDBList rate-limited {canonical_id}; key cooling down for "
                         f"{backoff_secs:.0f}s"
                     )
             else:
                 # Network / timeout failure — escalating back-off so a transient
                 # hiccup retries quickly while a sustained outage backs off further.
                 # Ladder: 30 s → 2 min → 8 min → 1 h (cap), using 4× multiplier.
-                _failed_retry_key = _rating_retry_key(imdb_id, effective_mdblist_key)
+                _failed_retry_key = _rating_retry_key(canonical_id, effective_mdblist_key)
                 fail_n = _rating_fail_count.get(_failed_retry_key, 0) + 1
                 _rating_fail_count[_failed_retry_key] = fail_n
                 backoff_secs = min(30 * (4 ** (fail_n - 1)), 3600.0)
                 logger.warning(
-                    f"Rating fetch failed for {imdb_id} (attempt {fail_n}) "
+                    f"Rating fetch failed for {canonical_id} (attempt {fail_n}) "
                     f"— back-off {backoff_secs:.0f}s"
                 )
             if not rate_limited:
-                _failed_retry_key = _rating_retry_key(imdb_id, effective_mdblist_key)
+                _failed_retry_key = _rating_retry_key(canonical_id, effective_mdblist_key)
                 _rating_backoff[_failed_retry_key] = asyncio.get_running_loop().time() + backoff_secs
             ratings_dict   = {}
             genre          = cached_genre or _tmdb_genre
@@ -4426,7 +5900,28 @@ async def get_poster(
             ratings_dict, genre, rel, keywords, age_rating = rating_result
             # genre from MDBlist/cache may be None when the key is absent and
             # nothing is cached yet — fall back to the TMDB-derived genre.
-            genre = genre or _tmdb_genre
+            #
+            # On the anime path the genre is always derived here from the
+            # provider's own genre list rather than read back from the cached
+            # rating row. The row's genre column exists to carry MDBList's
+            # answer, which anime titles never have; trusting it would pin a
+            # title to whatever ANIME_GENRE_PRIORITY said when it was first
+            # cached, so a reordering wouldn't take effect until the TTL expired.
+            genre = _tmdb_genre if is_anime else (genre or _tmdb_genre)
+
+            # The provider's score rides along in the art response, so merge it
+            # into whatever MDBList returned — or into an empty dict when there
+            # was no IMDb id to ask about. Done here rather than at the fetch so
+            # it also covers the cached path, where the row may have been first
+            # written by a request that carried no anime id.
+            if is_anime and isinstance(ratings_dict, dict):
+                _provider_score = tmdb_data.get("anime_score")
+                if _provider_score is not None:
+                    ratings_dict = {**ratings_dict, anime_namespace: _provider_score}
+            # Likewise the age rating: MDBList supplies one for titles it knows,
+            # but Kitsu's ageRating covers those it doesn't.
+            if is_anime and age_rating is None:
+                age_rating = tmdb_data.get("anime_age_rating")
 
             # Fresh successful fetch — clear any escalation state so future
             # failures start back at the shortest interval.
@@ -4436,7 +5931,7 @@ async def get_poster(
                 and effective_mdblist_key
             ):
                 _rating_fail_count.pop(
-                    _rating_retry_key(imdb_id, effective_mdblist_key), None
+                    _rating_retry_key(canonical_id, effective_mdblist_key), None
                 )
 
             if isinstance(ratings_dict, dict):
@@ -4449,6 +5944,11 @@ async def get_poster(
                     ratings_dict,
                     weights,
                     fallback_to_imdb=rcfg.fallback_to_imdb,
+                    # The provider's score is the only rating an anime-native
+                    # title has, and existing weights strings name none of the
+                    # anime sources, so fall back to it rather than showing N/A.
+                    # Giving anilist/kitsu a real weight overrides this.
+                    fallback_source=anime_namespace if is_anime else None,
                 )
             else:
                 score = ratings_dict
@@ -4474,16 +5974,20 @@ async def get_poster(
                 is_cult       = bool({"cult-classic", "cult-film"} & kw_names)
                 is_true_story = "based-on-true-story" in kw_names
                 is_metacritic = "metacritic-must-see" in kw_names
-                logger.info(f"Awards for {imdb_id}: wins={award_wins} noms={award_noms} "
+                logger.info(f"Awards for {canonical_id}: wins={award_wins} noms={award_noms} "
                             f"festival={festival_label} age_rating={age_rating} "
                             f"cult={is_cult} true_story={is_true_story} metacritic={is_metacritic}")
 
         # ------------------------------------------------------------------
         # Write rating + awards to cache (only on a fresh fetch).
         # ------------------------------------------------------------------
-        if not rating_failed and not rating_already_cached and effective_mdblist_key:
+        # Anime ratings come from the provider rather than MDBList, so they are
+        # cached on the same terms but gated on is_anime instead of a key.
+        if not rating_failed and not rating_already_cached and (
+            effective_mdblist_key or is_anime
+        ):
             set_cached_rating(
-                imdb_id,
+                canonical_id,
                 ratings_dict if isinstance(ratings_dict, dict) else {},
                 genre,
                 rel,
@@ -4496,7 +6000,7 @@ async def get_poster(
                 is_true_story=is_true_story,
                 is_metacritic=is_metacritic,
             )
-            logger.info(f"Rating cached for {imdb_id}: score={score} genre={genre} "
+            logger.info(f"Rating cached for {canonical_id}: score={score} genre={genre} "
                         f"wins={award_wins} noms={award_noms} festival={festival_label} "
                         f"age_rating={age_rating}")
 
@@ -4505,10 +6009,13 @@ async def get_poster(
         # the same MDBList request.
         if _rating_event_to_set is not None:
             _rating_event_to_set.set()
-            _rating_fetch_inflight.pop(imdb_id, None)
+            _rating_fetch_inflight.pop(canonical_id, None)
             _rating_event_to_set = None
 
-        logger.info(f"Quality for {imdb_id}: tokens={quality_tokens} year={release_year}")
+        logger.info(
+            f"Quality for {canonical_id}: tokens={quality_tokens} year={release_year} "
+            f"(quality_id={quality_id})"
+        )
 
         # ------------------------------------------------------------------
         # Release status / freshness facts. TV status is mapped from already
@@ -4525,14 +6032,23 @@ async def get_poster(
             # titles — which read as a bug rather than a setting.  Results are
             # cached, and stale "Cinema" on an old film is handled properly by
             # CINEMA_MAX_AGE_YEARS, which downgrades it to "Streaming".
-            _release_status = await fetch_release_status(
-                client, tmdb_id, effective_tmdb_key, type,
-                tmdb_data.get("tmdb_status"),
-            )
+            # For series this is a pure mapping of the status field already in
+            # hand — no API call — so anime series get their lifecycle sashes
+            # from the provider's status. The movie branch needs TMDB's
+            # /release_dates, so it runs only when a real tmdb_id and key came
+            # with the request; otherwise the slot simply doesn't fire.
+            if (type in ("tv", "series")
+                    or (has_tmdb_id and effective_tmdb_key)):
+                _release_status = await fetch_release_status(
+                    client, tmdb_id, effective_tmdb_key, type,
+                    tmdb_data.get("tmdb_status"),
+                )
             # r/movieleaks confirmation overrides TMDB's theatrical/production
             # status — if the film is in the digital-release cache it's already
             # streaming regardless of what the official release dates say.
-            if _release_status in ("Cinema", "Production") and is_digital_release(imdb_id):
+            if (_release_status in ("Cinema", "Production")
+                    and effective_imdb_id
+                    and is_digital_release(effective_imdb_id)):
                 _release_status = "Streaming"
             # Cinema-only mode: keep the badge purely as an "unavailable" marker —
             # show only Cinema / Production and drop the rest so the slot is
@@ -4540,30 +6056,8 @@ async def get_poster(
             if rcfg.release_status_cinema_only and _release_status not in ("Cinema", "Production"):
                 _release_status = None
 
-
- # --- CHIAMATA API EXTRA IN TEMPO REALE PER SERIE TV ---
-        # Poiché i dati cachati da tmdb.py eliminano il nodo next_episode_to_air,
-        # effettuiamo una chiamata diretta per recuperare la data esatta.
-        if type in ("tv", "series") and "next_episode" in rcfg.sash_priority:
-            try:
-                _resp = await client.get(
-                    f"https://api.themoviedb.org/3/tv/{tmdb_id}",
-                    params={"api_key": effective_tmdb_key}
-                )
-                if _resp.status_code == 200:
-                    _data = _resp.json()
-                    
-                    tmdb_data = dict(tmdb_data)
-                    tmdb_data["status"] = _data.get("status")
-                    
-                    _ep_data = _data.get("next_episode_to_air")
-                    if isinstance(_ep_data, dict) and _ep_data.get("air_date"):
-                        tmdb_data["next_episode_to_air"] = {"air_date": _ep_data.get("air_date")}
-            except Exception as e:
-                logger.warning(f"Impossibile scaricare dati extra TMDB per {tmdb_id}: {e}")
-
-
-        if type not in ("tv", "series") and "just_added" in rcfg.sash_priority:
+        if (type not in ("tv", "series") and "just_added" in rcfg.sash_priority
+                and has_tmdb_id and effective_tmdb_key):
             _recent_digital_release_date = await fetch_recent_movie_digital_release_date(
                 client, tmdb_id, effective_tmdb_key,
                 tmdb_data.get("tmdb_status"),
@@ -4584,10 +6078,14 @@ async def get_poster(
             is_cult_override=is_cult,
             is_true_story_override=is_true_story,
             is_metacritic_override=is_metacritic,
-            is_digital_release_override=is_digital_release(imdb_id),
+            is_digital_release_override=bool(
+                effective_imdb_id and is_digital_release(effective_imdb_id)
+            ),
             release_status_override=_release_status,
             recent_digital_release_date=_recent_digital_release_date,
         )
+
+        _sash_priority = rcfg.sash_priority
 
         # ------------------------------------------------------------------
         # Debug mode: return diagnostic JSON instead of rendering the poster.
@@ -4595,9 +6093,14 @@ async def get_poster(
         # Activate with ?debug=1 (never cached, never stored).
         # ------------------------------------------------------------------
         if debug and debug.strip() in ("1", "true"):
-            _sash_result = pick_sash(discovery_meta, rcfg.sash_priority)
+            _sash_result = pick_sash(discovery_meta, _sash_priority)
             return JSONResponse({
-                "imdb_id":           imdb_id,
+                "imdb_id":           imdb_id or None,
+                "effective_imdb_id": effective_imdb_id,
+                "canonical_id":      canonical_id,
+                "rating_provider":   rating_provider,
+                "rating_media_id":   rating_media_id,
+                "quality_id":        quality_id,
                 "tmdb_id":           tmdb_id,
                 "type":              type,
                 "score":             score if isinstance(score, str) else int(score),
@@ -4627,7 +6130,7 @@ async def get_poster(
                 "matched_directors": discovery_meta.matched_directors,
                 "matched_cast":      discovery_meta.matched_cast,
                 "release_status":    discovery_meta.release_status,
-                "sash_priority":     rcfg.sash_priority,
+                "sash_priority":     _sash_priority,
                 "badge_display_mode":rcfg.badge_display_mode,
                 "rating_display_mode":rcfg.rating_display_mode,
             })
@@ -4693,10 +6196,16 @@ async def get_poster(
             release_year=release_year,
             age_rating=age_rating,
             no_poster=is_no_poster,
+            # Only a confirmed True suppresses the tinted vignette. _suppress_overlay
+            # is None when the scan was skipped or unavailable, which must not be
+            # read as "clean" or as "has text" — it means we do not know, and an
+            # unknown poster keeps its existing appearance.
+            has_burned_in_text=(_suppress_overlay is True),
         )
 
         def _composite_and_encode() -> bytes:
-            result = build_poster(image, score, genre, rcfg, **_bp_args)
+            _render = build_landscape if _is_landscape else build_poster
+            result = _render(image, score, genre, rcfg, **_bp_args)
             buf = io.BytesIO()
             _quality = _cfg.WEBP_QUALITY if _cfg.IMAGE_FORMAT == "webp" else _cfg.JPEG_QUALITY
             result.convert("RGB").save(buf, format=_cfg.IMAGE_FORMAT.upper(), quality=_quality)
@@ -4714,14 +6223,31 @@ async def get_poster(
         #   _rating_backoff_active — a previous failure is still in its cool-down window;
         #                            backoff nullifies effective_mdblist_key so rating_failed
         #                            would evaluate False without this separate flag
+        #   _anime_art_missing     — the provider had nothing this time, usually a
+        #                            throttle or a blip rather than a real absence.
+        #                            Caching the fallback would pin TMDB art for
+        #                            the whole composite TTL, so let it re-render.
         if (final_cache_key is not None and not quality_pending and not _detection_deferred
-                and not rating_failed and not _rating_backoff_active):
+                and not rating_failed and not _rating_backoff_active
+                and not _anime_art_missing):
+            # A composite must not outlive the facts baked into it.  Trending
+            # rank turns over daily; release status has its own tier (Cinema and
+            # Production re-check every day, Physical every 90).  Without this
+            # the render kept a "Cinema" sash — and the greyscale treatment that
+            # keys off the same field — for the flat 7-day composite TTL, long
+            # after the status row it came from had moved on.
             _ttl_override = None
             if discovery_meta is not None:
-                _sash_result = pick_sash(discovery_meta, rcfg.sash_priority)
+                _sash_result = pick_sash(discovery_meta, _sash_priority)
                 if _sash_result and _sash_result[1] in ("trending", "trending_broad"):
                     _ttl_override = 86400
-                    
+            if _release_status:
+                _status_ttl = release_status_ttl_seconds(_release_status)
+                _ttl_override = (
+                    _status_ttl if _ttl_override is None
+                    else min(_ttl_override, _status_ttl)
+                )
+
             set_cached_final_poster(
                 final_cache_key,
                 img_bytes,
@@ -4784,6 +6310,6 @@ async def get_poster(
         # net for error paths that exit before reaching that point.
         if _rating_event_to_set is not None:
             _rating_event_to_set.set()
-            _rating_fetch_inflight.pop(imdb_id, None)
+            _rating_fetch_inflight.pop(canonical_id, None)
         if final_cache_key is not None:
             _render_inflight.pop(final_cache_key, None)
