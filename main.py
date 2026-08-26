@@ -967,6 +967,7 @@ class RequestConfig:
     vignette_color_saturation: float = 2.5  # chroma of the tint (0 = plain black vignette)
     vignette_color_lightness: float = 1.3   # scales the tint's Value (1.0 = the tuned base)
     vignette_color_blur: float = 1.0        # 0 = follows the art, 1 = flat dominant colour
+    vignette_color_blur_enable: bool = True  # enable/disable Dev Gaussian blur & shadow leveling
     vignette_color_ramp: bool = True        # ramp between the poster's two colours, not one flat tint
     vignette_color_local: bool = True       # weigh the band's own seam against the whole poster
     top_gradient_opacity: float | None = None
@@ -1158,6 +1159,7 @@ def build_request_config(params: dict) -> RequestConfig:
     cfg.vignette_poster_color_top    = _b("vignette_poster_color_top",    _vpc_legacy)
     cfg.vignette_poster_color_bottom = _b("vignette_poster_color_bottom", _vpc_legacy)
     cfg.vignette_color_saturation = _f("vignette_color_saturation", cfg.vignette_color_saturation, 0.0, 3.0)
+    cfg.vignette_color_blur_enable = _b("vignette_color_blur_enable", cfg.vignette_color_blur_enable)
     cfg.vignette_color_blur       = _f("vignette_color_blur",       cfg.vignette_color_blur,       0.0, 1.0)
     cfg.vignette_color_lightness  = _f("vignette_color_lightness",  cfg.vignette_color_lightness,
                                        _VIGNETTE_LIGHT_MIN, _VIGNETTE_LIGHT_MAX)
@@ -2236,7 +2238,8 @@ def _draw_combined_text_badge(
     """
     token_set = set(tokens)
 
-    if tokens and _score_points(tokens) < min_score:
+    # Se non c'è ITA e il punteggio è troppo basso, non disegniamo nulla
+    if tokens and "ITA" not in token_set and _score_points(tokens) < min_score:
         return
 
     if "4K" in token_set:
@@ -2656,12 +2659,18 @@ def build_poster(
                 _vignette_seam(width, height, bottom_start, +1, bottom_overlay),
                 _whole_colour, cfg.vignette_color_local, cfg.vignette_color_ramp,
             )
-            # La sfocatura ottica è ora gestita con precisione da Frosted Glass 2.0,
-            # eliminando il Gaussian Blur distruttivo e lo sbiadimento dei neri del Dev.
-            _blur_factor = (cfg.frosted_glass_intensity / 100.0) if getattr(cfg, 'frosted_glass_intensity', 0) > 0 else cfg.vignette_color_blur
+            # Blur e Leveling del Dev (attivabili/disattivabili tramite toggle dedicato)
+            if cfg.vignette_color_blur_enable and cfg.vignette_color_blur > 0:
+                _vignette_frost_band(
+                    image, (0, bottom_start, width, height), bottom_overlay, cfg.vignette_color_blur,
+                )
+                _vignette_level_band(
+                    image, (0, bottom_start, width, height), bottom_overlay, _level_amount
+                )
+            _blur_for_tint = cfg.vignette_color_blur if cfg.vignette_color_blur_enable else 0.0
             bottom_tinted = _vignette_tint_band(
                 _frost_color_src, (0, bottom_start, width, height), _b_tint, _b_conf,
-                cfg.vignette_color_saturation, _blur_factor, _b_second,
+                cfg.vignette_color_saturation, _blur_for_tint, _b_second,
                 cfg.vignette_color_lightness,
             ).convert("RGBA")
             if _vignette_shown is None and _b_conf >= _VIGNETTE_MATCH_MIN_CONF and _slider_amount > 0:
@@ -2681,7 +2690,7 @@ def build_poster(
         # badge renders silver/default rather than a misleadingly coloured tier.
         _tokens_1 = (
             tokens
-            if (not tokens or _score_points(tokens) >= cfg.badge_min_score)
+            if (not tokens or "ITA" in tokens or _score_points(tokens) >= cfg.badge_min_score)
             else []
         )
         draw_quality_age_badge(
@@ -2707,7 +2716,7 @@ def build_poster(
 
     elif mode == 4:
         # Accent bar — small vertical pill in tier colour, no text
-        if not tokens or _score_points(tokens) >= cfg.badge_min_score:
+        if not tokens or "ITA" in tokens or _score_points(tokens) >= cfg.badge_min_score:
             draw_tier_bar(
                 image,
                 tokens,
@@ -2718,7 +2727,7 @@ def build_poster(
 
     elif mode == 6:
         # Corner bookmark — fixed to the poster top-left and coloured by tier.
-        if not tokens or _score_points(tokens) >= cfg.badge_min_score:
+        if not tokens or "ITA" in tokens or _score_points(tokens) >= cfg.badge_min_score:
             draw_quality_corner_bookmark(
                 image,
                 tokens,
@@ -2726,10 +2735,12 @@ def build_poster(
             )
 
     elif mode == 2:
-        allowed_tokens  = {"4K", "1080P", "REMUX", "WEBDL", "DV", "HDR10+", "HDR10"}
+        # 1. Aggiungiamo "ITA" ai token consentiti per lo stile a riga
+        allowed_tokens  = {"4K", "1080P", "REMUX", "WEBDL", "DV", "HDR10+", "HDR10", "ITA"}
         filtered_tokens = [t for t in tokens if t in allowed_tokens]
 
-        if filtered_tokens and _score_points(tokens) >= cfg.badge_min_score:
+        # 2. Bypass del punteggio: se c'è "ITA", stampiamo i badge a prescindere dal punteggio minimo
+        if filtered_tokens and ("ITA" in tokens or _score_points(tokens) >= cfg.badge_min_score):
             bx = int(width  * cfg.badge_anchor_x)
             by = int(height * cfg.badge_anchor_y)
 
