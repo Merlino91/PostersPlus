@@ -30,9 +30,9 @@
     "trendingToday": "#{rank} Oggi",
     "New Season": "Nuova stagione",
     "Returning": "Di ritorno",
-    "Premiere": "Prima",
+    "Premiere": "Premiere",
     "Just Added": "Appena aggiunto",
-    "Season Finale": "Finale stagione",
+    "Season Finale": "Stagione finale",
     "New": "Nuovo",
     "Must-See": "Da non perdere",
     "Cult Classic": "Cult",
@@ -63,11 +63,11 @@
     "Romanian": "Rumeno",
     "Hungarian": "Ungherese",
     "Czech": "Ceco",
-    "Oscar Winner": "Miglior film",
+    "Oscar Winner": "Oscar: Miglior film",
     "Oscar Nominee": "Candidato all'Oscar",
     "Emmy Winner": "Vincitore Emmy",
     "Emmy Nominee": "Candidato agli Emmy",
     "Globe Winner": "Vincitore Golden Globe",
-    "Globe Nominee": "Candidato al Globo"
+    "Globe Nominee": "Candidato Golden Globe"
   }
 }
