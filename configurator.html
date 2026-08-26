@@ -2449,6 +2449,20 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
                     <span class="range-val" id="rng-vlight">1.30</span>
                   </div>
                 </div>
+                <div class="toggle-row">
+                  <span class="toggle-label" data-tip="Enable or disable the vignette blur and shadow leveling. When disabled, the frosted glass layer and artwork remain sharp and clear under the tint.">Vignette Blur</span>
+                  <label class="toggle-switch">
+                    <input type="checkbox" id="tog-vignette-blur-enable" checked onchange="updateVignetteBlurVisibility(); build(); queuePreviewReload()">
+                    <div class="toggle-track"><div class="toggle-thumb"></div></div>
+                  </label>
+                </div>
+                <div class="field" id="vignette-blur-field">
+                  <label class="field-label" data-tip="Frosts the artwork inside the vignette and evens out the tint. Low leaves the art sharp and lets the colour follow it across the poster's width; high melts both into one soft wash of the dominant colour, and holds back how much of the art shows through so the band lands the same on a bright poster as on a dark one. Logos, badges and labels are never blurred.">Blur</label>
+                  <div class="range-row">
+                    <input type="range" id="cfg-vignette-blur" min="0.0" max="1.0" step="0.05" value="1.00" oninput="updateRange(this,'rng-vblur'); build(); queuePreviewReload()">
+                    <span class="range-val" id="rng-vblur">1.00</span>
+                  </div>
+                </div>
                 <div class="field">
                   <label class="field-label" data-tip="Optical frosted glass refraction layer with 3-pass blur, edge sharpening, 140% saturation boost and anti-banding grain applied over the bottom of the poster. 0 leaves artwork sharp.">Frosted Glass Intensity</label>
                   <div class="range-row">
@@ -4514,6 +4528,7 @@ function buildBaseParams({ usePlaceholders = false, domainOverride = null } = {}
     if (_vgBot) params.set('vignette_poster_color_bottom', 'true');
     if (_vgTop || _vgBot) {
       params.set('vignette_color_saturation', n('cfg-vignette-sat').toFixed(2));
+      params.set('vignette_color_blur_enable', c('tog-vignette-blur-enable') ? 'true' : 'false');
       params.set('vignette_color_blur',       n('cfg-vignette-blur').toFixed(2));
       params.set('vignette_color_lightness',  n('cfg-vignette-light').toFixed(2));
       // Both default to *on* in the renderer, so unlike every other toggle these
@@ -5082,7 +5097,14 @@ function updateGradientFields() {
   document.getElementById('vignette-color-fields').style.display =
     (document.getElementById('tog-vignette-color-top').checked
      || document.getElementById('tog-vignette-color-bottom').checked) ? 'block' : 'none';
+  updateVignetteBlurVisibility();
   syncSegmented();
+}
+
+function updateVignetteBlurVisibility() {
+  const blurOn = document.getElementById('tog-vignette-blur-enable')?.checked ?? true;
+  const blurField = document.getElementById('vignette-blur-field');
+  if (blurField) blurField.style.display = blurOn ? '' : 'none';
 }
 
 // ── SEGMENTED CONTROLS ───────────────────────────────────────────────────────
