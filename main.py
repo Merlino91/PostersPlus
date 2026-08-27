@@ -2639,16 +2639,10 @@ def build_poster(
         bottom_height = max(1, int(height * bottom_height_ratio))
         bottom_start  = height - bottom_height
         
-        # --- ADATTAMENTO PROPORZIONALE SMART CON FLOOR AL 30% (bottom_avg_lum < 30) ---
-        adaptive_scale = 1.0
-        if bottom_avg_lum < 30.0:
-            adaptive_scale = max(0.30, 0.30 + 0.70 * (bottom_avg_lum / 30.0))
-
-        effective_max_alpha = int(bottom_max_alpha * adaptive_scale)
-
-        # Curva ad esponente 1.2 applicata all'opacita effettiva scalata
+        # Il Two-Tone mantiene sempre l'opacità piena del preset (senza essere alleggerito da bottom_avg_lum),
+        # garantendo contrasto e densità ottimali con la Curva 1.2 su qualsiasi locandina.
         t_bot         = np.linspace(0, 1, bottom_height, dtype=np.float32)
-        eased_bot     = ((t_bot ** 1.2) * effective_max_alpha).astype(np.uint8)
+        eased_bot     = ((t_bot ** 1.2) * bottom_max_alpha).astype(np.uint8)
         bottom_array  = np.broadcast_to(eased_bot[:, np.newaxis], (bottom_height, width)).copy()
         bottom_overlay = Image.fromarray(bottom_array, mode="L")
         
