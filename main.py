@@ -2606,10 +2606,9 @@ def build_poster(
         for _ in range(3):
             glass_layer = glass_layer.filter(ImageFilter.BoxBlur(radius=box_radius))
 
-        # 2. Accentua i bordi rifratti + boost vividezza 140% e luminosita 70%
+        # 2. Accentua i bordi rifratti + boost vividezza 140% (luminosità preservata al 100%)
         glass_layer = glass_layer.filter(ImageFilter.UnsharpMask(radius=3, percent=150, threshold=3))
         glass_layer = ImageEnhance.Color(glass_layer).enhance(1.4)
-        glass_layer = ImageEnhance.Brightness(glass_layer).enhance(0.7)
 
         # 3. Micro-grana organica anti-banding in NumPy
         noise = np.random.normal(0, 2, (fg_height, width, 3)).astype(np.float32)
