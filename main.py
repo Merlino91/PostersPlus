@@ -2254,7 +2254,7 @@ def _draw_combined_text_badge(
     elif "WEBDL" in token_set:
         sep_color = (192, 192, 200)   # silver
     else:
-        return
+        sep_color = (192, 192, 200)   # silver fallback (permette badge ITA)
 
     if "DV" in token_set:
         fmt = "DV"
@@ -4218,7 +4218,7 @@ _configurator_etag: str | None = None
 # "5": mode 6 adds a tier-coloured bookmark at the poster top-left corner.
 # "6": the mode 6 bookmark is redrawn with rounded tips and a curved inner edge,
 #      so composites cached with the old hard-edged triangle look stale.
-_RENDER_CACHE_VERSION = "6"
+_RENDER_CACHE_VERSION = "5"
 _render_assets_signature = "startup"
 
 
