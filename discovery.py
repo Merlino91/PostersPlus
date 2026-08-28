@@ -70,7 +70,6 @@ import os
 from dataclasses import dataclass, field
 from datetime import date, datetime
 
-from config import SASH_PRIORITY as DEFAULT_SASH_PRIORITY  # single source of truth
 import config as _cfg
 
 logger = logging.getLogger(__name__)
@@ -465,8 +464,8 @@ class DiscoveryMeta:
     release_status: str | None = None
 
     # Campi custom per next_episode e mini_series
-    status: str | None = None               # TMDB status ("Returning", "Ended", "Canceled")
-    next_episode_to_air: str | None = None  # data prossimo episodio (YYYY-MM-DD)
+    tmdb_status: str | None = None          # TMDB status ("Returning", "Ended", "Canceled")
+    next_episode: str | None = None         # data prossimo episodio (YYYY-MM-DD)
 
 
 # ---------------------------------------------------------------------------
@@ -514,8 +513,8 @@ def extract_discovery_meta(
         award_noms=award_noms,
         trending_rank=trending_rank,
         original_language=tmdb_data.get("original_language"),
-        status=tmdb_data.get("tmdb_status") or tmdb_data.get("status"),
-        next_episode_to_air=next_ep_date,
+        tmdb_status=tmdb_data.get("tmdb_status") or tmdb_data.get("status"),
+        next_episode=next_ep_date,
     )
 
     # Build keyword name set once — reused for festival detection and the
@@ -608,7 +607,7 @@ def extract_discovery_meta(
         meta.is_mini_series = (
             num_seasons == 1
             and 0 < num_episodes <= 8
-            and meta.status == "Ended"
+            and meta.tmdb_status == "Ended"
         )
 
         if num_seasons >= 3 and num_episodes > 0:
@@ -734,8 +733,8 @@ def _evaluate_slot(slot: str, meta: DiscoveryMeta) -> str | None:
 
     # --- Slot custom: prossimo episodio ---
     if slot == "next_episode":
-        if meta.next_episode_to_air and _is_future(meta.next_episode_to_air):
-            return f"Prossimo Ep: {_format_date_it(meta.next_episode_to_air)}"
+        if meta.next_episode and _is_future(meta.next_episode):
+            return f"Prossimo Ep: {_format_date_it(meta.next_episode)}"
         return None
 
     if slot == "wins":
