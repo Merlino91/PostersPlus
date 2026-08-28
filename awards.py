@@ -1634,14 +1634,13 @@ def draw_award_badge(
         else:
             bg_r, bg_g, bg_b = 50, 150, 250
 
-        # 4. Disegno della Pillola Solida (Shape)
+        # 4. Disegno della Pillola Solida (Shape) — usa r_ss condiviso con frosted
         badge_ss = Image.new("RGBA", (bw, bh), (0, 0, 0, 0))
         rr_mask_ss = Image.new("L", (bw, bh), 0)
-        pill_radius = bh // 4
         draw_mask = ImageDraw.Draw(rr_mask_ss)
-        draw_mask.rectangle([(0, 0), (bw - 1, bh - pill_radius)], fill=255)
+        draw_mask.rectangle([(0, 0), (bw - 1, bh - r_ss)], fill=255)
         draw_mask.rounded_rectangle(
-            [(0, 0), (bw - 1, bh - 1)], radius=pill_radius, fill=255,
+            [(0, 0), (bw - 1, bh - 1)], radius=r_ss, fill=255,
             corners=(False, False, True, True)
         )
 
@@ -1649,10 +1648,9 @@ def draw_award_badge(
         body.putalpha(rr_mask_ss)
         badge_ss = body
 
-        # 5. Colore Testo intelligente (contrasto su sfondo chiaro/scuro o override utente)
-        lum = 0.299 * bg_r + 0.587 * bg_g + 0.114 * bg_b
-        default_ink = (250, 250, 250, 255) if lum < 140 else (15, 15, 15, 245)
-        text_color_to_use = (*text_color, 255) if text_color is not None else default_ink
+        # 5. Colore Testo intelligente via _frost_ink() (stessa logica del frosted)
+        _pill_ink = _frost_ink(bg_r, bg_g, bg_b)
+        text_color_to_use = (*text_color, 255) if text_color is not None else (*_pill_ink, 245)
 
         txt_layer = Image.new("RGBA", (bw, bh), (0, 0, 0, 0))
         td = ImageDraw.Draw(txt_layer)
