@@ -1143,6 +1143,7 @@ SERVER_PRESETS: dict[str, dict] = {
         "badge_anchor_x": "0.050",
         "badge_anchor_y": "0.920",
         "badge_min_score": "3",
+        "wait_for_quality": "true",
     }
 }
 
