@@ -2665,7 +2665,8 @@ def build_poster(
 
     # --- FROSTED GLASS 2.0 (Effetto vetro sfumato ottico puro) ---
     # Dedicato ESCLUSIVAMENTE alla sfocatura lente ed al contrasto visivo.
-    if getattr(cfg, 'frosted_glass_intensity', 0) > 0:
+    # Disattivato automaticamente se la locandina ha già un titolo impresso (nessun logo o titolo composto).
+    if getattr(cfg, 'frosted_glass_intensity', 0) > 0 and (logo is not None or fallback_title is not None):
         from PIL import ImageFilter, ImageEnhance
         fg_height = int(height * 0.60)
         fg_start  = height - fg_height
