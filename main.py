@@ -1084,6 +1084,68 @@ def _parse_sash_priority(raw: str | None) -> list[str]:
     return active
 
 
+
+# ---------------------------------------------------------------------------
+# Server-side presets
+# ---------------------------------------------------------------------------
+
+SERVER_PRESETS: dict[str, dict] = {
+    "bluccoj": {
+        "primary_client": "stremio_tv_nuvio",
+        "top_gradient": "low",
+        "bottom_gradient": "low",
+        "top_vignette_sash_only": "true",
+        "frosted_glass_intensity": "70",
+        "vignette_poster_color_bottom": "true",
+        "vignette_color_saturation": "2.50",
+        "vignette_color_blur_enable": "true",
+        "vignette_color_blur": "0.20",
+        "vignette_color_lightness": "1.30",
+        "vignette_color_ramp": "true",
+        "vignette_color_local": "false",
+        "fallback_to_imdb": "true",
+        "rating_display_mode": "3",
+        "score_color_mode": "2",
+        "minimalist_append_mode": "1",
+        "minimalist_mode_font_size_ratio": "0.056",
+        "minimalist_mode_font_x_offset": "0.050",
+        "minimalist_mode_font_y_offset": "0.920",
+        "minimalist_score_out_of_10": "true",
+        "minimalist_center": "false",
+        "minimalist_separator": "pip",
+        "minimalist_rating_separator": "star",
+        "movie_weights": "letterboxd:0.99,trakt:0.01",
+        "tv_weights": "trakt:0.80,tomatoes:0.20",
+        "textless": "false",
+        "use_original_art": "false",
+        "original_art_source": "primary",
+        "logo_language": "it",
+        "logo_priority": "native_text",
+        "fallback_bg_style": "photoreal",
+        "logo_max_w_ratio": "0.75",
+        "logo_max_h_ratio": "0.25",
+        "logo_bottom_ratio": "0.12",
+        "logo_bottom_anchor": "true",
+        "sash_mode": "notch",
+        "cinema_greyscale": "true",
+        "cinema_greyscale_skip_if_available": "true",
+        "release_status_cinema_only": "false",
+        "sash_winner_star": "true",
+        "sash_badge_style": "minimal_pill",
+        "sash_badge_size_w": "1.40",
+        "sash_badge_size_h": "1.20",
+        "sash_badge_pad": "0.95",
+        "sash_badge_inset": "0.000",
+        "sash_badge_font_ratio": "0.42",
+        "sash_priority": "next_episode,season_finale,new_season,wins,gg_wins,festival,pic_noms,metacritic,gg_noms,premiere,new_release,just_added,trending,studio,director,creator,cast,cult,true_story,short_film,mini_series,binge_ready,foreign,cancelled,cinema,production,ended,trending_broad,-returning,-airing,-physical,-streaming",
+        "badge_display_mode": "5",
+        "badge_height": "28",
+        "badge_anchor_x": "0.050",
+        "badge_anchor_y": "0.920",
+        "badge_min_score": "3",
+    }
+}
+
 def build_request_config(params: dict) -> RequestConfig:
     """Build a RequestConfig from raw query-param strings.
 
@@ -1094,6 +1156,14 @@ def build_request_config(params: dict) -> RequestConfig:
     deliberately a little more generous than the configurator sliders so
     power users can push past UI limits without bypassing safety.
     """
+    # If a server preset is specified (e.g. preset=bluccoj), seed the parameters
+    # from the preset dictionary, then allow any explicit query parameter to override.
+    preset_name = (params.get("preset") or "").strip().lower()
+    if preset_name in SERVER_PRESETS:
+        merged = dict(SERVER_PRESETS[preset_name])
+        merged.update(params)
+        params = merged
+
     cfg = RequestConfig()
 
     # Client profiles provide defaults only; explicit inset parameters below
