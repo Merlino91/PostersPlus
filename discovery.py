@@ -679,8 +679,28 @@ def extract_discovery_meta(
         ):
             meta.is_season_finale = True
 
-    if meta.is_premiere or meta.is_just_added or meta.is_digital_release or _is_recent(release_date):
-        meta.is_new_release = True
+    # --- Timely release / TV lifecycle signals ---
+    if not is_tv:
+        # Per i film, il tag "Nuovo" (new_release) è ammesso solo se il film
+        # è uscito (o previsto) entro 365 giorni dalla data attuale.
+        # Evita che vecchi classici (es. 1966) con nuove uscite digitali/4K vengano taggati "Nuovo".
+        orig_rd = _parse_date(tmdb_release_date) or _parse_date(release_date)
+        if orig_rd is not None:
+            is_within_one_year = (date.today() - orig_rd).days <= 365
+        else:
+            try:
+                rel_year = int(str(release_date or "")[:4]) if release_date else None
+                is_within_one_year = (date.today().year - rel_year <= 1) if rel_year else True
+            except (ValueError, TypeError):
+                is_within_one_year = True
+
+        if is_within_one_year and (meta.is_just_added or meta.is_digital_release or _is_recent(release_date)):
+            meta.is_new_release = True
+        else:
+            meta.is_new_release = False
+    else:
+        if meta.is_premiere or meta.is_just_added or meta.is_digital_release or _is_recent(release_date):
+            meta.is_new_release = True
 
     return meta
 
@@ -812,10 +832,8 @@ def _evaluate_slot(slot: str, meta: DiscoveryMeta) -> str | None:
         return "Season Finale" if meta.is_season_finale else None
 
     if slot in ("new_release", "digital_release"):
-        # Merged: fires on release-date recency OR r/movieleaks confirmation.
-        # "digital_release" is kept as a legacy alias so old sash_priority params
-        # still work — both slots check the same combined condition.
-        if meta.is_new_release or meta.is_digital_release:
+        # Fires on release-date recency OR r/movieleaks confirmation (gated to movies within 1 year).
+        if meta.is_new_release:
             return "New"
         return None
 
