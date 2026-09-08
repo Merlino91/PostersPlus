@@ -1136,7 +1136,7 @@ SERVER_PRESETS: dict[str, dict] = {
         "sash_badge_size_h": "1.20",
         "sash_badge_pad": "0.95",
         "sash_badge_inset": "0.000",
-        "sash_badge_font_ratio": "0.42",
+        "sash_badge_font_ratio": "0.44",
         "sash_priority": "next_episode,season_finale,new_season,wins,gg_wins,festival,pic_noms,metacritic,gg_noms,premiere,new_release,just_added,trending,studio,director,creator,cast,cult,true_story,short_film,mini_series,binge_ready,foreign,cancelled,cinema,production,ended,trending_broad,-returning,-airing,-physical,-streaming",
         "badge_display_mode": "5",
         "badge_height": "28",
@@ -2347,8 +2347,9 @@ def _draw_combined_text_badge(
         except IOError:
             font = ImageFont.load_default()
 
-    draw = ImageDraw.Draw(image)
-    ink  = (235, 235, 235, 255)
+    badge_layer = Image.new("RGBA", image.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(badge_layer)
+    ink  = (235, 235, 235, 220)
 
     if stacked:
         # Use textbbox so spacing is based on actual rendered glyph bounds,
@@ -2373,14 +2374,14 @@ def _draw_combined_text_badge(
         if is_ita:
             # Dividiamo la larghezza in 3 e disegniamo la bandiera in orizzontale
             w_third = total_w / 3.0
-            draw.rectangle([x, ly, x + int(w_third), ly + line_h], fill=(0, 146, 70))             # Verde
-            draw.rectangle([x + int(w_third), ly, x + int(w_third * 2), ly + line_h], fill=(255, 255, 255))   # Bianco
-            draw.rectangle([x + int(w_third * 2), ly, x + total_w, ly + line_h], fill=(206, 43, 55))          # Rosso
+            draw.rectangle([x, ly, x + int(w_third), ly + line_h], fill=(0, 146, 70, 220))             # Verde
+            draw.rectangle([x + int(w_third), ly, x + int(w_third * 2), ly + line_h], fill=(255, 255, 255, 220))   # Bianco
+            draw.rectangle([x + int(w_third * 2), ly, x + total_w, ly + line_h], fill=(206, 43, 55, 220))          # Rosso
         else:
             draw.rounded_rectangle(
                 [x, ly, x + total_w, ly + line_h],
                 radius=line_h // 2,
-                fill=sep_color,
+                fill=(*sep_color[:3], 220),
             )
 
         # Visual tag — v_gap below the rule, aligned to its own visual top
@@ -2401,13 +2402,31 @@ def _draw_combined_text_badge(
             # Dividiamo l'altezza in 3 e disegniamo la bandiera in verticale
             top_y = pip_cy - pip_h // 2
             h_third = pip_h / 3.0
-            draw.rectangle([cx, top_y, cx + pip_w, top_y + int(h_third)], fill=(0, 146, 70))              # Verde
-            draw.rectangle([cx, top_y + int(h_third), cx + pip_w, top_y + int(h_third * 2)], fill=(255, 255, 255))    # Bianco
-            draw.rectangle([cx, top_y + int(h_third * 2), cx + pip_w, top_y + pip_h], fill=(206, 43, 55))           # Rosso
+            draw.rectangle([cx, top_y, cx + pip_w, top_y + int(h_third)], fill=(0, 146, 70, 220))              # Verde
+            draw.rectangle([cx, top_y + int(h_third), cx + pip_w, top_y + int(h_third * 2)], fill=(255, 255, 255, 220))    # Bianco
+            draw.rectangle([cx, top_y + int(h_third * 2), cx + pip_w, top_y + pip_h], fill=(206, 43, 55, 220))           # Rosso
         else:
-            _draw_solid_pip(image, x=cx, y_center=pip_cy, width=pip_w, height=pip_h, color=sep_color)
+            draw.rounded_rectangle(
+                [cx, pip_cy - pip_h // 2, cx + pip_w, pip_cy + pip_h // 2],
+                radius=max(1, pip_w // 2),
+                fill=(*sep_color[:3], 220),
+            )
         cx += pip_w + pip_gap
         draw.text((cx, y), fmt, font=font, fill=ink)
+
+    # Ipotesi 2: Soft ambient drop shadow per effetto satinato a rilievo
+    b_alpha = badge_layer.split()[3]
+    if b_alpha.getbbox():
+        from PIL import ImageFilter
+        shadow_mask = b_alpha.filter(ImageFilter.GaussianBlur(radius=2.5))
+        shadow_mask = shadow_mask.point(lambda p: int(p * 0.40))
+        pure_shadow = Image.new("RGBA", image.size, (0, 0, 0, 255))
+        pure_shadow.putalpha(shadow_mask)
+        shifted_shadow = Image.new("RGBA", image.size, (0, 0, 0, 0))
+        shifted_shadow.paste(pure_shadow, (0, 2), pure_shadow)
+        image.alpha_composite(shifted_shadow)
+
+    image.alpha_composite(badge_layer)
 
 
 def build_poster(
@@ -2688,9 +2707,9 @@ def build_poster(
         glass_np[:, :, :3] = np.clip(glass_np[:, :, :3] + noise, 0, 255)
         glass_layer = Image.fromarray(glass_np.astype(np.uint8), mode="RGBA")
 
-        # 4. Maschera esponenziale di fusione (1.8)
+        # 4. Maschera esponenziale di fusione (1.6)
         t_blur = np.linspace(0, 1, fg_height, dtype=np.float32)
-        eased_blur = (np.power(t_blur, 1.8) * 255).astype(np.uint8)
+        eased_blur = (np.power(t_blur, 1.6) * 255).astype(np.uint8)
         blur_mask_arr = np.broadcast_to(eased_blur[:, np.newaxis], (fg_height, width)).copy()
         blur_mask = Image.fromarray(blur_mask_arr, mode="L")
 
@@ -3196,7 +3215,7 @@ def build_poster(
 
             y = round(height * cfg.minimalist_mode_font_y_offset)
             right_edge = width - int(width * cfg.minimalist_mode_font_x_offset)
-            _ink = (*cfg.rating_text_color, 255) if cfg.rating_text_color else (235, 235, 235, 255)
+            _ink = (*cfg.rating_text_color[:3], 220) if cfg.rating_text_color else (235, 235, 235, 220)
 
             _has_score = score not in ("N/A", None)
             if _has_score and cfg.minimalist_score_out_of_10:
@@ -3279,10 +3298,13 @@ def build_poster(
 
             icon_y_offset = ((font_size - icon_size) // 2) + int(font_size * 0.08)
 
+            rating_layer = Image.new("RGBA", image.size, (0, 0, 0, 0))
+            draw_r = ImageDraw.Draw(rating_layer)
+
             for op in ops:
                 kind, ox = op[0], op[1]
                 if kind == "text":
-                    draw.text((ox, y), op[2], font=font_meta, fill=_ink)
+                    draw_r.text((ox, y), op[2], font=font_meta, fill=_ink)
                     continue
 
                 glyph = _sep_glyph(kind)
@@ -3297,12 +3319,29 @@ def build_poster(
                     _fill = _ink[:3]
 
                 if glyph is None:
-                    _draw_solid_pip(image, x=ox, y_center=pip_cy,
-                                    width=pip_w, height=pip_h, color=_fill)
+                    draw_r.rounded_rectangle(
+                        [ox, pip_cy - pip_h // 2, ox + pip_w, pip_cy + pip_h // 2],
+                        radius=max(1, pip_w // 2),
+                        fill=(*_fill[:3], 220),
+                    )
                 elif glyph == "":
-                    draw.text((ox, y + icon_y_offset), glyph, font=font_icon, fill=(*_fill, 255))
+                    draw_r.text((ox, y + icon_y_offset), glyph, font=font_icon, fill=(*_fill[:3], 220))
                 else:
-                    draw.text((ox, y), glyph, font=font_meta, fill=(*_fill, 255))
+                    draw_r.text((ox, y), glyph, font=font_meta, fill=(*_fill[:3], 220))
+
+            # Ipotesi 2: Soft ambient drop shadow per effetto satinato a rilievo
+            r_alpha = rating_layer.split()[3]
+            if r_alpha.getbbox():
+                from PIL import ImageFilter
+                shadow_mask = r_alpha.filter(ImageFilter.GaussianBlur(radius=2.5))
+                shadow_mask = shadow_mask.point(lambda p: int(p * 0.40))
+                pure_shadow = Image.new("RGBA", image.size, (0, 0, 0, 255))
+                pure_shadow.putalpha(shadow_mask)
+                shifted_shadow = Image.new("RGBA", image.size, (0, 0, 0, 0))
+                shifted_shadow.paste(pure_shadow, (0, 2), pure_shadow)
+                image.alpha_composite(shifted_shadow)
+
+            image.alpha_composite(rating_layer)
 
         elif cfg.rating_display_mode == 4:
             # Frosted bar — centred dot-separated label at the bottom.
