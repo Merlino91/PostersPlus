@@ -6619,6 +6619,23 @@ function buildBaseParams({ usePlaceholders = false, domainOverride = null, full 
       params.set('bottom_gradient_height', document.getElementById('cfg-bg-ht').value);
     }
     if (c('tog-top-vignette-sash-only')) params.set('top_vignette_sash_only', 'true');
+
+    const _vbop = n('cfg-vignette-bottom-opacity');
+    if (!isNaN(_vbop)) {
+      params.set('vignette_bottom_opacity', _vbop.toFixed(2));
+    }
+    const _fg = vEl('cfg-frosted-glass') || 'none';
+    if (_fg && _fg !== 'none') {
+      params.set('frosted_glass', _fg);
+      if (_fg === 'custom') {
+        const _fght = n('cfg-fg-ht');
+        const _fgint = ni('cfg-fg-int');
+        const _fgop = n('cfg-fg-op');
+        params.set('frosted_glass_height', (isNaN(_fght) ? 0.50 : _fght).toFixed(2));
+        params.set('frosted_glass_intensity', String(isNaN(_fgint) ? 45 : _fgint));
+        params.set('frosted_glass_opacity', (isNaN(_fgop) ? 1.00 : _fgop).toFixed(2));
+      }
+    }
   }
   // Both toggles are written in both states.  Writing only "true" and
   // leaving "off" as an absent parameter means "the server's default", and
@@ -6654,17 +6671,6 @@ function buildBaseParams({ usePlaceholders = false, domainOverride = null, full 
       // Written even at the default: on a dual URL an absent landscape_ value
       // falls back to the portrait one.
       set('vignette_color_style', v['cfg-vignette-style'] || 'shade');
-      const _vbop = num('cfg-vignette-bottom-opacity');
-      if (_vbop !== '1.00') set('vignette_bottom_opacity', _vbop);
-    }
-    const _fg = v['cfg-frosted-glass'] || 'none';
-    if (_fg !== 'none') {
-      set('frosted_glass', _fg);
-      if (_fg === 'custom') {
-        set('frosted_glass_height', num('cfg-fg-ht'));
-        set('frosted_glass_intensity', v['cfg-fg-int']);
-        set('frosted_glass_opacity', num('cfg-fg-op'));
-      }
     }
     // Written in both states for the same reason as the tint toggles: on a dual
     // URL an absent landscape_hide_genre falls back to hide_genre, so "off"

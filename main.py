@@ -4143,10 +4143,10 @@ def _build_poster(
 
     # --- Frosted Glass (Lower poster optical glass refraction) ---
     _fg_preset = None
-    if cfg.frosted_glass == "custom" and cfg.frosted_glass_height is not None and cfg.frosted_glass_intensity is not None:
+    if cfg.frosted_glass == "custom":
         _fg_preset = (
-            cfg.frosted_glass_height,
-            cfg.frosted_glass_intensity,
+            cfg.frosted_glass_height if cfg.frosted_glass_height is not None else 0.50,
+            cfg.frosted_glass_intensity if cfg.frosted_glass_intensity is not None else 45,
             cfg.frosted_glass_opacity if cfg.frosted_glass_opacity is not None else 1.0,
         )
     else:
