@@ -3729,6 +3729,13 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
                   <div class="toggle-track"><div class="toggle-thumb"></div></div>
                 </label>
               </div>
+              <div class="toggle-row" id="quality-drop-shadow-field">
+                <span class="toggle-label" data-tip="Apply a subtle soft drop shadow under the quality badges layer for relief and readability.">Quality Drop Shadow</span>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="tog-quality-drop-shadow" onchange="build(); queuePreviewReload()">
+                  <div class="toggle-track"><div class="toggle-thumb"></div></div>
+                </label>
+              </div>
               <div id="wait-quality-field" style="display:none;">
                 <div class="toggle-row">
                   <span class="toggle-label" data-tip="Quality is fetched in the background when uncached. This holds the poster back until it is ready.">Wait for Quality</span>
@@ -6945,6 +6952,7 @@ function buildBaseParams({ usePlaceholders = false, domainOverride = null, full 
     || (emitLandscape && lBadgeMode === 7 && badgeUsesQuality(7, lGroups));
   if (_qualityShown && !params.has('badge_min_score')) params.set('badge_min_score', ni('cfg-badge-min-score'));
   if (_qualityShown && c('tog-quality-after-digital')) params.set('quality_after_digital', 'true');
+  if (c('tog-quality-drop-shadow')) params.set('quality_drop_shadow', 'true');
   // The cinema badge's style is one setting for both shapes, like the minimum.
   const _cinemaShown = (emitAll && badgeMode === 7 && pGroups.some(g => gbHasSlot(g, 'cinema')))
     || (emitLandscape && lBadgeMode === 7 && lGroups.some(g => gbHasSlot(g, 'cinema')));
@@ -9734,6 +9742,7 @@ function importUrl(urlStr, { silent = false, settingsOnly = false, preserveClien
   if (p.has('wait_for_quality'))   _setEl('tog-wait-quality', p.get('wait_for_quality'));
   if (p.has('greyscale_no_quality')) _setEl('tog-greyscale-noquality', p.get('greyscale_no_quality'));
   if (p.has('quality_after_digital')) _setEl('tog-quality-after-digital', p.get('quality_after_digital'));
+  if (p.has('quality_drop_shadow')) _setEl('tog-quality-drop-shadow', p.get('quality_drop_shadow') === 'true');
 
   // ── Rating weights ──────────────────────────────────────────────────────
   function applyWeights(paramName, containerId, sources) {

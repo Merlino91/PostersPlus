@@ -543,10 +543,30 @@ def _draw_badge(image: Image.Image, text: str, position: str, art: Image.Image,
     if style in _DARK_INK:
         ink = _dark_pill(image, (x, y, x + bw, y + bh), style,
                          getattr(cfg, "landscape_badge_text_color", None))
+    if text.startswith("★"):
+        _FA_AWARD = "\uf559"
+        rest_str = text[1:].strip()
+        _f_size = max(1, int(height * _BADGE_FONT * scale))
+        try:
+            fa_font = ImageFont.truetype(
+                os.path.join(fonts.FONTS_DIR, "Font Awesome 7 Free-Solid-900.otf"),
+                max(1, int(_f_size * 0.68))
+            )
+        except IOError:
+            fa_font = font
+        gap = int(_f_size * 0.35)
+        icon_w = draw.textlength(_FA_AWARD, font=fa_font)
+        t_bb = draw.textbbox((0, 0), rest_str or "A", font=font)
+        fa_bb = draw.textbbox((0, 0), _FA_AWARD, font=fa_font)
+        t_cy = (t_bb[1] + t_bb[3]) / 2.0
+        fa_cy = (fa_bb[1] + fa_bb[3]) / 2.0
+        text_y = y + pad_y - round(2 * scale)
+        icon_y = text_y + (t_cy - fa_cy)
+        draw.text((x + pad_x, icon_y), _FA_AWARD, font=fa_font, fill=(*ink, 245))
+        draw.text((x + pad_x + icon_w + gap, text_y), rest_str, font=font, fill=(*ink, 245))
     else:
-        ink = _glass_pill(image, (x, y, x + bw, y + bh), art, cfg, source=source)
-    draw.text((x + pad_x, y + pad_y - round(2 * scale)), text, font=font,
-              fill=(*ink, 245))
+        draw.text((x + pad_x, y + pad_y - round(2 * scale)), text, font=font,
+                  fill=(*ink, 245))
 
 
 def _slot_x(width: int, w: float, align: str) -> int:

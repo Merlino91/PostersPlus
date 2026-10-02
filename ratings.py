@@ -718,6 +718,7 @@ def draw_frosted_bar(
     tint_rgb: tuple[float, float, float] | None = None,
     text_color: tuple[int, int, int] | None = None,
     center_run=None,
+    drop_shadow: bool = False,
 ) -> Image.Image:
     """Full-width frosted glass or dark-body strip near the bottom of the poster.
 
@@ -904,6 +905,28 @@ def draw_frosted_bar(
 
     bar_final = Image.alpha_composite(bar_img, txt_layer)
     result    = image.copy()
+    if drop_shadow:
+        _k_sc = width / 500.0
+        # Text shadow inside bar
+        _t_alpha = txt_layer.split()[3]
+        if _t_alpha.getbbox():
+            _t_s = _t_alpha.filter(ImageFilter.GaussianBlur(radius=max(2.0, 3.0 * _k_sc)))
+            _t_s = _t_s.point(lambda p: int(p * 0.90))
+            _pure_s = Image.new("RGBA", (width, bar_h), (0, 0, 0, 255))
+            _pure_s.putalpha(_t_s)
+            bar_img.paste(_pure_s, (round(1.0 * _k_sc), round(2.5 * _k_sc)), _pure_s)
+            bar_final = Image.alpha_composite(bar_img, txt_layer)
+
+        # Bar shadow on poster
+        _bar_alpha = bar_final.split()[3]
+        _b_s = _bar_alpha.filter(ImageFilter.GaussianBlur(radius=max(3.0, 5.0 * _k_sc)))
+        _b_s = _b_s.point(lambda p: int(p * 0.85))
+        _pure_bar_s = Image.new("RGBA", (width, bar_h), (0, 0, 0, 255))
+        _pure_bar_s.putalpha(_b_s)
+        _sh_layer = Image.new("RGBA", image.size, (0, 0, 0, 0))
+        _sh_layer.paste(_pure_bar_s, (0, bar_y - round(3.0 * _k_sc)), _pure_bar_s)
+        result.alpha_composite(_sh_layer)
+
     result.alpha_composite(bar_final, (0, bar_y))
     return result
 

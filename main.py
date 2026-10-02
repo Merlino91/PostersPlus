@@ -1917,6 +1917,7 @@ class RequestConfig:
     vivid_global_dark_boost: bool = False     # toggle: inject vivid dominant colour on very dark bottom zones
     use_global_ui_color: bool = False         # toggle: force vivid_dom_color on all UI elements (notch/bar/pill)
     rating_drop_shadow: bool = False          # toggle: soft drop shadow on rating text layer
+    quality_drop_shadow: bool = False         # toggle: soft drop shadow on quality badges layer
     combined_badge_ita_flag: bool = True      # toggle: show Italian tricolour in Combined badge separator
     top_gradient_opacity: float | None = None
     top_gradient_height: float | None = None
@@ -2549,6 +2550,7 @@ def build_request_config(params: dict) -> RequestConfig:
     cfg.vivid_global_dark_boost     = _b("vivid_global_dark_boost",     cfg.vivid_global_dark_boost)
     cfg.use_global_ui_color         = _b("use_global_ui_color",         cfg.use_global_ui_color)
     cfg.rating_drop_shadow          = _b("rating_drop_shadow",          cfg.rating_drop_shadow)
+    cfg.quality_drop_shadow         = _b("quality_drop_shadow",         cfg.quality_drop_shadow)
     cfg.combined_badge_ita_flag     = _b("combined_badge_ita_flag",     cfg.combined_badge_ita_flag)
     # Custom band depth is a fraction of the poster height; opacity is either a
     # 0-1 fraction or a raw 0-255 alpha (see the band geometry in build_poster).
@@ -4250,7 +4252,7 @@ def _build_poster(
     # poster, so the layer holds exactly what they would have drawn.
     _mirror_quality = (mode in (1, 2, 3, 4, 5) and cfg.sash_mode == "notch"
                        and _sash_holds_left(cfg))
-    _qtarget = Image.new("RGBA", image.size, (0, 0, 0, 0)) if _mirror_quality else image
+    _qtarget = Image.new("RGBA", image.size, (0, 0, 0, 0))
 
     if mode == 1:
         # If quality is below the threshold, strip the quality tokens so the
@@ -4335,9 +4337,26 @@ def _build_poster(
             ita_flag=cfg.combined_badge_ita_flag,
         )
 
-    if _mirror_quality and (_qbox := _qtarget.getbbox()) is not None:
-        _ql, _qt, _qr, _qb = _qbox
-        image.alpha_composite(_qtarget.crop(_qbox), (width - _qr, _qt))
+    if (_qbox := _qtarget.getbbox()) is not None:
+        _q_draw_layer = Image.new("RGBA", image.size, (0, 0, 0, 0))
+        if _mirror_quality:
+            _ql, _qt, _qr, _qb = _qbox
+            _q_draw_layer.alpha_composite(_qtarget.crop(_qbox), (width - _qr, _qt))
+        else:
+            _q_draw_layer = _qtarget
+
+        if cfg.quality_drop_shadow or cfg.rating_drop_shadow:
+            _q_alpha = _q_draw_layer.split()[3]
+            if _q_alpha.getbbox():
+                _k_sc = width / 500.0
+                _q_mask = _q_alpha.filter(ImageFilter.GaussianBlur(radius=max(2.0, 3.5 * _k_sc)))
+                _q_mask = _q_mask.point(lambda p: int(p * 0.90))
+                _pure_q_s = Image.new("RGBA", image.size, (0, 0, 0, 255))
+                _pure_q_s.putalpha(_q_mask)
+                _sh_q = Image.new("RGBA", image.size, (0, 0, 0, 0))
+                _sh_q.paste(_pure_q_s, (round(1.0 * _k_sc), round(3.5 * _k_sc)), _pure_q_s)
+                image.alpha_composite(_sh_q)
+        image.alpha_composite(_q_draw_layer)
 
     # The graphic badge groups place themselves in whatever the logo, rating
     # and sash leave free, found by comparing the canvas before and after them.
@@ -4672,12 +4691,27 @@ def _build_poster(
                 font_meta = ImageFont.load_default()
 
             tx, ty = _text_center(draw, label, font_meta, width / 2, rating_cy)  # type: ignore
-            draw.text(
+            _m1_layer = Image.new("RGBA", image.size, (0, 0, 0, 0))
+            _m1_draw = ImageDraw.Draw(_m1_layer)
+            _m1_draw.text(
                 (tx, ty - px(font_size * 0.10)),
                 label,
                 font=font_meta,
                 fill=(*cfg.rating_text_color, 255) if cfg.rating_text_color else (200, 200, 200, 255),
             )
+            if cfg.rating_drop_shadow:
+                _b_alpha = _m1_layer.split()[3]
+                if _b_alpha.getbbox():
+                    _k_sc = width / 500.0
+                    _shadow_mask = _b_alpha.filter(ImageFilter.GaussianBlur(radius=max(2.0, 3.5 * _k_sc)))
+                    _shadow_mask = _shadow_mask.point(lambda p: int(p * 0.90))
+                    _pure_shadow = Image.new("RGBA", image.size, (0, 0, 0, 255))
+                    _pure_shadow.putalpha(_shadow_mask)
+                    _shifted_shadow = Image.new("RGBA", image.size, (0, 0, 0, 0))
+                    _shifted_shadow.paste(_pure_shadow, (round(1.0 * _k_sc), round(3.5 * _k_sc)), _pure_shadow)
+                    image.alpha_composite(_shifted_shadow)
+            image.alpha_composite(_m1_layer)
+
             # The accent bar IS the rating in this mode — there is no number to
             # drop, so hiding the rating means not drawing the bar at all, and
             # the label above it is left to stand on its own.
@@ -4698,15 +4732,6 @@ def _build_poster(
                     color_mode=cfg.score_color_mode,
                     custom_palette=cfg.score_custom_palette,
                 )
-                if cfg.rating_drop_shadow:
-                    _rs_alpha = image.split()[3]
-                    _rs_shadow = _rs_alpha.filter(ImageFilter.GaussianBlur(radius=2.5))
-                    _rs_shadow = _rs_shadow.point(lambda p: int(p * 0.40))
-                    _rs_black  = Image.new("RGBA", image.size, (0, 0, 0, 255))
-                    _rs_black.putalpha(_rs_shadow)
-                    _rs_shifted = Image.new("RGBA", image.size, (0, 0, 0, 0))
-                    _rs_shifted.paste(_rs_black, (0, 2), _rs_black)
-                    image.alpha_composite(_rs_shifted)
 
         elif cfg.rating_display_mode == 2:
             font_size = px(width * cfg.numeric_score_font_size_ratio)
@@ -4772,12 +4797,13 @@ def _build_poster(
             if cfg.rating_drop_shadow:
                 _b_alpha = _clean_layer.split()[3]
                 if _b_alpha.getbbox():
-                    _shadow_mask = _b_alpha.filter(ImageFilter.GaussianBlur(radius=2.5))
-                    _shadow_mask = _shadow_mask.point(lambda p: int(p * 0.40))
+                    _k_sc = width / 500.0
+                    _shadow_mask = _b_alpha.filter(ImageFilter.GaussianBlur(radius=max(2.0, 3.5 * _k_sc)))
+                    _shadow_mask = _shadow_mask.point(lambda p: int(p * 0.90))
                     _pure_shadow = Image.new("RGBA", image.size, (0, 0, 0, 255))
                     _pure_shadow.putalpha(_shadow_mask)
                     _shifted_shadow = Image.new("RGBA", image.size, (0, 0, 0, 0))
-                    _shifted_shadow.paste(_pure_shadow, (0, 2), _pure_shadow)
+                    _shifted_shadow.paste(_pure_shadow, (round(1.0 * _k_sc), round(3.5 * _k_sc)), _pure_shadow)
                     image.alpha_composite(_shifted_shadow)
             image.alpha_composite(_clean_layer)
 
@@ -5017,8 +5043,11 @@ def _build_poster(
                     _fill = _ink[:3]
 
                 if _sep_style_kind == "star_fa":
-                    # Font Awesome filled star — drawn with FA7 font
-                    _min_draw.text((ox, y), _FA_STAR, font=_fa_font, fill=(*_fill, 255))
+                    # Font Awesome filled star — drawn with FA7 font, aligned vertically with text
+                    _t_bb = _min_draw.textbbox((0, 0), "8.5", font=font_meta)
+                    _fa_bb = _min_draw.textbbox((0, 0), _FA_STAR, font=_fa_font)
+                    _fa_dy = int(round(((_t_bb[1] + _t_bb[3]) - (_fa_bb[1] + _fa_bb[3])) / 2.0))
+                    _min_draw.text((ox, y + _fa_dy), _FA_STAR, font=_fa_font, fill=(*_fill, 255))
                 elif glyph is None:
                     _draw_solid_pip(_min_layer, x=ox, y_center=pip_cy,
                                     width=pip_w, height=pip_h, color=_fill)
@@ -5028,12 +5057,13 @@ def _build_poster(
             if cfg.rating_drop_shadow:
                 _b_alpha = _min_layer.split()[3]
                 if _b_alpha.getbbox():
-                    _shadow_mask = _b_alpha.filter(ImageFilter.GaussianBlur(radius=2.5))
-                    _shadow_mask = _shadow_mask.point(lambda p: int(p * 0.40))
+                    _k_sc = width / 500.0
+                    _shadow_mask = _b_alpha.filter(ImageFilter.GaussianBlur(radius=max(2.0, 3.5 * _k_sc)))
+                    _shadow_mask = _shadow_mask.point(lambda p: int(p * 0.90))
                     _pure_shadow = Image.new("RGBA", image.size, (0, 0, 0, 255))
                     _pure_shadow.putalpha(_shadow_mask)
                     _shifted_shadow = Image.new("RGBA", image.size, (0, 0, 0, 0))
-                    _shifted_shadow.paste(_pure_shadow, (0, 2), _pure_shadow)
+                    _shifted_shadow.paste(_pure_shadow, (round(1.0 * _k_sc), round(3.5 * _k_sc)), _pure_shadow)
                     image.alpha_composite(_shifted_shadow)
             image.alpha_composite(_min_layer)
 
@@ -5124,16 +5154,8 @@ def _build_poster(
                 tint_rgb         = _frost_tint,
                 text_color       = cfg.rating_text_color,
                 center_run       = _bar_run,
+                drop_shadow      = cfg.rating_drop_shadow,
             )
-            if cfg.rating_drop_shadow:
-                _rs_alpha = image.split()[3]
-                _rs_shadow = _rs_alpha.filter(ImageFilter.GaussianBlur(radius=2.5))
-                _rs_shadow = _rs_shadow.point(lambda p: int(p * 0.40))
-                _rs_black  = Image.new("RGBA", image.size, (0, 0, 0, 255))
-                _rs_black.putalpha(_rs_shadow)
-                _rs_shifted = Image.new("RGBA", image.size, (0, 0, 0, 0))
-                _rs_shifted.paste(_rs_black, (0, 2), _rs_black)
-                image.alpha_composite(_rs_shifted)
 
     # The band a rank numeral sits in, before the sash draws, to find what
     # the sash took of it.

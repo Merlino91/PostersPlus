@@ -1569,20 +1569,38 @@ def _notch_label_layer_1x(label: str, size_ss: int, ss: int, w: int, h: int,
 @lru_cache(maxsize=64)
 def _notch_label_layer_1x_in(font_path: str, label: str, size_ss: int, ss: int, w: int, h: int,
                              ink: tuple[int, int, int, int]) -> Image.Image:
-    """The frosted notch's label at 1x, anti-aliased by FreeType itself.
-
-    Positioned where the 3x layout puts it — the centre from _text_center at
-    3x, divided down — and drawn from that baseline, rather than re-centred with
-    1x metrics: those round to whole pixels (int(ascent * 0.22) above all) and
-    sat the label a pixel high."""
-    font3 = _notch_font_at(font_path, size_ss)
-    tx, ty = _text_center(ImageDraw.Draw(Image.new("L", (1, 1))), label, font3, w * ss / 2, h * ss / 2)
-    baseline = (ty + font3.getmetrics()[0]) / ss
+    """The frosted notch's label at 1x, anti-aliased by FreeType itself."""
     layer = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-    # True division: size_ss is a whole multiple of ss at 500 wide, but above it
-    # (pxscale) it is fractional, and flooring would shrink the label again.
-    ImageDraw.Draw(layer).text((tx / ss, baseline), label, font=_notch_font_at(font_path, size_ss / ss),
-                               fill=ink, anchor="ls")
+    ldraw = ImageDraw.Draw(layer)
+    font1x = _notch_font_at(font_path, size_ss / ss)
+    if label.startswith("★"):
+        _FA_AWARD = "\uf559"
+        rest_str = label[1:].strip()
+        fa_path = os.path.join(_FONTS_DIR, "Font Awesome 7 Free-Solid-900.otf")
+        try:
+            fa_font1x = ImageFont.truetype(fa_path, max(1, int((size_ss / ss) * 0.68)))
+        except IOError:
+            fa_font1x = font1x
+        gap = (size_ss / ss) * 0.35
+        icon_w = ldraw.textlength(_FA_AWARD, font=fa_font1x)
+        rest_w = ldraw.textlength(rest_str, font=font1x)
+        total_w = icon_w + gap + rest_w
+        start_x = (w - total_w) / 2
+
+        t_bb = ldraw.textbbox((0, 0), rest_str or "A", font=font1x)
+        fa_bb = ldraw.textbbox((0, 0), _FA_AWARD, font=fa_font1x)
+        t_cy = (t_bb[1] + t_bb[3]) / 2.0
+        fa_cy = (fa_bb[1] + fa_bb[3]) / 2.0
+        _, text_y = _text_center(ldraw, rest_str, font1x, w / 2, h / 2)
+        icon_y = text_y + (t_cy - fa_cy)
+
+        ldraw.text((start_x, icon_y), _FA_AWARD, font=fa_font1x, fill=ink)
+        ldraw.text((start_x + icon_w + gap, text_y), rest_str, font=font1x, fill=ink)
+    else:
+        font3 = _notch_font_at(font_path, size_ss)
+        tx, ty = _text_center(ImageDraw.Draw(Image.new("L", (1, 1))), label, font3, w * ss / 2, h * ss / 2)
+        baseline = (ty + font3.getmetrics()[0]) / ss
+        ldraw.text((tx / ss, baseline), label, font=font1x, fill=ink, anchor="ls")
     return layer
 
 
@@ -1825,14 +1843,19 @@ def draw_award_badge(
             ubuntu_font = font
         try:
             icon_font = ImageFont.truetype(
-                os.path.join(_fonts_dir, "Font Awesome 7 Free-Solid-900.otf"), font_size_ss)
+                os.path.join(_fonts_dir, "Font Awesome 7 Free-Solid-900.otf"), max(1, int(font_size_ss * 0.68)))
         except IOError:
             icon_font = ubuntu_font
 
         # Recalculate pill width with Ubuntu font
+        _FA_AWARD = "\uf559"   # FA solid award glyph
         _tmp_d2 = ImageDraw.Draw(Image.new("L", (1, 1)))
-        _pill_bbox = _tmp_d2.textbbox((0, 0), label, font=ubuntu_font)
-        _pill_text_w = int(_pill_bbox[2] - _pill_bbox[0])
+        if label.startswith("★"):
+            _rest = label[1:].strip()
+            _pill_text_w = int(_tmp_d2.textlength(_FA_AWARD, font=icon_font) + font_size_ss * 0.35 + _tmp_d2.textlength(_rest, font=ubuntu_font))
+        else:
+            _pill_bbox = _tmp_d2.textbbox((0, 0), label, font=ubuntu_font)
+            _pill_text_w = int(_pill_bbox[2] - _pill_bbox[0])
         badge_w2 = max(min_badge_w, min(max_badge_w, px(_pill_text_w / SS) + _h_pad))
         bw2 = badge_w2 * SS
         bx2 = (width - badge_w2) // 2
@@ -1865,18 +1888,23 @@ def draw_award_badge(
         td = ImageDraw.Draw(txt_layer)
 
         # Split rendering: ★ prefix → Font Awesome award icon
-        _FA_AWARD = "\uf559"   # FA solid award glyph
         if label.startswith("★"):
             rest_str = label[1:].strip()
-            gap = int(font_size_ss * 0.4)
+            gap = int(font_size_ss * 0.35)
             icon_w = td.textlength(_FA_AWARD, font=icon_font)
             rest_w = td.textlength(rest_str, font=ubuntu_font)
             total_w = icon_w + gap + rest_w
             tx = (bw2 - total_w) / 2
-            td.text((tx, text_cy_ss), _FA_AWARD, font=icon_font,
-                    fill=text_color_to_use, anchor="lm")
-            td.text((tx + icon_w + gap, text_cy_ss), rest_str, font=ubuntu_font,
-                    fill=text_color_to_use, anchor="lm")
+
+            t_bb = td.textbbox((0, 0), rest_str or "A", font=ubuntu_font)
+            fa_bb = td.textbbox((0, 0), _FA_AWARD, font=icon_font)
+            t_cy = (t_bb[1] + t_bb[3]) / 2.0
+            fa_cy = (fa_bb[1] + fa_bb[3]) / 2.0
+            _, text_y = _text_center(td, rest_str, ubuntu_font, bw2 / 2, text_cy_ss)
+            icon_y = text_y + (t_cy - fa_cy)
+
+            td.text((tx, icon_y), _FA_AWARD, font=icon_font, fill=text_color_to_use)
+            td.text((tx + icon_w + gap, text_y), rest_str, font=ubuntu_font, fill=text_color_to_use)
         else:
             tx_pos, ty_pos = _text_center(td, label, ubuntu_font, bw2 / 2, text_cy_ss)
             td.text((tx_pos, ty_pos), label, font=ubuntu_font, fill=text_color_to_use)
@@ -2068,10 +2096,38 @@ def draw_award_badge(
     # ── Text: white on dark body, with drop shadow ───────────────────────────
     txt_layer = Image.new("RGBA", (bw, bh), (0, 0, 0, 0))
     td = ImageDraw.Draw(txt_layer)
-    tx, ty = _text_center(td, label, font, bw // 2, text_cy_ss)
     _txt_rgb = text_color if text_color is not None else (255, 255, 255)
-    td.text((tx + SS, ty + SS), label, font=font, fill=(0, 0, 0, 160))
-    td.text((tx, ty),           label, font=font, fill=(*_txt_rgb, 235))
+    if label.startswith("★"):
+        _FA_AWARD = "\uf559"
+        rest_str = label[1:].strip()
+        try:
+            fa_font = ImageFont.truetype(
+                os.path.join(_fonts_dir, "Font Awesome 7 Free-Solid-900.otf"),
+                max(1, int(font_size_ss * 0.68))
+            )
+        except IOError:
+            fa_font = font
+        gap = int(font_size_ss * 0.35)
+        icon_w = td.textlength(_FA_AWARD, font=fa_font)
+        rest_w = td.textlength(rest_str, font=font)
+        total_w = icon_w + gap + rest_w
+        start_x = (bw - total_w) / 2
+
+        t_bb = td.textbbox((0, 0), rest_str or "A", font=font)
+        fa_bb = td.textbbox((0, 0), _FA_AWARD, font=fa_font)
+        t_cy = (t_bb[1] + t_bb[3]) / 2.0
+        fa_cy = (fa_bb[1] + fa_bb[3]) / 2.0
+        _, text_y = _text_center(td, rest_str, font, bw // 2, text_cy_ss)
+        icon_y = text_y + (t_cy - fa_cy)
+
+        td.text((start_x + SS, icon_y + SS), _FA_AWARD, font=fa_font, fill=(0, 0, 0, 160))
+        td.text((start_x + icon_w + gap + SS, text_y + SS), rest_str, font=font, fill=(0, 0, 0, 160))
+        td.text((start_x, icon_y), _FA_AWARD, font=fa_font, fill=(*_txt_rgb, 235))
+        td.text((start_x + icon_w + gap, text_y), rest_str, font=font, fill=(*_txt_rgb, 235))
+    else:
+        tx, ty = _text_center(td, label, font, bw // 2, text_cy_ss)
+        td.text((tx + SS, ty + SS), label, font=font, fill=(0, 0, 0, 160))
+        td.text((tx, ty),           label, font=font, fill=(*_txt_rgb, 235))
     badge = Image.alpha_composite(badge, txt_layer)
 
     # ── Downscale → composite ────────────────────────────────────────────────
@@ -2362,17 +2418,45 @@ def _sash_skia(
     c.drawRect(_skia.Rect(0, margin, length, height - margin),
                _skia.Paint(AntiAlias=True, BlendMode=_skia.BlendMode.kSrc, Color=col(dark)))
 
-    tx, ty = _text_center(ImageDraw.Draw(Image.new("L", (1, 1))), label, font_ss,
-                          length * ss / 2, height * ss / 2)
-    x, baseline = tx / ss, (ty + font_ss.getmetrics()[0]) / ss
     font = _skia.Font(_skia_typeface(fonts.label_path()), font_ss.size / ss)
     font.setSubpixel(True)
     font.setEdging(_skia.Font.Edging.kAntiAlias)
     tp = _skia.Paint(AntiAlias=True)
-    tp.setColor(_skia.Color(0, 0, 0, 180))
-    c.drawString(label, x + 2 * k, baseline + 2 * k, font, tp)
-    tp.setColor(_skia.Color(*text_rgb, 225))
-    c.drawString(label, x, baseline, font, tp)
+    if label.startswith("★"):
+        _FA_AWARD = "\uf559"
+        rest_str = label[1:].strip()
+        fa_path = os.path.join(_FONTS_DIR, "Font Awesome 7 Free-Solid-900.otf")
+        fa_tf = _skia_typeface(fa_path)
+        fa_font = _skia.Font(fa_tf, max(1.0, (font_ss.size / ss) * 0.68)) if fa_tf else font
+        fa_font.setSubpixel(True)
+        fa_font.setEdging(_skia.Font.Edging.kAntiAlias)
+
+        fa_w = fa_font.measureText(_FA_AWARD)
+        rest_w = font.measureText(rest_str)
+        gap = (font_ss.size / ss) * 0.35
+        total_w = fa_w + gap + rest_w
+        x_start = (length - total_w) / 2
+
+        _, ty = _text_center(ImageDraw.Draw(Image.new("L", (1, 1))), rest_str or "A", font_ss,
+                              length * ss / 2, height * ss / 2)
+        baseline = (ty + font_ss.getmetrics()[0]) / ss
+        fa_dy = (font_ss.size / ss) * 0.04
+
+        tp.setColor(_skia.Color(0, 0, 0, 180))
+        c.drawString(_FA_AWARD, x_start + 2 * k, baseline + 2 * k - fa_dy, fa_font, tp)
+        c.drawString(rest_str, x_start + fa_w + gap + 2 * k, baseline + 2 * k, font, tp)
+        tp_fg = _skia.Paint(AntiAlias=True)
+        tp_fg.setColor(_skia.Color(*text_rgb, 225))
+        c.drawString(_FA_AWARD, x_start, baseline - fa_dy, fa_font, tp_fg)
+        c.drawString(rest_str, x_start + fa_w + gap, baseline, font, tp_fg)
+    else:
+        tx, ty = _text_center(ImageDraw.Draw(Image.new("L", (1, 1))), label, font_ss,
+                              length * ss / 2, height * ss / 2)
+        x, baseline = tx / ss, (ty + font_ss.getmetrics()[0]) / ss
+        tp.setColor(_skia.Color(0, 0, 0, 180))
+        c.drawString(label, x + 2 * k, baseline + 2 * k, font, tp)
+        tp.setColor(_skia.Color(*text_rgb, 225))
+        c.drawString(label, x, baseline, font, tp)
 
     out = np.empty((h, w, 4), dtype=np.uint8)
     surface.readPixels(info, out)
@@ -2522,14 +2606,43 @@ def draw_award_sash(
         # Label: drawn level on a layer just wide enough for it, centred on the band,
         # then that layer alone is turned and laid on the band.
         _probe = ImageDraw.Draw(Image.new("L", (1, 1)))
-        _bb    = _probe.textbbox((0, 0), label, font=font)
-        lw     = max(1, int(_bb[2] - _bb[0] + 8 * SS))
-        text_layer = Image.new("RGBA", (lw, round(sh)), (0, 0, 0, 0))
-        td         = ImageDraw.Draw(text_layer)
+        if label.startswith("★"):
+            _FA_AWARD = "\uf559"
+            rest_str = label[1:].strip()
+            try:
+                fa_font = ImageFont.truetype(
+                    os.path.join(_FONTS_DIR, "Font Awesome 7 Free-Solid-900.otf"),
+                    max(1, int(font_size * 0.68))
+                )
+            except IOError:
+                fa_font = font
+            gap = int(font_size * 0.35)
+            icon_w = _probe.textlength(_FA_AWARD, font=fa_font)
+            rest_w = _probe.textlength(rest_str, font=font)
+            lw = max(1, int(icon_w + gap + rest_w + 8 * SS))
+            text_layer = Image.new("RGBA", (lw, round(sh)), (0, 0, 0, 0))
+            td = ImageDraw.Draw(text_layer)
 
-        tx, ty = _text_center(td, label, font, lw / 2, sh / 2)
-        td.text((tx + 2 * SS * k, ty + 2 * SS * k), label, font=font, fill=(0, 0, 0, 180))
-        td.text((tx, ty),                   label, font=font, fill=(*_txt_rgb, 225))
+            t_bb = _probe.textbbox((0, 0), rest_str or "A", font=font)
+            fa_bb = _probe.textbbox((0, 0), _FA_AWARD, font=fa_font)
+            t_cy = (t_bb[1] + t_bb[3]) / 2.0
+            fa_cy = (fa_bb[1] + fa_bb[3]) / 2.0
+            _, text_y = _text_center(td, rest_str, font, lw / 2, sh / 2)
+            icon_y = text_y + (t_cy - fa_cy)
+            start_x = (lw - (icon_w + gap + rest_w)) / 2
+
+            td.text((start_x + 2 * SS * k, icon_y + 2 * SS * k), _FA_AWARD, font=fa_font, fill=(0, 0, 0, 180))
+            td.text((start_x + icon_w + gap + 2 * SS * k, text_y + 2 * SS * k), rest_str, font=font, fill=(0, 0, 0, 180))
+            td.text((start_x, icon_y), _FA_AWARD, font=fa_font, fill=(*_txt_rgb, 225))
+            td.text((start_x + icon_w + gap, text_y), rest_str, font=font, fill=(*_txt_rgb, 225))
+        else:
+            _bb = _probe.textbbox((0, 0), label, font=font)
+            lw = max(1, int(_bb[2] - _bb[0] + 8 * SS))
+            text_layer = Image.new("RGBA", (lw, round(sh)), (0, 0, 0, 0))
+            td = ImageDraw.Draw(text_layer)
+            tx, ty = _text_center(td, label, font, lw / 2, sh / 2)
+            td.text((tx + 2 * SS * k, ty + 2 * SS * k), label, font=font, fill=(0, 0, 0, 180))
+            td.text((tx, ty),                   label, font=font, fill=(*_txt_rgb, 225))
 
         text_layer = text_layer.rotate(45 if left else -45, expand=True, resample=Image.Resampling.BICUBIC)
         cx, cy = _q(sl / 2, sh / 2)
