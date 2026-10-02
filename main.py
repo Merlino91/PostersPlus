@@ -4001,8 +4001,8 @@ def _build_poster(
         image = ImageOps.grayscale(image).convert("RGBA")
 
     if _blurred:
-        # Optical Gaussian blur across whole poster
-        blur_radius = max(6, int(width * 0.022))
+        # Optical Gaussian blur across whole poster (halved intensity)
+        blur_radius = max(3, int(width * 0.011))
         image = image.filter(ImageFilter.GaussianBlur(radius=blur_radius))
 
     if _frosted:
@@ -4011,14 +4011,10 @@ def _build_poster(
         for _ in range(3):
             image = image.filter(ImageFilter.BoxBlur(radius=box_radius))
         image = image.filter(ImageFilter.UnsharpMask(radius=3, percent=140, threshold=3))
-        if not _greyscaled:
-            image = ImageEnhance.Color(image).enhance(1.25)
         noise = np.random.normal(0, 1.8, (height, width, 3)).astype(np.float32)
         img_np = np.array(image.convert("RGBA"), dtype=np.float32)
         img_np[:, :, :3] = np.clip(img_np[:, :, :3] + noise, 0, 255)
         image = Image.fromarray(img_np.astype(np.uint8), mode="RGBA")
-        sheen = Image.new("RGBA", (width, height), (255, 255, 255, int(255 * 0.08)))
-        image = Image.alpha_composite(image, sheen)
 
     draw = ImageDraw.Draw(image)
 
