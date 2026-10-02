@@ -1716,6 +1716,8 @@ class RequestConfig:
     show_award_sash:     bool = field(default_factory=lambda: _cfg.SHOW_AWARD_SASH)
     sash_poster_color:   bool = False   # diagonal sash colour derived from poster art
     cinema_greyscale:    bool = True    # greyscale art when release_status == "Cinema"
+    cinema_frosted:      bool = False   # frosted glass art when release_status == "Cinema"
+    cinema_blur:         bool = False   # blur art when release_status == "Cinema"
     cinema_greyscale_skip_if_available: bool = False  # keep colour if Web/Remux source found
     # Greyscale even with no release-status sash listed.  The trending addon's
     # Trending Only list sets it: its rows keep the greyscale their owner's
@@ -2498,6 +2500,8 @@ def build_request_config(params: dict) -> RequestConfig:
     cfg.show_award_sash         = _b("show_award_sash",        cfg.show_award_sash)
     cfg.sash_poster_color       = _b("sash_poster_color",      cfg.sash_poster_color)
     cfg.cinema_greyscale        = _b("cinema_greyscale",       cfg.cinema_greyscale)
+    cfg.cinema_frosted          = _b("cinema_frosted",         cfg.cinema_frosted)
+    cfg.cinema_blur             = _b("cinema_blur",            cfg.cinema_blur)
     cfg.cinema_greyscale_skip_if_available = _b("cinema_greyscale_skip_if_available", cfg.cinema_greyscale_skip_if_available)
     cfg.cinema_greyscale_without_sash = _b("cinema_greyscale_without_sash", cfg.cinema_greyscale_without_sash)
     cfg.release_status_cinema_only = _b("release_status_cinema_only", cfg.release_status_cinema_only)
@@ -3990,8 +3994,31 @@ def _build_poster(
     #     when wait_for_quality is on (otherwise tokens may just not be fetched
     #     yet), so it's gated on it.
     _greyscaled = _greyscale_wanted(cfg, discovery_meta, quality_tokens, cfg.cinema_greyscale)
+    _blurred    = _unavailable_wanted(cfg, discovery_meta, quality_tokens, cfg.cinema_blur)
+    _frosted    = _unavailable_wanted(cfg, discovery_meta, quality_tokens, cfg.cinema_frosted)
+
     if _greyscaled:
         image = ImageOps.grayscale(image).convert("RGBA")
+
+    if _blurred:
+        # Optical Gaussian blur across whole poster
+        blur_radius = max(6, int(width * 0.022))
+        image = image.filter(ImageFilter.GaussianBlur(radius=blur_radius))
+
+    if _frosted:
+        # Frosted glass effect across whole poster
+        box_radius = max(2, int(width * 0.012))
+        for _ in range(3):
+            image = image.filter(ImageFilter.BoxBlur(radius=box_radius))
+        image = image.filter(ImageFilter.UnsharpMask(radius=3, percent=140, threshold=3))
+        if not _greyscaled:
+            image = ImageEnhance.Color(image).enhance(1.25)
+        noise = np.random.normal(0, 1.8, (height, width, 3)).astype(np.float32)
+        img_np = np.array(image.convert("RGBA"), dtype=np.float32)
+        img_np[:, :, :3] = np.clip(img_np[:, :, :3] + noise, 0, 255)
+        image = Image.fromarray(img_np.astype(np.uint8), mode="RGBA")
+        sheen = Image.new("RGBA", (width, height), (255, 255, 255, int(255 * 0.08)))
+        image = Image.alpha_composite(image, sheen)
 
     draw = ImageDraw.Draw(image)
 
@@ -4020,7 +4047,7 @@ def _build_poster(
     # tells the user the poster is greyscale because it's unavailable, rather
     # than a title whose art happens to be black & white.
     _sash_priority = cfg.sash_priority
-    if (cfg.cinema_greyscale and discovery_meta is not None
+    if ((cfg.cinema_greyscale or cfg.cinema_frosted or cfg.cinema_blur) and discovery_meta is not None
             and discovery_meta.release_status in ("Cinema", "Production")):
         _status = discovery_meta.release_status.lower()
         if _status in _sash_priority or "release_status" in _sash_priority:
@@ -5414,24 +5441,28 @@ def _group_anchor(cfg: "RequestConfig", anchor: str) -> tuple[bool, bool]:
     return True, True
 
 
-def _greyscale_wanted(cfg: "RequestConfig", discovery_meta, quality_tokens: list[str] | None,
-                      cinema_on: bool, quality_shown: bool | None = None) -> bool:
-    """Whether to greyscale the art (see build_poster), for either shape.
-    ``cinema_on`` is the shape's own cinema switch (cinema_greyscale, or
-    landscape_greyscale); ``quality_shown`` whether this render draws quality
-    at all (portrait's _uses_quality by default)."""
-    cinema = (cinema_on and discovery_meta is not None
+def _unavailable_wanted(cfg: "RequestConfig", discovery_meta, quality_tokens: list[str] | None,
+                        effect_on: bool, quality_shown: bool | None = None) -> bool:
+    """Whether to apply an unavailable effect (greyscale, frosted, blur) to the art.
+    cinema_greyscale_skip_if_available overrides the effect if a Web/Remux source is found."""
+    cinema = (effect_on and discovery_meta is not None
               and discovery_meta.release_status in ("Cinema", "Production"))
     # Override: if a real digital source (Web / Remux) was found, the title is
-    # actually available — keep it in colour despite the cinema/production status.
+    # actually available — keep it original despite the cinema/production status.
     if (cinema and cfg.cinema_greyscale_skip_if_available and quality_tokens
             and any(t in ("WEBDL", "REMUX") for t in quality_tokens)):
         cinema = False
     if quality_shown is None:
         quality_shown = _uses_quality(cfg)
     no_quality = (cfg.greyscale_no_quality and cfg.wait_for_quality and not quality_tokens
-                  and quality_shown)
+                  and quality_shown) if effect_on else False
     return cinema or no_quality
+
+
+def _greyscale_wanted(cfg: "RequestConfig", discovery_meta, quality_tokens: list[str] | None,
+                      cinema_on: bool, quality_shown: bool | None = None) -> bool:
+    """Whether to greyscale the art (see build_poster), for either shape."""
+    return _unavailable_wanted(cfg, discovery_meta, quality_tokens, cinema_on, quality_shown)
 
 
 def _auto_notch_pos(cfg: "RequestConfig", tokens: list[str], certification: str | None,
@@ -10819,7 +10850,7 @@ async def get_poster(
                     or (_scheduled_digital - datetime.now().date()).days <= _LEAK_LEAD_DAYS)
         _status_sash = any(s in rcfg.sash_priority for s in _rs_slots)
         _status_grey = (rcfg.landscape_greyscale if _is_landscape
-                        else rcfg.cinema_greyscale and rcfg.cinema_greyscale_without_sash)
+                        else (rcfg.cinema_greyscale or rcfg.cinema_frosted or rcfg.cinema_blur) and rcfg.cinema_greyscale_without_sash)
         # The cinema badge: a film still in cinemas (or not out at all),
         # shown without a sash — or beside a different one.
         # A series gets it too while it waits to premiere: its premiere date,

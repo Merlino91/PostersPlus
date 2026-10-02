@@ -3479,6 +3479,20 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
                   <div class="toggle-track"><div class="toggle-thumb"></div></div>
                 </label>
               </div>
+              <div class="toggle-row portrait-only" id="sash-cinema-frosted-row">
+                <span class="toggle-label" data-tip="Applies a frosted glass effect across the whole poster if unavailable. Follows Consider Available if Source Found.">Frosted Glass Poster if Unavailable</span>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="tog-cinema-frosted" onchange="build(); queuePreviewReload()">
+                  <div class="toggle-track"><div class="toggle-thumb"></div></div>
+                </label>
+              </div>
+              <div class="toggle-row portrait-only" id="sash-cinema-blur-row">
+                <span class="toggle-label" data-tip="Applies a soft blur across the whole poster if unavailable. Follows Consider Available if Source Found.">Blur Poster if Unavailable</span>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="tog-cinema-blur" onchange="build(); queuePreviewReload()">
+                  <div class="toggle-track"><div class="toggle-thumb"></div></div>
+                </label>
+              </div>
               <div class="toggle-row" id="sash-release-cinema-only-row">
                 <span class="toggle-label" data-tip="Only show the release status sash for titles in cinemas or in production. Leaving it off also shows Streaming / Physical / Airing / Ended / Cancelled; enabling it suppresses those whatever their sash order.">Release Status: Unavailable Only</span>
                 <label class="toggle-switch">
@@ -3787,7 +3801,7 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
                 </div>
               </div>
               <div class="toggle-row" id="consider-available-field" style="display:none">
-                <span class="toggle-label" data-tip="Overrides Greyscale Poster if Unavailable in the Sash panel when WebDL or Remux is found in quality.">Consider Available if Source Found</span>
+                <span class="toggle-label" data-tip="Overrides Greyscale, Frosted Glass, or Blur Poster if Unavailable in the Sash panel when WebDL or Remux is found in quality.">Consider Available if Source Found</span>
                 <label class="toggle-switch">
                   <input type="checkbox" id="tog-cinema-greyscale-skip" onchange="build(); queuePreviewReload()">
                   <div class="toggle-track"><div class="toggle-thumb"></div></div>
@@ -6889,6 +6903,8 @@ function buildBaseParams({ usePlaceholders = false, domainOverride = null, full 
   // sash_mode itself is per shape and went out with the vignette above.
   if (emitAll) {
     params.set('cinema_greyscale', c('tog-cinema-greyscale') ? 'true' : 'false');
+    if (c('tog-cinema-frosted')) params.set('cinema_frosted', 'true');
+    if (c('tog-cinema-blur')) params.set('cinema_blur', 'true');
     params.set('cinema_greyscale_skip_if_available', c('tog-cinema-greyscale-skip') ? 'true' : 'false');
   }
   params.set('release_status_cinema_only', c('tog-release-cinema-only') ? 'true' : 'false');
@@ -8325,7 +8341,8 @@ function updateShapeFields() {
   document.getElementById('fallback-bg-style-field').style.display = landscape ? 'none' : '';
   // Sash tab: the mode (drawn or not), the release-status filters and the
   // priority list are read; the rest styles the portrait sash / notch.
-  for (const id of ['sash-cinema-greyscale-row', 'sash-winner-star-row', 'sash-text-color-field',
+  for (const id of ['sash-cinema-greyscale-row', 'sash-cinema-frosted-row', 'sash-cinema-blur-row',
+                    'sash-winner-star-row', 'sash-text-color-field',
                     'sash-trending-group', 'sash-trending-style-field', 'sash-trending-mark-fields',
                     'sash-muted-row', 'sash-poster-color-row', 'sash-style-field',
                     'sash-badge-offsets', 'sash-size-fields', 'sash-reference-row',
@@ -9630,6 +9647,8 @@ function importUrl(urlStr, { silent = false, settingsOnly = false, preserveClien
       document.getElementById('cfg-sash-text-color-picker').value = '#' + _stcVal; }
   if (p.has('sash_winner_star')) _setEl('tog-sash-winner-star',  p.get('sash_winner_star'));
   if (p.has('cinema_greyscale')) _setEl('tog-cinema-greyscale', p.get('cinema_greyscale'));
+  if (p.has('cinema_frosted'))   _setEl('tog-cinema-frosted',   p.get('cinema_frosted') === 'true');
+  if (p.has('cinema_blur'))      _setEl('tog-cinema-blur',      p.get('cinema_blur') === 'true');
   if (p.has('cinema_greyscale_skip_if_available')) _setEl('tog-cinema-greyscale-skip', p.get('cinema_greyscale_skip_if_available'));
   if (p.has('release_status_cinema_only')) _setEl('tog-release-cinema-only', p.get('release_status_cinema_only'));
   if (p.has('release_status_dates')) _setEl('tog-release-dates', p.get('release_status_dates'));
