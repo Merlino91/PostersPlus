@@ -1913,8 +1913,6 @@ class RequestConfig:
     #   "reference" — the colour exactly as it is, like the notch's match mode
     # The saturation and lightness sliders only apply to "shade".
     vignette_color_style: str = "shade"
-    vignette_color_blur_enable: bool = True   # toggle: enable colour blur on bottom vignette band
-    vivid_global_dark_boost: bool = False     # toggle: inject vivid dominant colour on very dark bottom zones
     use_global_ui_color: bool = False         # toggle: force vivid_dom_color on all UI elements (notch/bar/pill)
     rating_drop_shadow: bool = False          # toggle: soft drop shadow on rating text layer
     quality_drop_shadow: bool = False         # toggle: soft drop shadow on quality badges layer
@@ -2525,8 +2523,6 @@ def build_request_config(params: dict) -> RequestConfig:
         cfg.bottom_gradient = _bg_raw
     elif _bg_raw == "custom":
         cfg.bottom_gradient = "custom"
-    elif _bg_raw == "two_tone":
-        cfg.bottom_gradient = "two_tone"
 
     cfg.top_vignette_sash_only = _b("top_vignette_sash_only", cfg.top_vignette_sash_only)
     # vignette_poster_color was a single toggle covering both bands before they were
@@ -2548,8 +2544,6 @@ def build_request_config(params: dict) -> RequestConfig:
     _vc_style = str(params.get("vignette_color_style", "")).strip().lower()
     if _vc_style in _VIGNETTE_COLOR_STYLES:
         cfg.vignette_color_style = _vc_style
-    cfg.vignette_color_blur_enable  = _b("vignette_color_blur_enable",  cfg.vignette_color_blur_enable)
-    cfg.vivid_global_dark_boost     = _b("vivid_global_dark_boost",     cfg.vivid_global_dark_boost)
     cfg.use_global_ui_color         = _b("use_global_ui_color",         cfg.use_global_ui_color)
     cfg.rating_drop_shadow          = _b("rating_drop_shadow",          cfg.rating_drop_shadow)
     cfg.quality_drop_shadow         = _b("quality_drop_shadow",         cfg.quality_drop_shadow)
@@ -4173,12 +4167,8 @@ def _build_poster(
             bottom_overlay = _band_overlay(np.round(bottom_alpha))
         else:
             t_bot = np.linspace(0, 1, bottom_height, dtype=np.float32)
-            if cfg.bottom_gradient == "two_tone":
-                # Custom Two-Tone: denser curve at bottom edge — steeper than the dev's ease-in
-                eased_bot = ((t_bot ** 1.2) * bottom_max_alpha)
-            else:
-                eased_bot = ((1 - (1 - t_bot) ** _BOTTOM_GRADIENT_CURVE) * bottom_max_alpha)
-            bottom_overlay = _band_overlay(eased_bot)
+            bottom_overlay = _band_overlay(
+                (1 - (1 - t_bot) ** _BOTTOM_GRADIENT_CURVE) * bottom_max_alpha)
 
     # One colour for both tinted bands: the most confident of each band's own
     # pick (which is the whole-poster pick unless its seam found a better one).
@@ -4244,45 +4234,21 @@ def _build_poster(
     if _bg_preset is not None:
         if _bottom_tinted:
             _b_tint, _b_conf, _b_second, _b_cover = _fog_colour
-            if cfg.vignette_color_blur_enable and cfg.vignette_color_blur > 0:
-                _vignette_frost_band(
-                    image, (0, bottom_start, width, height), bottom_overlay, cfg.vignette_color_blur,
-                )
-                _vignette_level_band(
-                    image, (0, bottom_start, width, height), bottom_overlay, _level_amount
-                )
-            _blur_for_tint = cfg.vignette_color_blur if cfg.vignette_color_blur_enable else 0.0
+            _vignette_frost_band(
+                image, (0, bottom_start, width, height), bottom_overlay, cfg.vignette_color_blur,
+            )
+            _vignette_level_band(
+                image, (0, bottom_start, width, height), bottom_overlay, _level_amount
+            )
             bottom_tinted = _vignette_tint_band(
                 _frost_color_src, (0, bottom_start, width, height), _b_tint, _b_conf,
-                cfg.vignette_color_saturation, _blur_for_tint, _b_second,
+                cfg.vignette_color_saturation, cfg.vignette_color_blur, _b_second,
                 cfg.vignette_color_lightness, cover_lightness=_b_cover,
                 style=cfg.vignette_color_style,
             )
             if _vignette_shown is None and _b_conf >= _VIGNETTE_MATCH_MIN_CONF and _slider_amount > 0:
                 # Bottom band: strongest at the poster's edge, so the last row.
                 _vignette_shown = _band_paint(bottom_tinted, -1)
-
-            # Custom: Vivid Global Dark Boost — inject vivid dominant colour on
-            # very dark poster bottom zones to add chromatic depth to near-black areas.
-            if cfg.vivid_global_dark_boost:
-                _bottom_region = np.asarray(image)[bottom_start:, :, :3].astype(np.float32)
-                _bottom_avg_lum = float(np.mean(
-                    0.299 * _bottom_region[..., 0] +
-                    0.587 * _bottom_region[..., 1] +
-                    0.114 * _bottom_region[..., 2]
-                ))
-                if _bottom_avg_lum < 30.0:
-                    _vivid_tint = _b_tint  # dominant colour from fog pick
-                    _dark_vivid = (
-                        int(_vivid_tint[0] * 0.35),
-                        int(_vivid_tint[1] * 0.35),
-                        int(_vivid_tint[2] * 0.35),
-                    )
-                    _vivid_color = _dark_vivid if bottom_tinted.mode == "RGB" else (*_dark_vivid, 255)
-                    _vivid_layer = Image.new(bottom_tinted.mode, bottom_tinted.size, _vivid_color)
-                    _vivid_blend = (1.0 - (_bottom_avg_lum / 30.0)) * 0.75
-                    bottom_tinted = Image.blend(bottom_tinted, _vivid_layer, alpha=_vivid_blend)
-
             _vignette_composite(image, bottom_start, bottom_tinted, bottom_alpha)
         else:
             bottom_tinted = Image.new("RGBA", (width, bottom_height), (0, 0, 0, 0))

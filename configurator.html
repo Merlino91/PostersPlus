@@ -2634,7 +2634,6 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
                   <option value="low">Low</option>
                   <option value="medium">Medium</option>
                   <option value="high" selected>High</option>
-                  <option value="two_tone">Two-Tone ✦</option>
                   <option value="custom">Custom</option>
                 </select>
                 <div class="segmented" data-for="cfg-bottom-gradient"></div>
@@ -2728,20 +2727,6 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
                     <input type="range" id="cfg-vignette-blur" min="0.0" max="1.0" step="0.05" value="1.00" oninput="updateRange(this,'rng-vblur'); build(); queuePreviewReload()">
                     <span class="range-val" id="rng-vblur">1.00</span>
                   </div>
-                </div>
-                <div class="toggle-row">
-                  <span class="toggle-label" data-tip="Enable colour blur on bottom vignette band. Disable for sharp unblurred tinting.">Blur Enable</span>
-                  <label class="toggle-switch">
-                    <input type="checkbox" id="tog-vignette-blur-enable" checked onchange="build(); queuePreviewReload()">
-                    <div class="toggle-track"><div class="toggle-thumb"></div></div>
-                  </label>
-                </div>
-                <div class="toggle-row">
-                  <span class="toggle-label" data-tip="Inject vivid dominant colour on very dark poster bottom zones (lum < 30) to give chromatic depth to near-black areas.">Vivid Global Dark Boost</span>
-                  <label class="toggle-switch">
-                    <input type="checkbox" id="tog-vivid-global-dark-boost" onchange="build(); queuePreviewReload()">
-                    <div class="toggle-track"><div class="toggle-thumb"></div></div>
-                  </label>
                 </div>
               </div>
             </div><!-- /vignette group -->
@@ -6623,8 +6608,6 @@ function buildBaseParams({ usePlaceholders = false, domainOverride = null, full 
       // Written even at the default: on a dual URL an absent landscape_ value
       // falls back to the portrait one.
       set('vignette_color_style', v['cfg-vignette-style'] || 'shade');
-      if (!c('tog-vignette-blur-enable')) set('vignette_color_blur_enable', 'false');
-      if (c('tog-vivid-global-dark-boost')) set('vivid_global_dark_boost', 'true');
     }
     // Written in both states for the same reason as the tint toggles: on a dual
     // URL an absent landscape_hide_genre falls back to hide_genre, so "off"
@@ -9466,7 +9449,7 @@ function importUrl(urlStr, { silent = false, settingsOnly = false, preserveClien
   }
   if (p.has('bottom_gradient')) {
     const _bg = (p.get('bottom_gradient') || '').toLowerCase();
-    if (['off','low','medium','high','custom','two_tone'].includes(_bg)) _setEl('cfg-bottom-gradient', _bg);
+    if (['off','low','medium','high','custom'].includes(_bg)) _setEl('cfg-bottom-gradient', _bg);
     if (_bg === 'custom') {
       if (p.has('bottom_gradient_opacity')) { const el = document.getElementById('cfg-bg-op'); el.value = p.get('bottom_gradient_opacity'); updateWeightRange(el, 'rv-bg-op'); }
       if (p.has('bottom_gradient_height')) { const el = document.getElementById('cfg-bg-ht'); el.value = p.get('bottom_gradient_height'); updateWeightRange(el, 'rv-bg-ht'); }
@@ -9489,8 +9472,6 @@ function importUrl(urlStr, { silent = false, settingsOnly = false, preserveClien
   { const _vs = p.get('vignette_color_style');
     if (['shade','muted','reference'].includes(_vs)) _setEl('cfg-vignette-style', _vs); }
   if (p.has('notch_vignette_color'))      _setEl('tog-notch-vignette-color', p.get('notch_vignette_color'));
-  if (p.has('vignette_color_blur_enable')) _setEl('tog-vignette-blur-enable', p.get('vignette_color_blur_enable') === 'true');
-  if (p.has('vivid_global_dark_boost'))    _setEl('tog-vivid-global-dark-boost', p.get('vivid_global_dark_boost') === 'true');
   if (p.has('hide_genre')) _setEl('tog-hide-genre', p.get('hide_genre'));
   if (p.has('hide_year')) _setEl('tog-hide-year', p.get('hide_year'));
   if (p.has('hide_rating')) _setEl('tog-hide-rating', p.get('hide_rating'));
