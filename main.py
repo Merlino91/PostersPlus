@@ -3911,7 +3911,6 @@ def _draw_combined_text_badge(
     # Soft ambient drop shadow for a raised satin effect
     b_alpha = badge_layer.split()[3]
     if b_alpha.getbbox():
-        from PIL import ImageFilter
         shadow_mask = b_alpha.filter(ImageFilter.GaussianBlur(radius=2.5))
         shadow_mask = shadow_mask.point(lambda p: int(p * 0.40))
         pure_shadow = Image.new("RGBA", image.size, (0, 0, 0, 255))
@@ -5226,7 +5225,6 @@ def _build_poster(
         _label_tr = translate_sash(label, cfg.logo_language)
         if cfg.sash_mode == "notch":
             if cfg.notch_drop_shadow:
-                from PIL import ImageFilter
                 _shadow_k = width / 500.0
                 _shadow_layer = Image.new("RGBA", image.size, (0, 0, 0, 0))
                 _shadow_layer = draw_award_badge(
