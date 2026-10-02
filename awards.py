@@ -1578,7 +1578,7 @@ def _notch_label_layer_1x_in(font_path: str, label: str, size_ss: int, ss: int, 
         rest_str = label[1:].strip()
         fa_path = os.path.join(_FONTS_DIR, "Font Awesome 7 Free-Solid-900.otf")
         try:
-            fa_font1x = ImageFont.truetype(fa_path, max(1, int((size_ss / ss) * 0.68)))
+            fa_font1x = ImageFont.truetype(fa_path, max(1, int((size_ss / ss) * 0.85)))
         except IOError:
             fa_font1x = font1x
         gap = (size_ss / ss) * 0.35
@@ -1589,10 +1589,9 @@ def _notch_label_layer_1x_in(font_path: str, label: str, size_ss: int, ss: int, 
 
         t_bb = ldraw.textbbox((0, 0), rest_str or "A", font=font1x)
         fa_bb = ldraw.textbbox((0, 0), _FA_AWARD, font=fa_font1x)
-        t_cy = (t_bb[1] + t_bb[3]) / 2.0
-        fa_cy = (fa_bb[1] + fa_bb[3]) / 2.0
+        _fa_dy = int(round((((t_bb[1] + t_bb[3]) - (fa_bb[1] + fa_bb[3])) / 2.0)))
         _, text_y = _text_center(ldraw, rest_str, font1x, w / 2, h / 2)
-        icon_y = text_y + (t_cy - fa_cy)
+        icon_y = text_y + _fa_dy
 
         ldraw.text((start_x, icon_y), _FA_AWARD, font=fa_font1x, fill=ink)
         ldraw.text((start_x + icon_w + gap, text_y), rest_str, font=font1x, fill=ink)
@@ -1683,6 +1682,7 @@ def draw_award_badge(
     star: bool | None = None,         # override ★ decision (resolved on canonical label)
     text_color: tuple[int, int, int] | None = None,  # override default white text
     position: str = "center",         # "center" | "left" | "right"
+    notch_solid: bool = False,        # solid opaque body with smart text colour instead of frosted glass
     body_opacity: float | None = None,  # black/silver/gold body opacity; None = the style's own
     chip_offset: float = 0.0,         # side chip only: moved down by this fraction of poster height
     chip_offset_x: float = 0.0,       # side chip only: moved in from its corner by this fraction of poster width
@@ -1732,8 +1732,8 @@ def draw_award_badge(
         drawn = draw_award_badge(
             image.transpose(turn), label, sash_type, size_ratio_w, size_ratio_h, notch_style,
             0.0, notch_pad_ratio, font_size_ratio, frost_opacity, frost_saturation,
-            frost_reference, tint_rgb, star, text_color, "center", body_opacity,
-            _geom=image.size, _along=(image.height - y) if left else y)
+            frost_reference, tint_rgb, star, text_color, "center", notch_solid=notch_solid,
+            body_opacity=body_opacity, _geom=image.size, _along=(image.height - y) if left else y)
         return drawn.transpose(back)
 
     width, height = _geom or image.size
@@ -1830,137 +1830,49 @@ def draw_award_badge(
             text_color=text_color, body_opacity=body_opacity, offset_x=chip_offset_x,
         )
 
-    # ── Custom: Minimal Pill ───────────────────────────────────────────────────
-    # Solid coloured pill using tint_rgb (smart_top_color / vivid_dom_color).
-    # Reuses the dev's sizing (base_h, notch_pad_ratio, floor, padding, corner
-    # radius) — differs only in font (Ubuntu-Bold + FA7), solid background (no
-    # blur/frost), and intelligent text colour via luminance.
-    if notch_style == "minimal_pill":
-        _fonts_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts")
-        try:
-            ubuntu_font = ImageFont.truetype(os.path.join(_fonts_dir, "Ubuntu-Bold.ttf"), font_size_ss)
-        except IOError:
-            ubuntu_font = font
-        try:
-            icon_font = ImageFont.truetype(
-                os.path.join(_fonts_dir, "Font Awesome 7 Free-Solid-900.otf"), max(1, int(font_size_ss * 0.68)))
-        except IOError:
-            icon_font = ubuntu_font
-
-        # Recalculate pill width with Ubuntu font
-        _FA_AWARD = "\uf559"   # FA solid award glyph
-        _tmp_d2 = ImageDraw.Draw(Image.new("L", (1, 1)))
-        if label.startswith("★"):
-            _rest = label[1:].strip()
-            _pill_text_w = int(_tmp_d2.textlength(_FA_AWARD, font=icon_font) + font_size_ss * 0.35 + _tmp_d2.textlength(_rest, font=ubuntu_font))
-        else:
-            _pill_bbox = _tmp_d2.textbbox((0, 0), label, font=ubuntu_font)
-            _pill_text_w = int(_pill_bbox[2] - _pill_bbox[0])
-        badge_w2 = max(min_badge_w, min(max_badge_w, px(_pill_text_w / SS) + _h_pad))
-        bw2 = badge_w2 * SS
-        bx2 = (width - badge_w2) // 2
-
-        # Background colour from tint_rgb or a default accent blue
-        if tint_rgb is not None:
-            bg_r, bg_g, bg_b = int(tint_rgb[0]), int(tint_rgb[1]), int(tint_rgb[2])
-        else:
-            bg_r, bg_g, bg_b = 50, 150, 250
-
-        # Draw solid pill shape
-        badge_ss = Image.new("RGBA", (bw2, bh), (0, 0, 0, 0))
-        rr_mask_ss = Image.new("L", (bw2, bh), 0)
-        draw_mask = ImageDraw.Draw(rr_mask_ss)
-        draw_mask.rectangle([(0, 0), (bw2 - 1, bh - r_ss)], fill=255)
-        draw_mask.rounded_rectangle(
-            [(0, 0), (bw2 - 1, bh - 1)], radius=r_ss, fill=255,
-            corners=(False, False, True, True)
-        )
-        body = Image.new("RGBA", (bw2, bh), (bg_r, bg_g, bg_b, 240))
-        body.putalpha(rr_mask_ss)
-        badge_ss = body
-
-        # Intelligent text colour via luminance
-        lum = 0.299 * bg_r + 0.587 * bg_g + 0.114 * bg_b
-        _pill_ink = (20, 20, 20) if lum > 128 else (240, 240, 240)
-        text_color_to_use = (*text_color, 255) if text_color is not None else (*_pill_ink, 245)
-
-        txt_layer = Image.new("RGBA", (bw2, bh), (0, 0, 0, 0))
-        td = ImageDraw.Draw(txt_layer)
-
-        # Split rendering: ★ prefix → Font Awesome award icon
-        if label.startswith("★"):
-            rest_str = label[1:].strip()
-            gap = int(font_size_ss * 0.35)
-            icon_w = td.textlength(_FA_AWARD, font=icon_font)
-            rest_w = td.textlength(rest_str, font=ubuntu_font)
-            total_w = icon_w + gap + rest_w
-            tx = (bw2 - total_w) / 2
-
-            t_bb = td.textbbox((0, 0), rest_str or "A", font=ubuntu_font)
-            fa_bb = td.textbbox((0, 0), _FA_AWARD, font=icon_font)
-            t_cy = (t_bb[1] + t_bb[3]) / 2.0
-            fa_cy = (fa_bb[1] + fa_bb[3]) / 2.0
-            _, text_y = _text_center(td, rest_str, ubuntu_font, bw2 / 2, text_cy_ss)
-            icon_y = text_y + (t_cy - fa_cy)
-
-            td.text((tx, icon_y), _FA_AWARD, font=icon_font, fill=text_color_to_use)
-            td.text((tx + icon_w + gap, text_y), rest_str, font=ubuntu_font, fill=text_color_to_use)
-        else:
-            tx_pos, ty_pos = _text_center(td, label, ubuntu_font, bw2 / 2, text_cy_ss)
-            td.text((tx_pos, ty_pos), label, font=ubuntu_font, fill=text_color_to_use)
-
-        badge_ss = Image.alpha_composite(badge_ss, txt_layer)
-
-        # Downscale and composite onto poster
-        badge_final = badge_ss.resize((badge_w2, badge_h), Image.Resampling.LANCZOS)
-        result = image.copy()
-        result.alpha_composite(badge_final, (bx2, by_composite))
-        return result
-
     if notch_style == "frosted":
-        # ── Frosted: blurred poster crop tinted toward the region's dominant colour ──
-        # Crop from the actual composite position so the blur matches what's visible
-        crop_y = max(0, by_composite)
-        region = image.crop((bx, crop_y, bx + badge_w, crop_y + badge_h))
-        blur_r = max(fixed(4), px(_chip_badge_h * 0.35))
-        # Drawn at 1x.  The 3x pass bought nothing here: the body is a blurred
-        # crop (upscaling it 3x and back is a costly identity), the frost is a
-        # flat colour, the shape mask is anti-aliased once and cached, and the
-        # label is anti-aliased by FreeType.  ~1.4 ms instead of ~7.8 ms.
-        blurred = region.filter(ImageFilter.GaussianBlur(radius=blur_r)).convert("RGBA")
+        # Notch shape mask (square top, rounded bottom)
+        mask, frost_alpha = _notch_shape_1x(badge_w, badge_h, radius, frost_opacity)
 
-        # Dominant colour of the actual poster region (a real cluster, not a
-        # muddy mean — see dominant_frost_rgb).  tint_rgb (when supplied) overrides
-        # it so the notch can match the frosted rating bar.
-        # Colour comes from tint_rgb (a whole-poster sample the caller takes from
-        # the un-graded art); the blurred texture still comes from the image.
+        # Dominant colour of the poster region / caller tint
         if tint_rgb is not None:
             dr, dg, db = tint_rgb
         else:
             dr, dg, db = dominant_frost_rgb(image)
 
-        # Boost toward a bright, saturated version of that colour so the tint
-        # reads clearly: floor V so dark regions lift, scale S by frost_saturation,
-        # then mix 60 % of that tint with 40 % white for the frosted feel (or, in
-        # reference mode, hew to the poster's true colour).
-        fr_r, fr_g, fr_b = _frosted_tint(dr, dg, db, frost_saturation, frost_reference)
+        if notch_solid:
+            # ── Solid Tinted Body (former Minimal Pill) ──
+            # Solid opaque body using tint_rgb (smart_top_color or vivid_dom_color).
+            # No blur or crop — lightweight, crisp, and high-contrast.
+            bg_r, bg_g, bg_b = int(round(dr)), int(round(dg)), int(round(db))
+            body = Image.new("RGBA", (badge_w, badge_h), (bg_r, bg_g, bg_b, 240))
+            body.putalpha(mask)
+            badge = body
 
-        # Notch shape mask (square top, rounded bottom)
-        mask, frost_alpha = _notch_shape_1x(badge_w, badge_h, radius, frost_opacity)
+            # Intelligent text colour via photometric luminance
+            lum = 0.299 * bg_r + 0.587 * bg_g + 0.114 * bg_b
+            _pill_ink = (20, 20, 20) if lum > 128 else (240, 240, 240)
+            ink_to_use = text_color if text_color is not None else _pill_ink
+            badge = Image.alpha_composite(badge, _notch_label_layer_1x(
+                label, font_size_ss, SS, badge_w, badge_h, (*ink_to_use, 245)
+            ))
+        else:
+            # ── Frosted Glass (Dev original) ──
+            # Crop from the actual composite position so the blur matches what's visible
+            crop_y = max(0, by_composite)
+            region = image.crop((bx, crop_y, bx + badge_w, crop_y + badge_h))
+            blur_r = max(fixed(4), px(_chip_badge_h * 0.35))
+            blurred = region.filter(ImageFilter.GaussianBlur(radius=blur_r)).convert("RGBA")
 
-        # Lay blurred crop under the tinted frost layer (alpha ~210 = quite opaque)
-        blurred.putalpha(mask)
-        frost = Image.new("RGBA", (badge_w, badge_h), (fr_r, fr_g, fr_b, 0))
-        frost.putalpha(frost_alpha)
-        badge = Image.alpha_composite(blurred, frost)
+            fr_r, fr_g, fr_b = _frosted_tint(dr, dg, db, frost_saturation, frost_reference)
+            blurred.putalpha(mask)
+            frost = Image.new("RGBA", (badge_w, badge_h), (fr_r, fr_g, fr_b, 0))
+            frost.putalpha(frost_alpha)
+            badge = Image.alpha_composite(blurred, frost)
 
-        # Text: dark on a light panel, light on a dark one (a matched panel can be
-        # either — every other frost is light by construction).
-        # (text_color is deliberately not consulted here: this style has always
-        # ignored it, and honouring it now would restyle existing posters.)
-        badge = Image.alpha_composite(badge, _notch_label_layer_1x(
-            label, font_size_ss, SS, badge_w, badge_h, (*_frost_ink(fr_r, fr_g, fr_b), 245)
-        ))
+            badge = Image.alpha_composite(badge, _notch_label_layer_1x(
+                label, font_size_ss, SS, badge_w, badge_h, (*_frost_ink(fr_r, fr_g, fr_b), 245)
+            ))
 
         result = image.copy()
         result.alpha_composite(badge, (bx, by_composite))
@@ -2103,7 +2015,7 @@ def draw_award_badge(
         try:
             fa_font = ImageFont.truetype(
                 os.path.join(_fonts_dir, "Font Awesome 7 Free-Solid-900.otf"),
-                max(1, int(font_size_ss * 0.68))
+                max(1, int(font_size_ss * 0.85))
             )
         except IOError:
             fa_font = font
@@ -2115,10 +2027,9 @@ def draw_award_badge(
 
         t_bb = td.textbbox((0, 0), rest_str or "A", font=font)
         fa_bb = td.textbbox((0, 0), _FA_AWARD, font=fa_font)
-        t_cy = (t_bb[1] + t_bb[3]) / 2.0
-        fa_cy = (fa_bb[1] + fa_bb[3]) / 2.0
+        _fa_dy = int(round((((t_bb[1] + t_bb[3]) - (fa_bb[1] + fa_bb[3])) / 2.0)))
         _, text_y = _text_center(td, rest_str, font, bw // 2, text_cy_ss)
-        icon_y = text_y + (t_cy - fa_cy)
+        icon_y = text_y + _fa_dy
 
         td.text((start_x + SS, icon_y + SS), _FA_AWARD, font=fa_font, fill=(0, 0, 0, 160))
         td.text((start_x + icon_w + gap + SS, text_y + SS), rest_str, font=font, fill=(0, 0, 0, 160))
@@ -2427,7 +2338,7 @@ def _sash_skia(
         rest_str = label[1:].strip()
         fa_path = os.path.join(_FONTS_DIR, "Font Awesome 7 Free-Solid-900.otf")
         fa_tf = _skia_typeface(fa_path)
-        fa_font = _skia.Font(fa_tf, max(1.0, (font_ss.size / ss) * 0.68)) if fa_tf else font
+        fa_font = _skia.Font(fa_tf, max(1.0, (font_ss.size / ss) * 0.85)) if fa_tf else font
         fa_font.setSubpixel(True)
         fa_font.setEdging(_skia.Font.Edging.kAntiAlias)
 
@@ -2440,14 +2351,23 @@ def _sash_skia(
         _, ty = _text_center(ImageDraw.Draw(Image.new("L", (1, 1))), rest_str or "A", font_ss,
                               length * ss / 2, height * ss / 2)
         baseline = (ty + font_ss.getmetrics()[0]) / ss
-        fa_dy = (font_ss.size / ss) * 0.04
+
+        _probe = ImageDraw.Draw(Image.new("L", (1, 1)))
+        try:
+            _fa_pfont = ImageFont.truetype(fa_path, max(1, int((font_ss.size / ss) * 0.85)))
+        except IOError:
+            _fa_pfont = _notch_font_at(fonts.label_path(), font_ss.size / ss)
+        _t_pfont = _notch_font_at(fonts.label_path(), font_ss.size / ss)
+        _t_bb = _probe.textbbox((0, 0), rest_str or "A", font=_t_pfont)
+        _fa_bb = _probe.textbbox((0, 0), _FA_AWARD, font=_fa_pfont)
+        _fa_dy = int(round((((_t_bb[1] + _t_bb[3]) - (_fa_bb[1] + _fa_bb[3])) / 2.0)))
 
         tp.setColor(_skia.Color(0, 0, 0, 180))
-        c.drawString(_FA_AWARD, x_start + 2 * k, baseline + 2 * k - fa_dy, fa_font, tp)
+        c.drawString(_FA_AWARD, x_start + 2 * k, baseline + _fa_dy + 2 * k, fa_font, tp)
         c.drawString(rest_str, x_start + fa_w + gap + 2 * k, baseline + 2 * k, font, tp)
         tp_fg = _skia.Paint(AntiAlias=True)
         tp_fg.setColor(_skia.Color(*text_rgb, 225))
-        c.drawString(_FA_AWARD, x_start, baseline - fa_dy, fa_font, tp_fg)
+        c.drawString(_FA_AWARD, x_start, baseline + _fa_dy, fa_font, tp_fg)
         c.drawString(rest_str, x_start + fa_w + gap, baseline, font, tp_fg)
     else:
         tx, ty = _text_center(ImageDraw.Draw(Image.new("L", (1, 1))), label, font_ss,
@@ -2612,7 +2532,7 @@ def draw_award_sash(
             try:
                 fa_font = ImageFont.truetype(
                     os.path.join(_FONTS_DIR, "Font Awesome 7 Free-Solid-900.otf"),
-                    max(1, int(font_size * 0.68))
+                    max(1, int(font_size * 0.85))
                 )
             except IOError:
                 fa_font = font
@@ -2625,10 +2545,9 @@ def draw_award_sash(
 
             t_bb = _probe.textbbox((0, 0), rest_str or "A", font=font)
             fa_bb = _probe.textbbox((0, 0), _FA_AWARD, font=fa_font)
-            t_cy = (t_bb[1] + t_bb[3]) / 2.0
-            fa_cy = (fa_bb[1] + fa_bb[3]) / 2.0
+            _fa_dy = int(round((((t_bb[1] + t_bb[3]) - (fa_bb[1] + fa_bb[3])) / 2.0)))
             _, text_y = _text_center(td, rest_str, font, lw / 2, sh / 2)
-            icon_y = text_y + (t_cy - fa_cy)
+            icon_y = text_y + _fa_dy
             start_x = (lw - (icon_w + gap + rest_w)) / 2
 
             td.text((start_x + 2 * SS * k, icon_y + 2 * SS * k), _FA_AWARD, font=fa_font, fill=(0, 0, 0, 180))

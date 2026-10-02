@@ -550,7 +550,7 @@ def _draw_badge(image: Image.Image, text: str, position: str, art: Image.Image,
         try:
             fa_font = ImageFont.truetype(
                 os.path.join(fonts.FONTS_DIR, "Font Awesome 7 Free-Solid-900.otf"),
-                max(1, int(_f_size * 0.68))
+                max(1, int(_f_size * 0.85))
             )
         except IOError:
             fa_font = font
@@ -558,10 +558,9 @@ def _draw_badge(image: Image.Image, text: str, position: str, art: Image.Image,
         icon_w = draw.textlength(_FA_AWARD, font=fa_font)
         t_bb = draw.textbbox((0, 0), rest_str or "A", font=font)
         fa_bb = draw.textbbox((0, 0), _FA_AWARD, font=fa_font)
-        t_cy = (t_bb[1] + t_bb[3]) / 2.0
-        fa_cy = (fa_bb[1] + fa_bb[3]) / 2.0
+        _fa_dy = int(round((((t_bb[1] + t_bb[3]) - (fa_bb[1] + fa_bb[3])) / 2.0)))
         text_y = y + pad_y - round(2 * scale)
-        icon_y = text_y + (t_cy - fa_cy)
+        icon_y = text_y + _fa_dy
         draw.text((x + pad_x, icon_y), _FA_AWARD, font=fa_font, fill=(*ink, 245))
         draw.text((x + pad_x + icon_w + gap, text_y), rest_str, font=font, fill=(*ink, 245))
     else:

@@ -3338,15 +3338,7 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
                 <option value="black">Pure Black</option>
                 <option value="silver">Black, Silver Trim</option>
                 <option value="gold">Black, Gold Trim</option>
-                <option value="minimal_pill">Minimal Pill</option>
               </select>
-            </div>
-            <div class="toggle-row portrait-only" id="use-global-ui-color-row">
-              <span class="toggle-label" data-tip="Use the poster's dominant vivid colour for all UI frosted/styled elements (notch, rating bar, minimal pill).">Global UI Colour</span>
-              <label class="toggle-switch">
-                <input type="checkbox" id="tog-use-global-ui-color" onchange="build(); queuePreviewReload()">
-                <div class="toggle-track"><div class="toggle-thumb"></div></div>
-              </label>
             </div>
             <div class="field portrait-only" id="sash-badge-pos-field" style="display:none;">
               <label class="field-label" data-tip="Moves the notch off centre, leaving the middle of the top edge free. Left/Right float a rounded chip in from that corner. On the left, the quality and age badges move to the top right. Auto (with Graphic Badges) decides per poster: beside the badges when a title has some along the top, centred when it has none. Auto spreads a Beside Chip group across to the corner; Auto, Beside Notch keeps it against the chip, leaving the corner clear for the watched and watchlist marks some clients draw there. Left/Right Edge hang the notch off that side of the poster instead of the top, its label running along the edge; Edge Position moves it up and down.">Position</label>
@@ -3493,8 +3485,28 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
                   <div class="toggle-track"><div class="toggle-thumb"></div></div>
                 </label>
               </div>
-              <!-- Frosted-notch only. Its dependent slider (Colour Saturation)
-                   stays in the Notch Settings group with the other sliders. -->
+              <!-- Frosted-notch only. -->
+              <div class="toggle-row portrait-only" id="notch-solid-row" style="display:none;">
+                <span class="toggle-label" data-tip="Solid opaque body with smart text colour instead of frosted glass.">Solid Tinted Body</span>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="tog-notch-solid" onchange="build(); queuePreviewReload()">
+                  <div class="toggle-track"><div class="toggle-thumb"></div></div>
+                </label>
+              </div>
+              <div class="toggle-row portrait-only" id="notch-drop-shadow-row" style="display:none;">
+                <span class="toggle-label" data-tip="Adds a subtle soft drop shadow behind the top notch badge.">Notch Drop Shadow</span>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="tog-notch-drop-shadow" onchange="build(); queuePreviewReload()">
+                  <div class="toggle-track"><div class="toggle-thumb"></div></div>
+                </label>
+              </div>
+              <div class="toggle-row portrait-only" id="use-global-ui-color-row" style="display:none;">
+                <span class="toggle-label" data-tip="Use the poster's dominant vivid colour for the frosted notch.">Global UI Colour</span>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="tog-use-global-ui-color" onchange="build(); queuePreviewReload()">
+                  <div class="toggle-track"><div class="toggle-thumb"></div></div>
+                </label>
+              </div>
               <div class="toggle-row portrait-only" id="sash-vignette-color-row" style="display:none;">
                 <span class="toggle-label" data-tip="Takes the notch's colour from whatever a tinted vignette landed on, so the two agree. Keeps its usual colour when neither vignette is tinted, or when the tinted one came out too near black to have a colour of its own. Frosted notch only.">Match Tinted Vignette</span>
                 <label class="toggle-switch">
@@ -6867,6 +6879,9 @@ function buildBaseParams({ usePlaceholders = false, domainOverride = null, full 
       if (vEl('cfg-sash-badge-style') === 'frosted') {
         params.set('sash_badge_frost_opacity', n('cfg-sash-badge-frost-opacity').toFixed(2));
         params.set('sash_badge_frost_saturation', n('cfg-sash-badge-frost-sat').toFixed(2));
+        if (c('tog-notch-solid')) params.set('notch_solid', 'true');
+        if (c('tog-notch-drop-shadow')) params.set('notch_drop_shadow', 'true');
+        if (c('tog-use-global-ui-color')) params.set('use_global_ui_color', 'true');
         if (c('tog-notch-vignette-color')) params.set('notch_vignette_color', 'true');
       } else if (n('cfg-sash-badge-opacity') !== 0.9) {
         params.set('sash_badge_opacity', n('cfg-sash-badge-opacity').toFixed(2));
@@ -6878,14 +6893,12 @@ function buildBaseParams({ usePlaceholders = false, domainOverride = null, full 
       if (_pos !== 'center' && !_edge && n('cfg-sash-chip-y') !== 0) params.set('sash_chip_y', n('cfg-sash-chip-y').toFixed(3));
       if (_pos !== 'center' && !_edge && n('cfg-sash-chip-x') !== 0) params.set('sash_chip_x', n('cfg-sash-chip-x').toFixed(3));
       if (_edge && n('cfg-sash-edge-y') !== 0.5) params.set('sash_edge_y', n('cfg-sash-edge-y').toFixed(2));
-      if (c('tog-use-global-ui-color')) params.set('use_global_ui_color', 'true');
     } else {  // diagonal sash
       params.set('muted',              c('tog-muted') ? 'true' : 'false');
       params.set('sash_poster_color',  c('tog-sash-poster-color') ? 'true' : 'false');
       params.set('sash_length_ratio',  n('cfg-sash-length').toFixed(2));
       params.set('sash_height_ratio',  n('cfg-sash-height').toFixed(3));
       if (vEl('cfg-sash-side') === 'left') params.set('sash_side', 'left');
-      if (c('tog-use-global-ui-color')) params.set('use_global_ui_color', 'true');
     }
   }
   // Drawn apart from the sash, so it is emitted whatever the mode.
@@ -7961,6 +7974,9 @@ function updateBadgeStyleFields() {
   document.getElementById('sash-badge-dark-opacity-field').style.display =
     (!c('tog-landscape') && vEl('cfg-sash-mode') === 'notch' && !isFrosted) ? '' : 'none';
   document.getElementById('sash-reference-row').style.display = isFrosted ? '' : 'none';
+  document.getElementById('notch-solid-row').style.display = isFrosted ? '' : 'none';
+  document.getElementById('notch-drop-shadow-row').style.display = isFrosted ? '' : 'none';
+  document.getElementById('use-global-ui-color-row').style.display = isFrosted ? '' : 'none';
   document.getElementById('sash-badge-pos-field').style.display =
     (!c('tog-landscape') && vEl('cfg-sash-mode') === 'notch') ? '' : 'none';
   const _npos = vEl('cfg-sash-badge-pos') || 'center';
@@ -9562,8 +9578,18 @@ function importUrl(urlStr, { silent = false, settingsOnly = false, preserveClien
   // sash_mode supersedes the legacy show_award_sash + sash_badge bools.
   if (p.has('sash_mode'))                _setEl('cfg-sash-mode', p.get('sash_mode'));
   else if (p.has('show_award_sash') && p.get('show_award_sash') !== 'true') _setEl('cfg-sash-mode', 'hidden');
-  else if (p.has('sash_badge'))          _setEl('cfg-sash-mode', p.get('sash_badge') === 'true' ? 'notch' : 'sash');
-  if (p.has('sash_badge_style'))         _setEl('cfg-sash-badge-style',        p.get('sash_badge_style'));
+  if (p.has('sash_badge_style')) {
+    const _sbs = p.get('sash_badge_style');
+    if (_sbs === 'minimal_pill') {
+      _setEl('cfg-sash-badge-style', 'frosted');
+      _setEl('tog-notch-solid', true);
+    } else {
+      _setEl('cfg-sash-badge-style', _sbs);
+    }
+  }
+  if (p.has('notch_solid'))              _setEl('tog-notch-solid',             p.get('notch_solid') === 'true');
+  if (p.has('notch_drop_shadow'))        _setEl('tog-notch-drop-shadow',        p.get('notch_drop_shadow') === 'true');
+  else if (p.has('text_drop_shadow'))    _setEl('tog-notch-drop-shadow',        p.get('text_drop_shadow') === 'true');
   if (p.has('use_global_ui_color'))      _setEl('tog-use-global-ui-color',     p.get('use_global_ui_color') === 'true');
   _setEl('cfg-sash-badge-pos', p.get('sash_badge_pos') || 'center');
   _setEl('cfg-sash-chip-y', p.get('sash_chip_y') || '0.000');
