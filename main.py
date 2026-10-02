@@ -4200,10 +4200,6 @@ def _build_poster(
         _bg_preset = (cfg.bottom_gradient_height, _gradient_alpha(cfg.bottom_gradient_opacity))
     else:
         _bg_preset = _BOTTOM_GRADIENT_LEVELS.get(cfg.bottom_gradient, _BOTTOM_GRADIENT_LEVELS["high"])
-    if _bg_preset is not None:
-        _bg_h, _bg_alpha = _bg_preset
-        _bg_alpha = max(0, min(255, int(_bg_alpha * max(0.0, min(1.0, cfg.vignette_bottom_opacity)))))
-        _bg_preset = (_bg_h, _bg_alpha)
     if cfg.top_vignette_sash_only and sash_result is None and _rank is None:
         _tg_preset = None
 
@@ -4301,6 +4297,7 @@ def _build_poster(
     # that the user can pick the level themselves; if you'd like the lighter
     # fade those modes used to get for free, pick "medium".
     if _bg_preset is not None:
+        _bottom_crop_before = image.crop((0, bottom_start, width, height)).convert("RGBA")
         if _bottom_tinted:
             _b_tint, _b_conf, _b_second, _b_cover = _fog_colour
             _vignette_frost_band(
@@ -4323,6 +4320,15 @@ def _build_poster(
             bottom_tinted = Image.new("RGBA", (width, bottom_height), (0, 0, 0, 0))
             bottom_tinted.putalpha(bottom_overlay)
             image.paste(bottom_tinted, (0, bottom_start), mask=bottom_tinted)
+
+        if cfg.vignette_bottom_opacity < 1.0:
+            _bottom_crop_after = image.crop((0, bottom_start, width, height)).convert("RGBA")
+            _blended = Image.blend(
+                _bottom_crop_before,
+                _bottom_crop_after,
+                alpha=max(0.0, min(1.0, cfg.vignette_bottom_opacity)),
+            )
+            image.paste(_blended, (0, bottom_start))
 
     # --- Badge / quality overlay ---
     mode   = cfg.badge_display_mode
