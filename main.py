@@ -1716,7 +1716,6 @@ class RequestConfig:
     show_award_sash:     bool = field(default_factory=lambda: _cfg.SHOW_AWARD_SASH)
     sash_poster_color:   bool = False   # diagonal sash colour derived from poster art
     cinema_greyscale:    bool = True    # greyscale art when release_status == "Cinema"
-    cinema_frosted:      bool = False   # frosted glass art when release_status == "Cinema"
     cinema_blur:         bool = False   # blur art when release_status == "Cinema"
     cinema_greyscale_skip_if_available: bool = False  # keep colour if Web/Remux source found
     # Greyscale even with no release-status sash listed.  The trending addon's
@@ -1924,10 +1923,11 @@ class RequestConfig:
     bottom_gradient_opacity: float | None = None
     bottom_gradient_height: float | None = None
     vignette_bottom_opacity: float = 1.0       # overall opacity multiplier for bottom gradient (0.0 - 1.0)
-    frosted_glass: str = "none"               # none | low | medium | high | custom - lower poster optical frosted glass
-    frosted_glass_height: float | None = None  # custom height ratio (0.20 - 0.80)
-    frosted_glass_intensity: int | None = None # custom optical blur radius (10 - 100)
-    frosted_glass_opacity: float | None = None # custom opacity (0.20 - 1.00)
+    bottom_blur: str = "none"                 # none | low | medium | high | custom - lower poster optical blur
+    bottom_blur_height: float | None = None   # custom height ratio (0.20 - 0.80)
+    bottom_blur_intensity: float | None = None # custom optical blur radius (3 - 30 px at 1000px)
+    bottom_blur_opacity: float | None = None  # custom opacity (0.20 - 1.00)
+    bottom_blur_curve: float | None = None    # custom curve exponent (1.0, 1.6, 2.2, 3.0)
     hide_genre: bool = False
     # Drops the release year from the label in every rating mode, and from the
     # landscape info strip.  Minimalist's Year mode carries the score in the
@@ -2500,7 +2500,6 @@ def build_request_config(params: dict) -> RequestConfig:
     cfg.show_award_sash         = _b("show_award_sash",        cfg.show_award_sash)
     cfg.sash_poster_color       = _b("sash_poster_color",      cfg.sash_poster_color)
     cfg.cinema_greyscale        = _b("cinema_greyscale",       cfg.cinema_greyscale)
-    cfg.cinema_frosted          = _b("cinema_frosted",         cfg.cinema_frosted)
     cfg.cinema_blur             = _b("cinema_blur",            cfg.cinema_blur)
     cfg.cinema_greyscale_skip_if_available = _b("cinema_greyscale_skip_if_available", cfg.cinema_greyscale_skip_if_available)
     cfg.cinema_greyscale_without_sash = _b("cinema_greyscale_without_sash", cfg.cinema_greyscale_without_sash)
@@ -2566,12 +2565,13 @@ def build_request_config(params: dict) -> RequestConfig:
     cfg.bottom_gradient_height  = _f("bottom_gradient_height",  cfg.bottom_gradient_height,  0.0, 1.0)
     cfg.vignette_bottom_opacity = _f("vignette_bottom_opacity", cfg.vignette_bottom_opacity, 0.0, 1.0)
 
-    _fg_raw = (params.get("frosted_glass") or "").strip().lower()
-    if _fg_raw in ("none", "off", "low", "medium", "high", "custom"):
-        cfg.frosted_glass = _fg_raw
-    cfg.frosted_glass_height    = _f("frosted_glass_height",    cfg.frosted_glass_height,    0.10, 0.90)
-    cfg.frosted_glass_intensity = _i("frosted_glass_intensity", cfg.frosted_glass_intensity, 5,    100)
-    cfg.frosted_glass_opacity   = _f("frosted_glass_opacity",   cfg.frosted_glass_opacity,   0.0,  1.0)
+    _bb_raw = (params.get("bottom_blur") or params.get("frosted_glass") or "").strip().lower()
+    if _bb_raw in ("none", "off", "low", "medium", "high", "custom"):
+        cfg.bottom_blur = _bb_raw
+    cfg.bottom_blur_height    = _f("bottom_blur_height",    cfg.bottom_blur_height,    0.10, 0.90)
+    cfg.bottom_blur_intensity = _f("bottom_blur_intensity", cfg.bottom_blur_intensity, 1.0,  50.0)
+    cfg.bottom_blur_opacity   = _f("bottom_blur_opacity",   cfg.bottom_blur_opacity,   0.0,  1.0)
+    cfg.bottom_blur_curve     = _f("bottom_blur_curve",     cfg.bottom_blur_curve,     0.5,  5.0)
     cfg.hide_genre = _b("hide_genre", cfg.hide_genre)
     cfg.hide_year = _b("hide_year", cfg.hide_year)
     cfg.hide_rating = _b("hide_rating", cfg.hide_rating)
@@ -2909,14 +2909,15 @@ _BOTTOM_GRADIENT_LEVELS: dict[str, tuple[float, int] | None] = {
 # other.
 _BOTTOM_GRADIENT_CURVE = 1.5
 
-# Frosted Glass presets — (height_ratio, blur_intensity, opacity).
-# Pure optical refraction layer composited on the lower poster before gradients.
-_FROSTED_GLASS_PRESETS: dict[str, tuple[float, int, float] | None] = {
+# Bottom Blur presets — (height_ratio, intensity_factor, opacity, curve).
+# Pure optical blur layer composited on the lower poster before gradients.
+# Medium uses width * 0.011 (approx 11px on 1000px poster).
+_BOTTOM_BLUR_PRESETS: dict[str, tuple[float, float, float, float] | None] = {
     "none":   None,
     "off":    None,
-    "low":    (0.35, 25, 0.75),
-    "medium": (0.50, 45, 0.90),
-    "high":   (0.60, 65, 1.00),
+    "low":    (0.35, 0.006, 1.0, 1.6),
+    "medium": (0.45, 0.011, 1.0, 1.6),
+    "high":   (0.55, 0.018, 1.0, 1.6),
 }
 
 # --- Poster-coloured vignette ------------------------------------------------
@@ -3987,7 +3988,7 @@ def _build_poster(
 
     # Greyscale the base art to flag "not available".  Overlays drawn afterwards
     # (sashes, badges, ratings, logo) stay in colour.  Two independent triggers:
-    #   - cinema_greyscale: title still in cinemas / production (release_status,
+    #   - cinema_greyscale / cinema_blur: title still in cinemas / production (release_status,
     #     so implicitly gated on the release-status sash being enabled, unless
     #     cinema_greyscale_without_sash).
     #   - greyscale_no_quality: no stream quality was found.  Only meaningful
@@ -3995,7 +3996,6 @@ def _build_poster(
     #     yet), so it's gated on it.
     _greyscaled = _greyscale_wanted(cfg, discovery_meta, quality_tokens, cfg.cinema_greyscale)
     _blurred    = _unavailable_wanted(cfg, discovery_meta, quality_tokens, cfg.cinema_blur)
-    _frosted    = _unavailable_wanted(cfg, discovery_meta, quality_tokens, cfg.cinema_frosted)
 
     if _greyscaled:
         image = ImageOps.grayscale(image).convert("RGBA")
@@ -4004,17 +4004,6 @@ def _build_poster(
         # Optical Gaussian blur across whole poster (halved intensity)
         blur_radius = max(3, int(width * 0.011))
         image = image.filter(ImageFilter.GaussianBlur(radius=blur_radius))
-
-    if _frosted:
-        # Frosted glass effect across whole poster
-        box_radius = max(2, int(width * 0.012))
-        for _ in range(3):
-            image = image.filter(ImageFilter.BoxBlur(radius=box_radius))
-        image = image.filter(ImageFilter.UnsharpMask(radius=3, percent=140, threshold=3))
-        noise = np.random.normal(0, 1.8, (height, width, 3)).astype(np.float32)
-        img_np = np.array(image.convert("RGBA"), dtype=np.float32)
-        img_np[:, :, :3] = np.clip(img_np[:, :, :3] + noise, 0, 255)
-        image = Image.fromarray(img_np.astype(np.uint8), mode="RGBA")
 
     draw = ImageDraw.Draw(image)
 
@@ -4038,12 +4027,12 @@ def _build_poster(
     # Resolve the info-sash pick once, regardless of whether the diagonal sash
     # itself is rendered independently.
     #
-    # When greyscale is active on an unreleased title (Cinema / Production),
+    # When greyscale or blur is active on an unreleased title (Cinema / Production),
     # force the release-status slot to the front so its badge always wins — that
-    # tells the user the poster is greyscale because it's unavailable, rather
-    # than a title whose art happens to be black & white.
+    # tells the user the poster is treated because it's unavailable, rather
+    # than a title whose art happens to be black & white or blurry.
     _sash_priority = cfg.sash_priority
-    if ((cfg.cinema_greyscale or cfg.cinema_frosted or cfg.cinema_blur) and discovery_meta is not None
+    if ((cfg.cinema_greyscale or cfg.cinema_blur) and discovery_meta is not None
             and discovery_meta.release_status in ("Cinema", "Production")):
         _status = discovery_meta.release_status.lower()
         if _status in _sash_priority or "release_status" in _sash_priority:
@@ -4145,47 +4134,40 @@ def _build_poster(
         row = np.asarray(field.convert("RGB"), dtype=np.float32)[deepest_row]
         return tuple(float(c) for c in row.mean(axis=0))
 
-    # --- Frosted Glass (Lower poster optical glass refraction) ---
-    _fg_preset = None
-    if cfg.frosted_glass == "custom":
-        _fg_preset = (
-            cfg.frosted_glass_height if cfg.frosted_glass_height is not None else 0.50,
-            cfg.frosted_glass_intensity if cfg.frosted_glass_intensity is not None else 45,
-            cfg.frosted_glass_opacity if cfg.frosted_glass_opacity is not None else 1.0,
+    # --- Bottom Blur (Lower poster optical blur under Dev gradient) ---
+    _bb_preset = None
+    if cfg.bottom_blur == "custom":
+        _bb_preset = (
+            cfg.bottom_blur_height if cfg.bottom_blur_height is not None else 0.45,
+            cfg.bottom_blur_intensity if cfg.bottom_blur_intensity is not None else 11.0,
+            cfg.bottom_blur_opacity if cfg.bottom_blur_opacity is not None else 1.0,
+            cfg.bottom_blur_curve if cfg.bottom_blur_curve is not None else 1.6,
         )
     else:
-        _fg_preset = _FROSTED_GLASS_PRESETS.get(cfg.frosted_glass)
+        _bb_preset = _BOTTOM_BLUR_PRESETS.get(cfg.bottom_blur)
 
     # Deactivated if artwork has burned-in text / title baked into the artwork, or no logo/title is being placed
-    if _fg_preset is not None and not has_burned_in_text and (logo is not None or fallback_title is not None):
-        fg_h_ratio, fg_intensity, fg_opacity = _fg_preset
-        fg_height = max(1, int(height * fg_h_ratio))
-        fg_start  = height - fg_height
-        bottom_crop = image.crop((0, fg_start, width, height))
+    if _bb_preset is not None and not has_burned_in_text and (logo is not None or fallback_title is not None):
+        bb_h_ratio, bb_intensity, bb_opacity, bb_curve = _bb_preset
+        bb_height = max(1, int(height * bb_h_ratio))
+        bb_start  = height - bb_height
+        bottom_crop = image.crop((0, bb_start, width, height))
 
-        # 1. Iterative 3-pass BoxBlur (simulates light refraction through frosted lens)
-        box_radius = max(1, int(fg_intensity / 20))
-        glass_layer = bottom_crop
-        for _ in range(3):
-            glass_layer = glass_layer.filter(ImageFilter.BoxBlur(radius=box_radius))
+        # Optical Gaussian blur: ratio if < 1.0 (presets), or scaled px at 1000px width (custom)
+        if isinstance(bb_intensity, float) and bb_intensity < 1.0:
+            blur_radius = max(2, int(width * bb_intensity))
+        else:
+            blur_radius = max(2, int(round(bb_intensity * (width / 1000.0))))
 
-        # 2. Refracted edge accentuation + chromatic boost (preserves vibrant poster hues)
-        glass_layer = glass_layer.filter(ImageFilter.UnsharpMask(radius=3, percent=150, threshold=3))
-        glass_layer = ImageEnhance.Color(glass_layer).enhance(1.35)
+        blurred_crop = bottom_crop.filter(ImageFilter.GaussianBlur(radius=blur_radius))
 
-        # 3. Organic anti-banding micro-grain in NumPy
-        noise = np.random.normal(0, 2, (fg_height, width, 3)).astype(np.float32)
-        glass_np = np.array(glass_layer.convert("RGBA"), dtype=np.float32)
-        glass_np[:, :, :3] = np.clip(glass_np[:, :, :3] + noise, 0, 255)
-        glass_layer = Image.fromarray(glass_np.astype(np.uint8), mode="RGBA")
-
-        # 4. Exponential fusion mask (power 1.6) scaled by fg_opacity
-        t_blur = np.linspace(0, 1, fg_height, dtype=np.float32)
-        eased_blur = (np.power(t_blur, 1.6) * (255.0 * max(0.0, min(1.0, fg_opacity)))).clip(0, 255).astype(np.uint8)
-        blur_mask_arr = np.broadcast_to(eased_blur[:, np.newaxis], (fg_height, width)).copy()
+        # Exponential fusion mask with configurable curve (1.0 = linear, 1.6 = balanced, 2.2 = aggressive, 3.0 = low edge)
+        t_blur = np.linspace(0, 1, bb_height, dtype=np.float32)
+        eased_blur = (np.power(t_blur, bb_curve) * (255.0 * max(0.0, min(1.0, bb_opacity)))).clip(0, 255).astype(np.uint8)
+        blur_mask_arr = np.broadcast_to(eased_blur[:, np.newaxis], (bb_height, width)).copy()
         blur_mask = Image.fromarray(blur_mask_arr, mode="L")
 
-        image.paste(glass_layer, (0, fg_start), mask=blur_mask)
+        image.paste(blurred_crop, (0, bb_start), mask=blur_mask)
 
     # --- Band geometry ---
     # Strength is one of four presets (off / low / medium / high) per band — see
@@ -10846,7 +10828,7 @@ async def get_poster(
                     or (_scheduled_digital - datetime.now().date()).days <= _LEAK_LEAD_DAYS)
         _status_sash = any(s in rcfg.sash_priority for s in _rs_slots)
         _status_grey = (rcfg.landscape_greyscale if _is_landscape
-                        else (rcfg.cinema_greyscale or rcfg.cinema_frosted or rcfg.cinema_blur) and rcfg.cinema_greyscale_without_sash)
+                        else (rcfg.cinema_greyscale or rcfg.cinema_blur) and rcfg.cinema_greyscale_without_sash)
         # The cinema badge: a film still in cinemas (or not out at all),
         # shown without a sash — or beside a different one.
         # A series gets it too while it waits to premiere: its premiere date,

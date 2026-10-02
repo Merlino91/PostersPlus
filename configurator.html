@@ -2738,42 +2738,49 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
               </div>
             </div><!-- /vignette group -->
             <div class="cfg-sep">
-              <span class="group-title" data-tip="Optical frosted glass effect applied on the bottom of the poster before the gradient. Blurs and preserves vibrant colors while reducing background distraction. Deactivated automatically if the poster has a burned-in title or no logo is drawn.">Frosted Glass</span>
+              <span class="group-title" data-tip="Optical blur applied on the bottom of the poster before the gradient. Softens background distraction behind the title/logo while preserving art colours. Deactivated automatically if the poster has a burned-in title or no logo is drawn.">Bottom Blur</span>
               <div class="field">
-                <label class="field-label" data-tip="Optical frosted glass strength on the bottom of the poster.">Strength</label>
-                <select class="segmented-source" id="cfg-frosted-glass" onchange="updateFrostedGlassFields(); build(); queuePreviewReload()">
+                <label class="field-label" data-tip="Optical blur strength on the bottom of the poster.">Strength</label>
+                <select class="segmented-source" id="cfg-bottom-blur" onchange="updateBottomBlurFields(); build(); queuePreviewReload()">
                   <option value="none" selected>None</option>
                   <option value="low">Low</option>
                   <option value="medium">Medium</option>
                   <option value="high">High</option>
                   <option value="custom">Custom</option>
                 </select>
-                <div class="segmented" data-for="cfg-frosted-glass"></div>
+                <div class="segmented" data-for="cfg-bottom-blur"></div>
               </div>
-              <div id="frosted-glass-custom-fields" class="subfields" style="display:none;">
+              <div id="bottom-blur-custom-fields" class="subfields" style="display:none;">
                 <div class="field">
-                  <label class="field-label" data-tip="Height of the frosted glass from the bottom edge.">Height</label>
+                  <label class="field-label" data-tip="Height of the blur from the bottom edge.">Height</label>
                   <div class="range-row">
-                    <input type="range" id="cfg-fg-ht" min="0.20" max="0.80" step="0.05" value="0.50" oninput="updateWeightRange(this,'rv-fg-ht'); build(); queuePreviewReload()">
-                    <span class="range-val" id="rv-fg-ht">50%</span>
+                    <input type="range" id="cfg-bb-ht" min="0.20" max="0.80" step="0.05" value="0.45" oninput="updateWeightRange(this,'rv-bb-ht'); build(); queuePreviewReload()">
+                    <span class="range-val" id="rv-bb-ht">45%</span>
                   </div>
                 </div>
                 <div class="field">
-                  <label class="field-label" data-tip="Refraction lens blur intensity. Higher values create a deeper frost.">Intensity</label>
+                  <label class="field-label" data-tip="Optical blur radius (scaled to poster resolution).">Blur Radius</label>
                   <div class="range-row">
-                    <input type="range" id="cfg-fg-int" min="10" max="100" step="5" value="45" oninput="updateRange(this,'rng-fgint'); build(); queuePreviewReload()">
-                    <span class="range-val" id="rng-fgint">45</span>
+                    <input type="range" id="cfg-bb-int" min="3" max="30" step="1" value="11" oninput="updatePixelRange(this,'rng-bbint'); build(); queuePreviewReload()">
+                    <span class="range-val" id="rng-bbint">11px</span>
                   </div>
                 </div>
                 <div class="field">
-                  <label class="field-label" data-tip="Opacity of the frosted glass blend mask.">Opacity</label>
+                  <label class="field-label" data-tip="Opacity of the blur blend mask.">Opacity</label>
                   <div class="range-row">
-                    <input type="range" id="cfg-fg-op" min="0.20" max="1.00" step="0.05" value="1.00" oninput="updateWeightRange(this,'rv-fg-op'); build(); queuePreviewReload()">
-                    <span class="range-val" id="rv-fg-op">100%</span>
+                    <input type="range" id="cfg-bb-op" min="0.20" max="1.00" step="0.05" value="1.00" oninput="updateWeightRange(this,'rv-bb-op'); build(); queuePreviewReload()">
+                    <span class="range-val" id="rv-bb-op">100%</span>
+                  </div>
+                </div>
+                <div class="field">
+                  <label class="field-label" data-tip="Curvature of the blur blend ramp: 25% (Soft), 50% (Balanced), 75% (Aggressive), 100% (Low Edge).">Curve</label>
+                  <div class="range-row">
+                    <input type="range" id="cfg-bb-curve" min="1" max="4" step="1" value="2" oninput="updateCurveRange(this,'rng-bbcurve'); build(); queuePreviewReload()">
+                    <span class="range-val" id="rng-bbcurve">50% (Balanced)</span>
                   </div>
                 </div>
               </div>
-            </div><!-- /frosted glass group -->
+            </div><!-- /bottom blur group -->
           </div>
         </div>
 
@@ -3476,13 +3483,6 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
                 <span class="toggle-label" data-tip="Applies to cinema and production. Requires the Release Status sash to be enabled.">Greyscale Poster if Unavailable</span>
                 <label class="toggle-switch">
                   <input type="checkbox" id="tog-cinema-greyscale" checked onchange="build(); queuePreviewReload()">
-                  <div class="toggle-track"><div class="toggle-thumb"></div></div>
-                </label>
-              </div>
-              <div class="toggle-row portrait-only" id="sash-cinema-frosted-row">
-                <span class="toggle-label" data-tip="Applies a frosted glass effect across the whole poster if unavailable. Follows Consider Available if Source Found.">Frosted Glass Poster if Unavailable</span>
-                <label class="toggle-switch">
-                  <input type="checkbox" id="tog-cinema-frosted" onchange="build(); queuePreviewReload()">
                   <div class="toggle-track"><div class="toggle-thumb"></div></div>
                 </label>
               </div>
@@ -4636,6 +4636,24 @@ function updateWeightRange(el, outId) {
   const v = parseFloat(el.value);
   document.getElementById(outId).textContent = Math.round(v * 100) + '%';
   el.style.setProperty('--pct', (v * 100).toFixed(1) + '%');
+}
+
+function updateCurveRange(el, outId) {
+  const v = parseInt(el.value, 10);
+  const labels = { 1: '25% (Soft)', 2: '50% (Balanced)', 3: '75% (Aggressive)', 4: '100% (Low Edge)' };
+  const target = document.getElementById(outId);
+  if (target) target.textContent = labels[v] || '50% (Balanced)';
+  const pct = ((v - 1) / 3 * 100).toFixed(1) + '%';
+  el.style.setProperty('--pct', pct);
+}
+
+function updatePixelRange(el, outId) {
+  const v = parseInt(el.value, 10);
+  const target = document.getElementById(outId);
+  if (target) target.textContent = v + 'px';
+  const min = parseFloat(el.min), max = parseFloat(el.max);
+  const pct = ((v - min) / (max - min) * 100).toFixed(1) + '%';
+  el.style.setProperty('--pct', pct);
 }
 
 // ---------------------------------------------------------------------------
@@ -6631,16 +6649,20 @@ function buildBaseParams({ usePlaceholders = false, domainOverride = null, full 
     if (!isNaN(_vbop)) {
       params.set('vignette_bottom_opacity', _vbop.toFixed(2));
     }
-    const _fg = vEl('cfg-frosted-glass') || 'none';
-    if (_fg && _fg !== 'none') {
-      params.set('frosted_glass', _fg);
-      if (_fg === 'custom') {
-        const _fght = n('cfg-fg-ht');
-        const _fgint = ni('cfg-fg-int');
-        const _fgop = n('cfg-fg-op');
-        params.set('frosted_glass_height', (isNaN(_fght) ? 0.50 : _fght).toFixed(2));
-        params.set('frosted_glass_intensity', String(isNaN(_fgint) ? 45 : _fgint));
-        params.set('frosted_glass_opacity', (isNaN(_fgop) ? 1.00 : _fgop).toFixed(2));
+    const _bb = vEl('cfg-bottom-blur') || 'none';
+    if (_bb && _bb !== 'none') {
+      params.set('bottom_blur', _bb);
+      if (_bb === 'custom') {
+        const _bbht = n('cfg-bb-ht');
+        const _bbint = ni('cfg-bb-int');
+        const _bbop = n('cfg-bb-op');
+        const _bbcurveVal = vEl('cfg-bb-curve');
+        const curveMap = { '1': '1.0', '2': '1.6', '3': '2.2', '4': '3.0' };
+        const _bbcurve = curveMap[_bbcurveVal] || '1.6';
+        params.set('bottom_blur_height', (isNaN(_bbht) ? 0.45 : _bbht).toFixed(2));
+        params.set('bottom_blur_intensity', String(isNaN(_bbint) ? 11 : _bbint));
+        params.set('bottom_blur_opacity', (isNaN(_bbop) ? 1.00 : _bbop).toFixed(2));
+        params.set('bottom_blur_curve', _bbcurve);
       }
     }
   }
@@ -6903,7 +6925,6 @@ function buildBaseParams({ usePlaceholders = false, domainOverride = null, full 
   // sash_mode itself is per shape and went out with the vignette above.
   if (emitAll) {
     params.set('cinema_greyscale', c('tog-cinema-greyscale') ? 'true' : 'false');
-    if (c('tog-cinema-frosted')) params.set('cinema_frosted', 'true');
     if (c('tog-cinema-blur')) params.set('cinema_blur', 'true');
     params.set('cinema_greyscale_skip_if_available', c('tog-cinema-greyscale-skip') ? 'true' : 'false');
   }
@@ -8163,15 +8184,15 @@ function updateGradientFields() {
   document.getElementById('vignette-light-field').style.display = shade ? '' : 'none';
   const link = document.getElementById('landscape-color-link-field');
   if (link) link.style.display = document.getElementById('tog-vignette-color-bottom').checked ? '' : 'none';
-  updateFrostedGlassFields();
+  updateBottomBlurFields();
   syncSegmented();
 }
 
-function updateFrostedGlassFields() {
-  const fg = vEl('cfg-frosted-glass');
-  const customFields = document.getElementById('frosted-glass-custom-fields');
+function updateBottomBlurFields() {
+  const bb = vEl('cfg-bottom-blur');
+  const customFields = document.getElementById('bottom-blur-custom-fields');
   if (customFields) {
-    customFields.style.display = fg === 'custom' ? 'block' : 'none';
+    customFields.style.display = bb === 'custom' ? 'block' : 'none';
   }
   syncSegmented();
 }
@@ -8341,7 +8362,7 @@ function updateShapeFields() {
   document.getElementById('fallback-bg-style-field').style.display = landscape ? 'none' : '';
   // Sash tab: the mode (drawn or not), the release-status filters and the
   // priority list are read; the rest styles the portrait sash / notch.
-  for (const id of ['sash-cinema-greyscale-row', 'sash-cinema-frosted-row', 'sash-cinema-blur-row',
+  for (const id of ['sash-cinema-greyscale-row', 'sash-cinema-blur-row',
                     'sash-winner-star-row', 'sash-text-color-field',
                     'sash-trending-group', 'sash-trending-style-field', 'sash-trending-mark-fields',
                     'sash-muted-row', 'sash-poster-color-row', 'sash-style-field',
@@ -9558,30 +9579,42 @@ function importUrl(urlStr, { silent = false, settingsOnly = false, preserveClien
     const el = document.getElementById('cfg-vignette-bottom-opacity');
     if (el) updateRange(el, 'rng-vbop');
   }
-  if (p.has('frosted_glass')) {
-    const _fg = (p.get('frosted_glass') || '').toLowerCase();
-    if (['none','off','low','medium','high','custom'].includes(_fg)) {
-      _setEl('cfg-frosted-glass', _fg === 'off' ? 'none' : _fg);
+  const _bbKey = p.has('bottom_blur') ? 'bottom_blur' : (p.has('frosted_glass') ? 'frosted_glass' : null);
+  if (_bbKey) {
+    const _bb = (p.get(_bbKey) || '').toLowerCase();
+    if (['none','off','low','medium','high','custom'].includes(_bb)) {
+      _setEl('cfg-bottom-blur', _bb === 'off' ? 'none' : _bb);
     }
-    if (_fg === 'custom') {
-      if (p.has('frosted_glass_height')) {
-        _setEl('cfg-fg-ht', p.get('frosted_glass_height'));
-        const el = document.getElementById('cfg-fg-ht');
-        if (el) updateWeightRange(el, 'rv-fg-ht');
+    if (_bb === 'custom') {
+      const _htVal = p.get('bottom_blur_height') || p.get('frosted_glass_height');
+      if (_htVal) {
+        _setEl('cfg-bb-ht', _htVal);
+        const el = document.getElementById('cfg-bb-ht');
+        if (el) updateWeightRange(el, 'rv-bb-ht');
       }
-      if (p.has('frosted_glass_intensity')) {
-        _setEl('cfg-fg-int', p.get('frosted_glass_intensity'));
-        const el = document.getElementById('cfg-fg-int');
-        if (el) updateRange(el, 'rng-fgint');
+      const _intVal = p.get('bottom_blur_intensity');
+      if (_intVal) {
+        _setEl('cfg-bb-int', _intVal);
+        const el = document.getElementById('cfg-bb-int');
+        if (el) updatePixelRange(el, 'rng-bbint');
       }
-      if (p.has('frosted_glass_opacity')) {
-        _setEl('cfg-fg-op', p.get('frosted_glass_opacity'));
-        const el = document.getElementById('cfg-fg-op');
-        if (el) updateWeightRange(el, 'rv-fg-op');
+      const _opVal = p.get('bottom_blur_opacity') || p.get('frosted_glass_opacity');
+      if (_opVal) {
+        _setEl('cfg-bb-op', _opVal);
+        const el = document.getElementById('cfg-bb-op');
+        if (el) updateWeightRange(el, 'rv-bb-op');
+      }
+      const _curveVal = p.get('bottom_blur_curve');
+      if (_curveVal) {
+        const revMap = { '1.0': '1', '1.6': '2', '2.2': '3', '3.0': '4' };
+        const step = revMap[_curveVal] || '2';
+        _setEl('cfg-bb-curve', step);
+        const el = document.getElementById('cfg-bb-curve');
+        if (el) updateCurveRange(el, 'rng-bbcurve');
       }
     }
   }
-  updateFrostedGlassFields();
+  updateBottomBlurFields();
   if (p.has('hide_genre')) _setEl('tog-hide-genre', p.get('hide_genre'));
   if (p.has('hide_year')) _setEl('tog-hide-year', p.get('hide_year'));
   if (p.has('hide_rating')) _setEl('tog-hide-rating', p.get('hide_rating'));
@@ -9647,7 +9680,6 @@ function importUrl(urlStr, { silent = false, settingsOnly = false, preserveClien
       document.getElementById('cfg-sash-text-color-picker').value = '#' + _stcVal; }
   if (p.has('sash_winner_star')) _setEl('tog-sash-winner-star',  p.get('sash_winner_star'));
   if (p.has('cinema_greyscale')) _setEl('tog-cinema-greyscale', p.get('cinema_greyscale'));
-  if (p.has('cinema_frosted'))   _setEl('tog-cinema-frosted',   p.get('cinema_frosted') === 'true');
   if (p.has('cinema_blur'))      _setEl('tog-cinema-blur',      p.get('cinema_blur') === 'true');
   if (p.has('cinema_greyscale_skip_if_available')) _setEl('tog-cinema-greyscale-skip', p.get('cinema_greyscale_skip_if_available'));
   if (p.has('release_status_cinema_only')) _setEl('tog-release-cinema-only', p.get('release_status_cinema_only'));
