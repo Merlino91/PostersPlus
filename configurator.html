@@ -2728,8 +2728,52 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
                     <span class="range-val" id="rng-vblur">1.00</span>
                   </div>
                 </div>
+                <div class="field">
+                  <label class="field-label" data-tip="Overall opacity multiplier for the bottom gradient vignette. Lowering this softens the vignette so more artwork shows through.">Gradient Opacity</label>
+                  <div class="range-row">
+                    <input type="range" id="cfg-vignette-bottom-opacity" min="0.0" max="1.0" step="0.05" value="1.00" oninput="updateRange(this,'rng-vbop'); build(); queuePreviewReload()">
+                    <span class="range-val" id="rng-vbop">1.00</span>
+                  </div>
+                </div>
               </div>
             </div><!-- /vignette group -->
+            <div class="cfg-sep">
+              <span class="group-title" data-tip="Optical frosted glass effect applied on the bottom of the poster before the gradient. Blurs and preserves vibrant colors while reducing background distraction. Deactivated automatically if the poster has a burned-in title or no logo is drawn.">Frosted Glass</span>
+              <div class="field">
+                <label class="field-label" data-tip="Optical frosted glass strength on the bottom of the poster.">Strength</label>
+                <select class="segmented-source" id="cfg-frosted-glass" onchange="updateFrostedGlassFields(); build(); queuePreviewReload()">
+                  <option value="none" selected>None</option>
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                  <option value="custom">Custom</option>
+                </select>
+                <div class="segmented" data-for="cfg-frosted-glass"></div>
+              </div>
+              <div id="frosted-glass-custom-fields" class="subfields" style="display:none;">
+                <div class="field">
+                  <label class="field-label" data-tip="Height of the frosted glass from the bottom edge.">Height</label>
+                  <div class="range-row">
+                    <input type="range" id="cfg-fg-ht" min="0.20" max="0.80" step="0.05" value="0.50" oninput="updateWeightRange(this,'rv-fg-ht'); build(); queuePreviewReload()">
+                    <span class="range-val" id="rv-fg-ht">50%</span>
+                  </div>
+                </div>
+                <div class="field">
+                  <label class="field-label" data-tip="Refraction lens blur intensity. Higher values create a deeper frost.">Intensity</label>
+                  <div class="range-row">
+                    <input type="range" id="cfg-fg-int" min="10" max="100" step="5" value="45" oninput="updateRange(this,'rng-fgint'); build(); queuePreviewReload()">
+                    <span class="range-val" id="rng-fgint">45</span>
+                  </div>
+                </div>
+                <div class="field">
+                  <label class="field-label" data-tip="Opacity of the frosted glass blend mask.">Opacity</label>
+                  <div class="range-row">
+                    <input type="range" id="cfg-fg-op" min="0.20" max="1.00" step="0.05" value="1.00" oninput="updateWeightRange(this,'rv-fg-op'); build(); queuePreviewReload()">
+                    <span class="range-val" id="rv-fg-op">100%</span>
+                  </div>
+                </div>
+              </div>
+            </div><!-- /frosted glass group -->
           </div>
         </div>
 
@@ -6610,6 +6654,17 @@ function buildBaseParams({ usePlaceholders = false, domainOverride = null, full 
       // Written even at the default: on a dual URL an absent landscape_ value
       // falls back to the portrait one.
       set('vignette_color_style', v['cfg-vignette-style'] || 'shade');
+      const _vbop = num('cfg-vignette-bottom-opacity');
+      if (_vbop !== '1.00') set('vignette_bottom_opacity', _vbop);
+    }
+    const _fg = v['cfg-frosted-glass'] || 'none';
+    if (_fg !== 'none') {
+      set('frosted_glass', _fg);
+      if (_fg === 'custom') {
+        set('frosted_glass_height', num('cfg-fg-ht'));
+        set('frosted_glass_intensity', v['cfg-fg-int']);
+        set('frosted_glass_opacity', num('cfg-fg-op'));
+      }
     }
     // Written in both states for the same reason as the tint toggles: on a dual
     // URL an absent landscape_hide_genre falls back to hide_genre, so "off"
@@ -8095,6 +8150,16 @@ function updateGradientFields() {
   document.getElementById('vignette-light-field').style.display = shade ? '' : 'none';
   const link = document.getElementById('landscape-color-link-field');
   if (link) link.style.display = document.getElementById('tog-vignette-color-bottom').checked ? '' : 'none';
+  updateFrostedGlassFields();
+  syncSegmented();
+}
+
+function updateFrostedGlassFields() {
+  const fg = vEl('cfg-frosted-glass');
+  const customFields = document.getElementById('frosted-glass-custom-fields');
+  if (customFields) {
+    customFields.style.display = fg === 'custom' ? 'block' : 'none';
+  }
   syncSegmented();
 }
 
@@ -9474,6 +9539,35 @@ function importUrl(urlStr, { silent = false, settingsOnly = false, preserveClien
   { const _vs = p.get('vignette_color_style');
     if (['shade','muted','reference'].includes(_vs)) _setEl('cfg-vignette-style', _vs); }
   if (p.has('notch_vignette_color'))      _setEl('tog-notch-vignette-color', p.get('notch_vignette_color'));
+  if (p.has('vignette_bottom_opacity')) {
+    _setEl('cfg-vignette-bottom-opacity', p.get('vignette_bottom_opacity'));
+    const el = document.getElementById('cfg-vignette-bottom-opacity');
+    if (el) updateRange(el, 'rng-vbop');
+  }
+  if (p.has('frosted_glass')) {
+    const _fg = (p.get('frosted_glass') || '').toLowerCase();
+    if (['none','off','low','medium','high','custom'].includes(_fg)) {
+      _setEl('cfg-frosted-glass', _fg === 'off' ? 'none' : _fg);
+    }
+    if (_fg === 'custom') {
+      if (p.has('frosted_glass_height')) {
+        _setEl('cfg-fg-ht', p.get('frosted_glass_height'));
+        const el = document.getElementById('cfg-fg-ht');
+        if (el) updateWeightRange(el, 'rv-fg-ht');
+      }
+      if (p.has('frosted_glass_intensity')) {
+        _setEl('cfg-fg-int', p.get('frosted_glass_intensity'));
+        const el = document.getElementById('cfg-fg-int');
+        if (el) updateRange(el, 'rng-fgint');
+      }
+      if (p.has('frosted_glass_opacity')) {
+        _setEl('cfg-fg-op', p.get('frosted_glass_opacity'));
+        const el = document.getElementById('cfg-fg-op');
+        if (el) updateWeightRange(el, 'rv-fg-op');
+      }
+    }
+  }
+  updateFrostedGlassFields();
   if (p.has('hide_genre')) _setEl('tog-hide-genre', p.get('hide_genre'));
   if (p.has('hide_year')) _setEl('tog-hide-year', p.get('hide_year'));
   if (p.has('hide_rating')) _setEl('tog-hide-rating', p.get('hide_rating'));

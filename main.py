@@ -27,7 +27,7 @@ from urllib.parse import parse_qsl, quote, urlencode
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse, Response, HTMLResponse
 from fastapi.staticfiles import StaticFiles
-from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont, ImageOps
+from PIL import Image, ImageChops, ImageDraw, ImageEnhance, ImageFilter, ImageFont, ImageOps
 
 logging.basicConfig(
     level=logging.INFO,
@@ -1921,6 +1921,11 @@ class RequestConfig:
     top_gradient_height: float | None = None
     bottom_gradient_opacity: float | None = None
     bottom_gradient_height: float | None = None
+    vignette_bottom_opacity: float = 1.0       # overall opacity multiplier for bottom gradient (0.0 - 1.0)
+    frosted_glass: str = "none"               # none | low | medium | high | custom - lower poster optical frosted glass
+    frosted_glass_height: float | None = None  # custom height ratio (0.20 - 0.80)
+    frosted_glass_intensity: int | None = None # custom optical blur radius (10 - 100)
+    frosted_glass_opacity: float | None = None # custom opacity (0.20 - 1.00)
     hide_genre: bool = False
     # Drops the release year from the label in every rating mode, and from the
     # landscape info strip.  Minimalist's Year mode carries the score in the
@@ -2556,6 +2561,14 @@ def build_request_config(params: dict) -> RequestConfig:
     cfg.top_gradient_height     = _f("top_gradient_height",     cfg.top_gradient_height,     0.0, 1.0)
     cfg.bottom_gradient_opacity = _f("bottom_gradient_opacity", cfg.bottom_gradient_opacity, 0.0, 255.0)
     cfg.bottom_gradient_height  = _f("bottom_gradient_height",  cfg.bottom_gradient_height,  0.0, 1.0)
+    cfg.vignette_bottom_opacity = _f("vignette_bottom_opacity", cfg.vignette_bottom_opacity, 0.0, 1.0)
+
+    _fg_raw = (params.get("frosted_glass") or "").strip().lower()
+    if _fg_raw in ("none", "off", "low", "medium", "high", "custom"):
+        cfg.frosted_glass = _fg_raw
+    cfg.frosted_glass_height    = _f("frosted_glass_height",    cfg.frosted_glass_height,    0.10, 0.90)
+    cfg.frosted_glass_intensity = _i("frosted_glass_intensity", cfg.frosted_glass_intensity, 5,    100)
+    cfg.frosted_glass_opacity   = _f("frosted_glass_opacity",   cfg.frosted_glass_opacity,   0.0,  1.0)
     cfg.hide_genre = _b("hide_genre", cfg.hide_genre)
     cfg.hide_year = _b("hide_year", cfg.hide_year)
     cfg.hide_rating = _b("hide_rating", cfg.hide_rating)
@@ -2894,6 +2907,16 @@ _BOTTOM_GRADIENT_LEVELS: dict[str, tuple[float, int] | None] = {
 # at the top).  Decoupled from strength so retuning one doesn't affect the
 # other.
 _BOTTOM_GRADIENT_CURVE = 1.5
+
+# Frosted Glass presets — (height_ratio, blur_intensity, opacity).
+# Pure optical refraction layer composited on the lower poster before gradients.
+_FROSTED_GLASS_PRESETS: dict[str, tuple[float, int, float] | None] = {
+    "none":   None,
+    "off":    None,
+    "low":    (0.35, 25, 0.75),
+    "medium": (0.50, 45, 0.90),
+    "high":   (0.60, 65, 1.00),
+}
 
 # --- Poster-coloured vignette ------------------------------------------------
 # The colour itself is picked and painted by the fog functions further down (see
@@ -4118,6 +4141,48 @@ def _build_poster(
         row = np.asarray(field.convert("RGB"), dtype=np.float32)[deepest_row]
         return tuple(float(c) for c in row.mean(axis=0))
 
+    # --- Frosted Glass (Lower poster optical glass refraction) ---
+    _fg_preset = None
+    if cfg.frosted_glass == "custom" and cfg.frosted_glass_height is not None and cfg.frosted_glass_intensity is not None:
+        _fg_preset = (
+            cfg.frosted_glass_height,
+            cfg.frosted_glass_intensity,
+            cfg.frosted_glass_opacity if cfg.frosted_glass_opacity is not None else 1.0,
+        )
+    else:
+        _fg_preset = _FROSTED_GLASS_PRESETS.get(cfg.frosted_glass)
+
+    # Deactivated if artwork has burned-in text / title baked into the artwork, or no logo/title is being placed
+    if _fg_preset is not None and not has_burned_in_text and (logo is not None or fallback_title is not None):
+        fg_h_ratio, fg_intensity, fg_opacity = _fg_preset
+        fg_height = max(1, int(height * fg_h_ratio))
+        fg_start  = height - fg_height
+        bottom_crop = image.crop((0, fg_start, width, height))
+
+        # 1. Iterative 3-pass BoxBlur (simulates light refraction through frosted lens)
+        box_radius = max(1, int(fg_intensity / 20))
+        glass_layer = bottom_crop
+        for _ in range(3):
+            glass_layer = glass_layer.filter(ImageFilter.BoxBlur(radius=box_radius))
+
+        # 2. Refracted edge accentuation + chromatic boost (preserves vibrant poster hues)
+        glass_layer = glass_layer.filter(ImageFilter.UnsharpMask(radius=3, percent=150, threshold=3))
+        glass_layer = ImageEnhance.Color(glass_layer).enhance(1.35)
+
+        # 3. Organic anti-banding micro-grain in NumPy
+        noise = np.random.normal(0, 2, (fg_height, width, 3)).astype(np.float32)
+        glass_np = np.array(glass_layer.convert("RGBA"), dtype=np.float32)
+        glass_np[:, :, :3] = np.clip(glass_np[:, :, :3] + noise, 0, 255)
+        glass_layer = Image.fromarray(glass_np.astype(np.uint8), mode="RGBA")
+
+        # 4. Exponential fusion mask (power 1.6) scaled by fg_opacity
+        t_blur = np.linspace(0, 1, fg_height, dtype=np.float32)
+        eased_blur = (np.power(t_blur, 1.6) * (255.0 * max(0.0, min(1.0, fg_opacity)))).clip(0, 255).astype(np.uint8)
+        blur_mask_arr = np.broadcast_to(eased_blur[:, np.newaxis], (fg_height, width)).copy()
+        blur_mask = Image.fromarray(blur_mask_arr, mode="L")
+
+        image.paste(glass_layer, (0, fg_start), mask=blur_mask)
+
     # --- Band geometry ---
     # Strength is one of four presets (off / low / medium / high) per band — see
     # _TOP_GRADIENT_LEVELS / _BOTTOM_GRADIENT_LEVELS for the (height_ratio,
@@ -4135,6 +4200,10 @@ def _build_poster(
         _bg_preset = (cfg.bottom_gradient_height, _gradient_alpha(cfg.bottom_gradient_opacity))
     else:
         _bg_preset = _BOTTOM_GRADIENT_LEVELS.get(cfg.bottom_gradient, _BOTTOM_GRADIENT_LEVELS["high"])
+    if _bg_preset is not None:
+        _bg_h, _bg_alpha = _bg_preset
+        _bg_alpha = max(0, min(255, int(_bg_alpha * max(0.0, min(1.0, cfg.vignette_bottom_opacity)))))
+        _bg_preset = (_bg_h, _bg_alpha)
     if cfg.top_vignette_sash_only and sash_result is None and _rank is None:
         _tg_preset = None
 
