@@ -4230,7 +4230,8 @@ def _build_poster(
                         int(_vivid_tint[1] * 0.35),
                         int(_vivid_tint[2] * 0.35),
                     )
-                    _vivid_layer = Image.new("RGBA", (width, bottom_height), (*_dark_vivid, 255))
+                    _vivid_color = _dark_vivid if bottom_tinted.mode == "RGB" else (*_dark_vivid, 255)
+                    _vivid_layer = Image.new(bottom_tinted.mode, bottom_tinted.size, _vivid_color)
                     _vivid_blend = (1.0 - (_bottom_avg_lum / 30.0)) * 0.75
                     bottom_tinted = Image.blend(bottom_tinted, _vivid_layer, alpha=_vivid_blend)
 
