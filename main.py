@@ -4134,41 +4134,6 @@ def _build_poster(
         row = np.asarray(field.convert("RGB"), dtype=np.float32)[deepest_row]
         return tuple(float(c) for c in row.mean(axis=0))
 
-    # --- Bottom Blur (Lower poster optical blur under Dev gradient) ---
-    _bb_preset = None
-    if cfg.bottom_blur == "custom":
-        _bb_preset = (
-            cfg.bottom_blur_height if cfg.bottom_blur_height is not None else 0.45,
-            cfg.bottom_blur_intensity if cfg.bottom_blur_intensity is not None else 11.0,
-            cfg.bottom_blur_opacity if cfg.bottom_blur_opacity is not None else 1.0,
-            cfg.bottom_blur_curve if cfg.bottom_blur_curve is not None else 1.6,
-        )
-    else:
-        _bb_preset = _BOTTOM_BLUR_PRESETS.get(cfg.bottom_blur)
-
-    # Deactivated if artwork has burned-in text / title baked into the artwork, or no logo/title is being placed
-    if _bb_preset is not None and not has_burned_in_text and (logo is not None or fallback_title is not None):
-        bb_h_ratio, bb_intensity, bb_opacity, bb_curve = _bb_preset
-        bb_height = max(1, int(height * bb_h_ratio))
-        bb_start  = height - bb_height
-        bottom_crop = image.crop((0, bb_start, width, height))
-
-        # Optical Gaussian blur: ratio if < 1.0 (presets), or scaled px at 1000px width (custom)
-        if isinstance(bb_intensity, float) and bb_intensity < 1.0:
-            blur_radius = max(2, int(width * bb_intensity))
-        else:
-            blur_radius = max(2, int(round(bb_intensity * (width / 1000.0))))
-
-        blurred_crop = bottom_crop.filter(ImageFilter.GaussianBlur(radius=blur_radius))
-
-        # Exponential fusion mask with configurable curve (1.0 = linear, 1.6 = balanced, 2.2 = aggressive, 3.0 = low edge)
-        t_blur = np.linspace(0, 1, bb_height, dtype=np.float32)
-        eased_blur = (np.power(t_blur, bb_curve) * (255.0 * max(0.0, min(1.0, bb_opacity)))).clip(0, 255).astype(np.uint8)
-        blur_mask_arr = np.broadcast_to(eased_blur[:, np.newaxis], (bb_height, width)).copy()
-        blur_mask = Image.fromarray(blur_mask_arr, mode="L")
-
-        image.paste(blurred_crop, (0, bb_start), mask=blur_mask)
-
     # --- Band geometry ---
     # Strength is one of four presets (off / low / medium / high) per band — see
     # _TOP_GRADIENT_LEVELS / _BOTTOM_GRADIENT_LEVELS for the (height_ratio,
@@ -4315,6 +4280,41 @@ def _build_poster(
                 alpha=max(0.0, min(1.0, cfg.vignette_bottom_opacity)),
             )
             image.paste(_blended, (0, bottom_start))
+
+    # --- Bottom Blur (Lower poster optical blur over Dev gradient) ---
+    _bb_preset = None
+    if cfg.bottom_blur == "custom":
+        _bb_preset = (
+            cfg.bottom_blur_height if cfg.bottom_blur_height is not None else 0.45,
+            cfg.bottom_blur_intensity if cfg.bottom_blur_intensity is not None else 11.0,
+            cfg.bottom_blur_opacity if cfg.bottom_blur_opacity is not None else 1.0,
+            cfg.bottom_blur_curve if cfg.bottom_blur_curve is not None else 1.6,
+        )
+    else:
+        _bb_preset = _BOTTOM_BLUR_PRESETS.get(cfg.bottom_blur)
+
+    # Deactivated if artwork has burned-in text / title baked into the artwork, or no logo/title is being placed
+    if _bb_preset is not None and not has_burned_in_text and (logo is not None or fallback_title is not None):
+        bb_h_ratio, bb_intensity, bb_opacity, bb_curve = _bb_preset
+        bb_height = max(1, int(height * bb_h_ratio))
+        bb_start  = height - bb_height
+        bottom_crop = image.crop((0, bb_start, width, height))
+
+        # Optical Gaussian blur: ratio if < 1.0 (presets), or scaled px at 1000px width (custom)
+        if isinstance(bb_intensity, float) and bb_intensity < 1.0:
+            blur_radius = max(2, int(width * bb_intensity))
+        else:
+            blur_radius = max(2, int(round(bb_intensity * (width / 1000.0))))
+
+        blurred_crop = bottom_crop.filter(ImageFilter.GaussianBlur(radius=blur_radius))
+
+        # Exponential fusion mask with configurable curve (1.0 = linear, 1.6 = balanced, 2.2 = aggressive, 3.0 = low edge)
+        t_blur = np.linspace(0, 1, bb_height, dtype=np.float32)
+        eased_blur = (np.power(t_blur, bb_curve) * (255.0 * max(0.0, min(1.0, bb_opacity)))).clip(0, 255).astype(np.uint8)
+        blur_mask_arr = np.broadcast_to(eased_blur[:, np.newaxis], (bb_height, width)).copy()
+        blur_mask = Image.fromarray(blur_mask_arr, mode="L")
+
+        image.paste(blurred_crop, (0, bb_start), mask=blur_mask)
 
     # --- Badge / quality overlay ---
     mode   = cfg.badge_display_mode
