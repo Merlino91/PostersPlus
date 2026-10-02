@@ -1013,6 +1013,7 @@ SASH_PRIORITY: list[str] = [
     "gg_noms",
     # Timely — narrow, time-boxed windows.  Above the curated lists below so a
     # notable-cast match can't bury "this is new right now".
+    "next_episode",
     "trending",
     "trending_broad",
     "premiere",
@@ -1023,6 +1024,7 @@ SASH_PRIORITY: list[str] = [
     # Curated taste — common matches, so they sit under the timely tier.
     "studio",
     "director",
+    "creator",
     "cast",
     # Static flavour — always true, never urgent.
     "cult",

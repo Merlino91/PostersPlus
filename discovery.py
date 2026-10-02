@@ -939,6 +939,31 @@ def shown_trending_rank(meta: DiscoveryMeta, priority: list[str]) -> int | None:
     return None
 
 
+MONTHS_IT = ["Gen", "Feb", "Mar", "Apr", "Mag", "Giu", "Lug", "Ago", "Set", "Ott", "Nov", "Dic"]
+
+
+def _format_date_it(date_str: str) -> str:
+    """Formatta '2025-08-15' → 'il 15 Ago' (o 'l'8 Set' per 1, 8, 11)."""
+    if not isinstance(date_str, str):
+        return ""
+    try:
+        d = datetime.strptime(date_str, "%Y-%m-%d").date()
+        art = "l'" if d.day in (1, 8, 11) else "il "
+        return f"{art}{d.day} {MONTHS_IT[d.month - 1]}"
+    except ValueError:
+        return date_str
+
+
+def _is_future(date_str: str) -> bool:
+    """True se la data è strettamente futura."""
+    if not isinstance(date_str, str):
+        return False
+    try:
+        return datetime.strptime(date_str, "%Y-%m-%d").date() > date.today()
+    except (ValueError, TypeError):
+        return False
+
+
 def _evaluate_slot(slot: str, meta: DiscoveryMeta) -> str | None:
     """Return a label string if this slot has a match, else None."""
 
@@ -1001,7 +1026,11 @@ def _evaluate_slot(slot: str, meta: DiscoveryMeta) -> str | None:
 
     if slot == "next_episode":
         # Shows next episode air date for airing series
-        return "Prossimo" if meta.next_episode_date else None
+        if meta.next_episode_date:
+            if _is_future(meta.next_episode_date):
+                return f"Prossimo Ep: {_format_date_it(meta.next_episode_date)}"
+            return "Prossimo"
+        return None
 
     if slot == "trending":
         return f"#{meta.trending_rank} Today" if meta.trending_rank and meta.trending_rank <= _cfg.TRENDING_FETCH_COUNT else None
