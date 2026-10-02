@@ -3515,13 +3515,6 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
                 </label>
               </div>
               <!-- Frosted-notch only. -->
-              <div class="toggle-row portrait-only" id="notch-solid-row" style="display:none;">
-                <span class="toggle-label" data-tip="Solid opaque body with smart text colour instead of frosted glass.">Solid Tinted Body</span>
-                <label class="toggle-switch">
-                  <input type="checkbox" id="tog-notch-solid" onchange="build(); queuePreviewReload()">
-                  <div class="toggle-track"><div class="toggle-thumb"></div></div>
-                </label>
-              </div>
               <div class="toggle-row portrait-only" id="notch-drop-shadow-row" style="display:none;">
                 <span class="toggle-label" data-tip="Adds a subtle soft drop shadow behind the top notch badge.">Notch Drop Shadow</span>
                 <label class="toggle-switch">
@@ -6925,7 +6918,6 @@ function buildBaseParams({ usePlaceholders = false, domainOverride = null, full 
       if (vEl('cfg-sash-badge-style') === 'frosted') {
         params.set('sash_badge_frost_opacity', n('cfg-sash-badge-frost-opacity').toFixed(2));
         params.set('sash_badge_frost_saturation', n('cfg-sash-badge-frost-sat').toFixed(2));
-        if (c('tog-notch-solid')) params.set('notch_solid', 'true');
         if (c('tog-notch-drop-shadow')) params.set('notch_drop_shadow', 'true');
         if (c('tog-use-global-ui-color')) params.set('use_global_ui_color', 'true');
         if (c('tog-notch-vignette-color')) params.set('notch_vignette_color', 'true');
@@ -8020,7 +8012,6 @@ function updateBadgeStyleFields() {
   document.getElementById('sash-badge-dark-opacity-field').style.display =
     (!c('tog-landscape') && vEl('cfg-sash-mode') === 'notch' && !isFrosted) ? '' : 'none';
   document.getElementById('sash-reference-row').style.display = isFrosted ? '' : 'none';
-  document.getElementById('notch-solid-row').style.display = isFrosted ? '' : 'none';
   document.getElementById('notch-drop-shadow-row').style.display = isFrosted ? '' : 'none';
   document.getElementById('use-global-ui-color-row').style.display = isFrosted ? '' : 'none';
   document.getElementById('sash-badge-pos-field').style.display =
@@ -9665,12 +9656,10 @@ function importUrl(urlStr, { silent = false, settingsOnly = false, preserveClien
     const _sbs = p.get('sash_badge_style');
     if (_sbs === 'minimal_pill') {
       _setEl('cfg-sash-badge-style', 'frosted');
-      _setEl('tog-notch-solid', true);
     } else {
       _setEl('cfg-sash-badge-style', _sbs);
     }
   }
-  if (p.has('notch_solid'))              _setEl('tog-notch-solid',             p.get('notch_solid') === 'true');
   if (p.has('notch_drop_shadow'))        _setEl('tog-notch-drop-shadow',        p.get('notch_drop_shadow') === 'true');
   else if (p.has('text_drop_shadow'))    _setEl('tog-notch-drop-shadow',        p.get('text_drop_shadow') === 'true');
   if (p.has('use_global_ui_color'))      _setEl('tog-use-global-ui-color',     p.get('use_global_ui_color') === 'true');

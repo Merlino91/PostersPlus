@@ -1682,7 +1682,6 @@ def draw_award_badge(
     star: bool | None = None,         # override ★ decision (resolved on canonical label)
     text_color: tuple[int, int, int] | None = None,  # override default white text
     position: str = "center",         # "center" | "left" | "right"
-    notch_solid: bool = False,        # solid opaque body with smart text colour instead of frosted glass
     body_opacity: float | None = None,  # black/silver/gold body opacity; None = the style's own
     chip_offset: float = 0.0,         # side chip only: moved down by this fraction of poster height
     chip_offset_x: float = 0.0,       # side chip only: moved in from its corner by this fraction of poster width
@@ -1732,7 +1731,7 @@ def draw_award_badge(
         drawn = draw_award_badge(
             image.transpose(turn), label, sash_type, size_ratio_w, size_ratio_h, notch_style,
             0.0, notch_pad_ratio, font_size_ratio, frost_opacity, frost_saturation,
-            frost_reference, tint_rgb, star, text_color, "center", notch_solid=notch_solid,
+            frost_reference, tint_rgb, star, text_color, "center",
             body_opacity=body_opacity, _geom=image.size, _along=(image.height - y) if left else y)
         return drawn.transpose(back)
 
@@ -1840,39 +1839,22 @@ def draw_award_badge(
         else:
             dr, dg, db = dominant_frost_rgb(image)
 
-        if notch_solid:
-            # ── Solid Tinted Body (former Minimal Pill) ──
-            # Solid opaque body using tint_rgb (smart_top_color or vivid_dom_color).
-            # No blur or crop — lightweight, crisp, and high-contrast.
-            bg_r, bg_g, bg_b = int(round(dr)), int(round(dg)), int(round(db))
-            body = Image.new("RGBA", (badge_w, badge_h), (bg_r, bg_g, bg_b, 240))
-            body.putalpha(mask)
-            badge = body
+        # ── Frosted Glass (Dev original) ──
+        # Crop from the actual composite position so the blur matches what's visible
+        crop_y = max(0, by_composite)
+        region = image.crop((bx, crop_y, bx + badge_w, crop_y + badge_h))
+        blur_r = max(fixed(4), px(_chip_badge_h * 0.35))
+        blurred = region.filter(ImageFilter.GaussianBlur(radius=blur_r)).convert("RGBA")
 
-            # Intelligent text colour via photometric luminance
-            lum = 0.299 * bg_r + 0.587 * bg_g + 0.114 * bg_b
-            _pill_ink = (20, 20, 20) if lum > 128 else (240, 240, 240)
-            ink_to_use = text_color if text_color is not None else _pill_ink
-            badge = Image.alpha_composite(badge, _notch_label_layer_1x(
-                label, font_size_ss, SS, badge_w, badge_h, (*ink_to_use, 245)
-            ))
-        else:
-            # ── Frosted Glass (Dev original) ──
-            # Crop from the actual composite position so the blur matches what's visible
-            crop_y = max(0, by_composite)
-            region = image.crop((bx, crop_y, bx + badge_w, crop_y + badge_h))
-            blur_r = max(fixed(4), px(_chip_badge_h * 0.35))
-            blurred = region.filter(ImageFilter.GaussianBlur(radius=blur_r)).convert("RGBA")
+        fr_r, fr_g, fr_b = _frosted_tint(dr, dg, db, frost_saturation, frost_reference)
+        blurred.putalpha(mask)
+        frost = Image.new("RGBA", (badge_w, badge_h), (fr_r, fr_g, fr_b, 0))
+        frost.putalpha(frost_alpha)
+        badge = Image.alpha_composite(blurred, frost)
 
-            fr_r, fr_g, fr_b = _frosted_tint(dr, dg, db, frost_saturation, frost_reference)
-            blurred.putalpha(mask)
-            frost = Image.new("RGBA", (badge_w, badge_h), (fr_r, fr_g, fr_b, 0))
-            frost.putalpha(frost_alpha)
-            badge = Image.alpha_composite(blurred, frost)
-
-            badge = Image.alpha_composite(badge, _notch_label_layer_1x(
-                label, font_size_ss, SS, badge_w, badge_h, (*_frost_ink(fr_r, fr_g, fr_b), 245)
-            ))
+        badge = Image.alpha_composite(badge, _notch_label_layer_1x(
+            label, font_size_ss, SS, badge_w, badge_h, (*_frost_ink(fr_r, fr_g, fr_b), 245)
+        ))
 
         result = image.copy()
         result.alpha_composite(badge, (bx, by_composite))

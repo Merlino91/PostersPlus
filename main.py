@@ -2038,7 +2038,6 @@ class RequestConfig:
     # instead of from its own whole-poster sample.  Ignored when neither band is
     # tinted, or when the band that is came out too near black to have a colour.
     notch_vignette_color: bool = False
-    notch_solid: bool = False             # toggle: solid opaque body with smart text colour instead of frosted glass
     notch_drop_shadow: bool = False       # toggle: soft drop shadow behind the top notch badge
     # Reference colour mode: match the frosted tint to the poster's true colour
     # (bolder, un-pastel) instead of the saturation-scaled frosted tint. Global.
@@ -2636,18 +2635,16 @@ def build_request_config(params: dict) -> RequestConfig:
         cfg.sash_badge_opacity = None if _op == 0.90 else _op
     cfg.sash_badge_frost_saturation = _f("sash_badge_frost_saturation", cfg.sash_badge_frost_saturation, 0.0, 2.0)
     cfg.notch_vignette_color        = _b("notch_vignette_color", cfg.notch_vignette_color)
-    cfg.notch_solid                 = _b("notch_solid", cfg.notch_solid)
     cfg.notch_drop_shadow           = _b("notch_drop_shadow", cfg.notch_drop_shadow)
     if "text_drop_shadow" in params and "notch_drop_shadow" not in params:
         cfg.notch_drop_shadow       = _b("text_drop_shadow", cfg.notch_drop_shadow)
     cfg.sash_badge_size_w       = _f("sash_badge_size_w",       cfg.sash_badge_size_w,       0.5, 2.0)
     cfg.sash_badge_size_h       = _f("sash_badge_size_h",       cfg.sash_badge_size_h,       0.5, 2.0)
     _style_raw = params.get("sash_badge_style", cfg.sash_badge_style)
-    if _style_raw == "minimal_pill":
-        cfg.sash_badge_style = "frosted"
-        cfg.notch_solid = True
-    elif _style_raw in ("silver", "gold", "frosted", "black"):
+    if _style_raw in ("silver", "gold", "frosted", "black"):
         cfg.sash_badge_style = _style_raw
+    elif _style_raw == "minimal_pill":
+        cfg.sash_badge_style = "frosted"
     _pos_raw = (params.get("sash_badge_pos") or "").strip().lower()
     if _pos_raw in ("center", "left", "right", "auto", "auto_hug", "edge_left", "edge_right"):
         cfg.sash_badge_pos = _pos_raw
@@ -4073,22 +4070,6 @@ def _build_poster(
             pass
         return dominant_frost_rgb(img) or (100, 100, 100)
 
-    def _get_smart_top_color(img: Image.Image, w: int, h: int) -> tuple[int, int, int]:
-        try:
-            clean_top_crop = img.crop((w - int(w * 0.4), 0, w, int(h * 0.2)))
-            clean_top_crop.thumbnail((40, 40))
-            top_colors = clean_top_crop.convert("RGB").getcolors(25000)
-            if top_colors:
-                top_colors.sort(key=lambda t: t[0], reverse=True)
-                for count, col in top_colors:
-                    lum = 0.299 * col[0] + 0.587 * col[1] + 0.114 * col[2]
-                    if 15 < lum < 215:
-                        return col
-                return top_colors[0][1]
-        except Exception:
-            pass
-        return _get_vivid_dominant_color(img)
-
     _slider_amount = min(1.0, max(0.0, cfg.vignette_color_saturation) / _VIGNETTE_SAT_FULL)
     # How hard the band is being asked to wash the art out, for the levelling pass.
     # Both sliders ask for it — colour lays a tint over the art, blur melts it — so
@@ -4702,15 +4683,12 @@ def _build_poster(
 
     # Frosted notch specific tint:
     # If Global UI Colour is active: vivid dominant colour from HSV analysis
-    # Else if Solid Tinted Body is active: smart top colour from top-right corner crop
     # Else if Match Tinted Vignette is active: top vignette colour
     # Else: whole-poster dominant frost RGB
     _notch_tint = _frost_tint
     if _notch_frosted:
         if cfg.use_global_ui_color and _frost_color_src is not None:
             _notch_tint = _get_vivid_dominant_color(_frost_color_src)
-        elif cfg.notch_solid and _frost_color_src is not None:
-            _notch_tint = _get_smart_top_color(_frost_color_src, width, height)
         elif _frost_matched:
             _notch_tint = _vignette_shown
         else:
@@ -5283,7 +5261,6 @@ def _build_poster(
                     star=_is_star,
                     text_color=cfg.sash_text_color,
                     position=cfg.sash_badge_pos,
-                    notch_solid=cfg.notch_solid,
                     body_opacity=1.0,
                     chip_offset=cfg.sash_chip_y,
                     chip_offset_x=cfg.sash_chip_x,
@@ -5310,7 +5287,6 @@ def _build_poster(
                                      star=_is_star,
                                      text_color=cfg.sash_text_color,
                                      position=cfg.sash_badge_pos,
-                                     notch_solid=cfg.notch_solid,
                                      body_opacity=cfg.sash_badge_opacity,
                                      chip_offset=cfg.sash_chip_y,
                                      chip_offset_x=cfg.sash_chip_x,
