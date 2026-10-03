@@ -4664,27 +4664,28 @@ def _build_poster(
     _bar_frosted   = cfg.rating_display_mode == 4 and _bar_style in ("frosted", "rating_frosted")
     _ribbon_frosted = (_rank is not None and cfg.trending_style == "ribbon"
                        and cfg.trending_ribbon_style == "frosted")
-    _frost_tint: tuple[float, float, float] | None = (
-        dominant_frost_rgb(_frost_color_src)
-        if (_bar_frosted or _notch_frosted or _sash_poster or _ribbon_frosted
-            or (cinema_run is not None and graphic_badges.wants_frost(cfg.badge_cinema_style))
-            or (cfg.badge_display_mode == 7 and graphic_badges.wants_frost(cfg.badge_quality_style)
-                and quality_tokens and graphic_badges.groups_use_quality(cfg)
-                and _score_points(quality_tokens) >= cfg.badge_min_score)) else None
-    )
-    # A tinted vignette and a frosted notch sample the same artwork but answer
-    # different questions — the vignette asks what the band's own stretch of art is
-    # made of, the notch what colour the poster is — so they can land some way
-    # apart, which reads as two elements disagreeing.  This option settles it in
-    # the vignette's favour.  It can only ever adopt a colour the vignette is
-    # actually wearing: a band that came out black has no colour to match, and the
-    # notch keeps its own logic rather than tinting from a hue nothing else on the
-    # poster shows.  The frosted bar follows, as it already follows the notch.
     _frost_matched = (
         cfg.notch_vignette_color and _notch_frosted and _vignette_shown is not None
     )
-    if _frost_matched:
-        _frost_tint = _vignette_shown
+
+    _needs_frost = (
+        _bar_frosted or _notch_frosted or _sash_poster or _ribbon_frosted
+        or (cinema_run is not None and graphic_badges.wants_frost(cfg.badge_cinema_style))
+        or (cfg.badge_display_mode == 7 and graphic_badges.wants_frost(cfg.badge_quality_style)
+            and quality_tokens and graphic_badges.groups_use_quality(cfg)
+            and _score_points(quality_tokens) >= cfg.badge_min_score)
+    )
+
+    # Lazy evaluation: do not run dominant_frost_rgb if Global UI Colour
+    # or Match Tinted Vignette already supply the tint.
+    _frost_tint: tuple[float, float, float] | None = None
+    if _needs_frost:
+        if cfg.use_global_ui_color and _frost_color_src is not None:
+            _frost_tint = _get_vivid_dominant_color(_frost_color_src)
+        elif _frost_matched:
+            _frost_tint = _vignette_shown
+        else:
+            _frost_tint = dominant_frost_rgb(_frost_color_src)
 
     # Frosted notch specific tint:
     # If Global UI Colour is active: vivid dominant colour from HSV analysis
@@ -4693,7 +4694,7 @@ def _build_poster(
     _notch_tint = _frost_tint
     if _notch_frosted:
         if cfg.use_global_ui_color and _frost_color_src is not None:
-            _notch_tint = _get_vivid_dominant_color(_frost_color_src)
+            _notch_tint = _frost_tint if _frost_tint is not None else _get_vivid_dominant_color(_frost_color_src)
         elif _frost_matched:
             _notch_tint = _vignette_shown
         else:
