@@ -345,6 +345,30 @@ def _box(text: str, h: int, filled: bool) -> Image.Image:
     return im.reduce(ss)
 
 
+@lru_cache(maxsize=16)
+def _ita_flag(h: int) -> Image.Image:
+    """Italian tricolour flag as a rounded chip with transparent background."""
+    ss = 4
+    w = round(h * 1.45)
+    sw, sh = w * ss, h * ss
+    radius = int(h * _BOX_RADIUS * ss)
+    img = Image.new("RGBA", (sw, sh), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    col_w = sw / 3.0
+    # Italian tricolour: Green (0, 146, 70), White (245, 245, 245), Red (206, 43, 55)
+    d.rectangle([0, 0, round(col_w), sh], fill=(0, 146, 70, 255))
+    d.rectangle([round(col_w), 0, round(2 * col_w), sh], fill=(245, 245, 245, 255))
+    d.rectangle([round(2 * col_w), 0, sw, sh], fill=(206, 43, 55, 255))
+    mask = Image.new("L", (sw, sh), 0)
+    ImageDraw.Draw(mask).rounded_rectangle([0, 0, sw - 1, sh - 1], radius=radius, fill=255)
+    img.putalpha(mask)
+    border = Image.new("RGBA", (sw, sh), (0, 0, 0, 0))
+    ImageDraw.Draw(border).rounded_rectangle([0, 0, sw - 1, sh - 1], radius=radius,
+                                             outline=(255, 255, 255, 60), width=max(1, round(ss * 0.75)))
+    img.alpha_composite(border)
+    return img.reduce(ss)
+
+
 # ---------------------------------------------------------------------------
 # Frosted quality chips (badge_quality_style=frosted)
 # ---------------------------------------------------------------------------
@@ -876,10 +900,10 @@ def _logo_mark(logo: Logo, h: int) -> Image.Image | None:
 ANCHORS = ("chip", "tl", "tr", "bl", "br", "above_logo", "below_logo")
 # Centred on the title logo (or fallback title text), wherever it landed.
 LOGO_ANCHORS = ("above_logo", "below_logo")
-SLOTS = ("video", "audio", "res", "cert", "ita", "network", "studio", "cinema")
+SLOTS = ("video", "audio", "res", "cert", "ita", "ita_flag", "ita_text", "network", "studio", "cinema")
 # The slots that show stream quality; the rest come from TMDB alone, so a
 # layout without any of these needs no quality source at all.
-QUALITY_SLOTS = ("video", "audio", "res", "ita")
+QUALITY_SLOTS = ("video", "audio", "res", "ita", "ita_flag", "ita_text")
 MAX_ITEMS = 4
 DEFAULT_GROUP1 = "chip:4:video,audio,res,cert"
 # The request parameters holding the groups, in drawing order.
@@ -1074,16 +1098,18 @@ def row_items(tokens: list[str], certification: str | None, age_rating: int | No
             return _box(f"{int(age_rating)}+", unit_h, False)
         return None
 
-    def ita():
+    def ita_flag():
         if "ITA" in t:
-            from quality import get_resized_badge
-            badge = get_resized_badge("ITA", unit_h)
-            if badge is not None:
-                return badge
+            return _ita_flag(unit_h)
+        return None
+
+    def ita_text():
+        if "ITA" in t:
             return box("ITA")
         return None
 
-    build = {"video": video, "audio": audio, "res": res, "cert": cert, "ita": ita,
+    build = {"video": video, "audio": audio, "res": res, "cert": cert,
+             "ita": ita_flag, "ita_flag": ita_flag, "ita_text": ita_text,
              "network": lambda: _logo_mark(network, unit_h) if network else None,
              "studio": lambda: _logo_mark(studio, unit_h) if studio else None,
              "cinema": lambda: _cinema_mark(cinema, unit_h) if cinema else None}
