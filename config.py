@@ -56,7 +56,7 @@ EFFECTIVE_CPUS = effective_cpus()
 # Storage
 
 DB_PATH               = "/app/cache/cache.db"
-BADGE_DIR             = "/app/badges"
+BADGE_DIR             = "/app/badges" if os.path.exists("/app/badges") else os.path.join(os.path.dirname(os.path.abspath(__file__)), "badges")
 TMDB_POSTER_CACHE_DIR = "/app/cache/tmdb_posters" # base posters from TMDB
 TMDB_LOGO_CACHE_DIR   = "/app/cache/tmdb_logos" # base logos from TMDB
 # Images an operator pasted or uploaded in the dashboard's Artwork view.  Not a

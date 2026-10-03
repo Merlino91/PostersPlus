@@ -4363,7 +4363,7 @@ def _build_poster(
         # badge renders silver/default rather than a misleadingly coloured tier.
         _tokens_1 = (
             tokens
-            if (not tokens or _score_points(tokens) >= cfg.badge_min_score)
+            if (not tokens or "ITA" in tokens or _score_points(tokens) >= cfg.badge_min_score)
             else []
         )
         draw_quality_age_badge(
@@ -4389,7 +4389,7 @@ def _build_poster(
 
     elif mode == 4:
         # Accent bar — small vertical pill in tier colour, no text
-        if not tokens or _score_points(tokens) >= cfg.badge_min_score:
+        if not tokens or "ITA" in tokens or _score_points(tokens) >= cfg.badge_min_score:
             draw_tier_bar(
                 _qtarget,
                 tokens,
@@ -4402,7 +4402,7 @@ def _build_poster(
         # Corner bookmark — top-left and coloured by tier, unless a left-hand
         # diagonal sash or frosted chip owns that corner.  Decided by the config, not by whether
         # this title drew a sash, so the mark doesn't hop corners across a row.
-        if not tokens or _score_points(tokens) >= cfg.badge_min_score:
+        if not tokens or "ITA" in tokens or _score_points(tokens) >= cfg.badge_min_score:
             draw_quality_corner_bookmark(
                 _qtarget,
                 tokens,
@@ -4411,10 +4411,10 @@ def _build_poster(
             )
 
     elif mode == 2:
-        allowed_tokens  = {"4K", "1080P", "REMUX", "WEBDL", "DV", "HDR10+", "HDR10"}
+        allowed_tokens  = {"4K", "1080P", "REMUX", "WEBDL", "DV", "HDR10+", "HDR10", "ITA"}
         filtered_tokens = [t for t in tokens if t in allowed_tokens]
 
-        if filtered_tokens and _score_points(tokens) >= cfg.badge_min_score:
+        if filtered_tokens and ("ITA" in tokens or _score_points(tokens) >= cfg.badge_min_score):
             bx = pxi(width  * cfg.badge_anchor_x)
             by = pxi(height * cfg.badge_anchor_y)
 
@@ -4704,7 +4704,7 @@ def _build_poster(
         or (cinema_run is not None and graphic_badges.wants_frost(cfg.badge_cinema_style))
         or (cfg.badge_display_mode == 7 and graphic_badges.wants_frost(cfg.badge_quality_style)
             and quality_tokens and graphic_badges.groups_use_quality(cfg)
-            and _score_points(quality_tokens) >= cfg.badge_min_score)
+            and ("ITA" in quality_tokens or _score_points(quality_tokens) >= cfg.badge_min_score))
     )
 
     # Lazy evaluation: do not run dominant_frost_rgb if Global UI Colour
@@ -5488,7 +5488,7 @@ def _auto_notch_pos(cfg: "RequestConfig", tokens: list[str], certification: str 
     Every notch style has side positions."""
     if not (cfg.sash_mode == "notch" and cfg.badge_display_mode == 7):
         return "center"
-    show_quality = bool(tokens) and _score_points(tokens) >= cfg.badge_min_score
+    show_quality = bool(tokens) and ("ITA" in tokens or _score_points(tokens) >= cfg.badge_min_score)
     left = right = beside = False
     for group in graphic_badges.cfg_groups(cfg):
         # Whether it draws anything is all that matters here; any size will do.
@@ -5539,7 +5539,7 @@ def _draw_graphic_badges(image: Image.Image, cfg: "RequestConfig", tokens: list[
     # Kept from the chip, the rating and other groups; fixed, so packing a
     # group's badges tight doesn't also push it up against its neighbours.
     clear = pxi(width * 0.028)
-    show_quality = bool(tokens) and _score_points(tokens) >= cfg.badge_min_score
+    show_quality = bool(tokens) and ("ITA" in tokens or _score_points(tokens) >= cfg.badge_min_score)
 
     # An edge notch leaves the top to the groups: they take the side chip's
     # line where it would be, unmoved.

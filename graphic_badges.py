@@ -876,10 +876,10 @@ def _logo_mark(logo: Logo, h: int) -> Image.Image | None:
 ANCHORS = ("chip", "tl", "tr", "bl", "br", "above_logo", "below_logo")
 # Centred on the title logo (or fallback title text), wherever it landed.
 LOGO_ANCHORS = ("above_logo", "below_logo")
-SLOTS = ("video", "audio", "res", "cert", "network", "studio", "cinema")
+SLOTS = ("video", "audio", "res", "cert", "ita", "network", "studio", "cinema")
 # The slots that show stream quality; the rest come from TMDB alone, so a
 # layout without any of these needs no quality source at all.
-QUALITY_SLOTS = ("video", "audio", "res")
+QUALITY_SLOTS = ("video", "audio", "res", "ita")
 MAX_ITEMS = 4
 DEFAULT_GROUP1 = "chip:4:video,audio,res,cert"
 # The request parameters holding the groups, in drawing order.
@@ -1074,7 +1074,16 @@ def row_items(tokens: list[str], certification: str | None, age_rating: int | No
             return _box(f"{int(age_rating)}+", unit_h, False)
         return None
 
-    build = {"video": video, "audio": audio, "res": res, "cert": cert,
+    def ita():
+        if "ITA" in t:
+            from quality import get_resized_badge
+            badge = get_resized_badge("ITA", unit_h)
+            if badge is not None:
+                return badge
+            return box("ITA")
+        return None
+
+    build = {"video": video, "audio": audio, "res": res, "cert": cert, "ita": ita,
              "network": lambda: _logo_mark(network, unit_h) if network else None,
              "studio": lambda: _logo_mark(studio, unit_h) if studio else None,
              "cinema": lambda: _cinema_mark(cinema, unit_h) if cinema else None}

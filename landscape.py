@@ -875,8 +875,16 @@ def _draw_info_strip(image: Image.Image, genre_label: str,
         return None
     score_part = part_of.get("score")
 
+    _FA_STAR = "\uf005"
+    try:
+        fa_star_font = ImageFont.truetype(
+            os.path.join(fonts.FONTS_DIR, "Font Awesome 7 Free-Solid-900.otf"),
+            max(1, int(height * _INFO_FONT * scale * 0.82))
+        )
+    except IOError:
+        fa_star_font = font
+
     sep = "  •  "
-    star_sep = "  ★ "
 
     def segments(items) -> list[tuple[str, tuple[int, int, int, int]]]:
         # The row as drawn, separators included, left to right.
@@ -884,7 +892,10 @@ def _draw_info_strip(image: Image.Image, genre_label: str,
         for i, part in enumerate(items):
             text, fill = part
             if star and part is score_part and run is None:
-                out.append(("★ " if i == 0 else star_sep, _MUTED))
+                if i > 0:
+                    out.append(("  ", _SEPARATOR))
+                out.append(("__FA_STAR__", _MUTED))
+                out.append((" ", _MUTED))
             elif i:
                 out.append((sep, _SEPARATOR))
             out.append((run if run is not None and part is score_part else visual(text), fill))
@@ -893,6 +904,8 @@ def _draw_info_strip(image: Image.Image, genre_label: str,
     def width_of(text) -> float:
         if isinstance(text, list):
             return rating_badges.run_width(text, measure)
+        if text == "__FA_STAR__":
+            return draw.textlength(_FA_STAR, font=fa_star_font)
         return draw.textlength(text, font=font)
 
     def total(items) -> float:
@@ -948,6 +961,11 @@ def _draw_info_strip(image: Image.Image, genre_label: str,
         if isinstance(text, list):
             # draw_run takes the text's top, as ImageDraw.text does by default.
             rating_badges.draw_run(layer, ldraw, text, x, baseline - ascent, font, fill, measure)
+        elif text == "__FA_STAR__":
+            t_bb = draw.textbbox((0, baseline), "8", font=font, anchor="ls")
+            fa_bb = draw.textbbox((0, baseline), _FA_STAR, font=fa_star_font, anchor="ls")
+            _dy = int(round((((t_bb[1] + t_bb[3]) - (fa_bb[1] + fa_bb[3])) / 2.0)))
+            ldraw.text((x, baseline + _dy), _FA_STAR, font=fa_star_font, fill=fill, anchor="ls")
         else:
             ldraw.text((x, baseline), text, font=font, fill=fill, anchor="ls")
     ink = layer.getchannel("A")
@@ -989,7 +1007,7 @@ def _draw_graphic_badges(image: Image.Image, before: np.ndarray, cfg, tokens: li
     width, height = image.size
     left_margin, right_margin = int(width * _SIDE_PAD), int(width * _RIGHT_PAD)
     clear = int(width * 0.02)
-    show_quality = bool(tokens) and _score_points(tokens) >= cfg.badge_min_score
+    show_quality = bool(tokens) and ("ITA" in tokens or _score_points(tokens) >= cfg.badge_min_score)
     scale = max(0.1, float(getattr(cfg, "landscape_badge_scale", 1.0) or 1.0))
     pill_h = int(height * _BADGE_FONT * scale) + 2 * round(_BADGE_PAD_Y * scale)
     top_line = int(height * _BADGE_TOP) + pill_h / 2
@@ -1270,7 +1288,7 @@ def _build_landscape(
         if ((cinema_run is not None and graphic_badges.wants_frost(cfg.badge_cinema_style))
                 or (graphic_badges.wants_frost(cfg.badge_quality_style) and quality_tokens
                     and graphic_badges.groups_use_quality(cfg)
-                    and _score_points(quality_tokens) >= cfg.badge_min_score)):
+                    and ("ITA" in quality_tokens or _score_points(quality_tokens) >= cfg.badge_min_score))):
             from awards import dominant_frost_rgb, _frosted_tint
             tint = _frosted_tint(*(badge_source or dominant_frost_rgb(art)),
                                  saturation=cfg.sash_badge_frost_saturation, reference=cfg.frost_reference)
