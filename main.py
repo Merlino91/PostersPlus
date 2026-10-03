@@ -4726,7 +4726,11 @@ def _build_poster(
     # the panel light, and since chroma is S x V that alone hands a dark muted band
     # back as a bright one.  "match" holds chroma where the band had it.  The two
     # controls are mutually exclusive in the configurator for the same reason.
-    _frost_ref: bool | str = "match" if _frost_matched else cfg.frost_reference
+    _frost_ref: bool | str = (
+        "match"
+        if (_frost_matched or (cfg.use_global_ui_color and _global_vivid is not None))
+        else cfg.frost_reference
+    )
     # One saturation for every frosted element: a frosted notch owns it (its slider
     # lives in the sash panel); otherwise the rating bar's slider drives it. Sharing
     # it keeps the bar and any sash/notch identical.
