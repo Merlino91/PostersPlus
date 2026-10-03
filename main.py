@@ -2014,6 +2014,7 @@ class RequestConfig:
     #   landscape_rating_badges    — the rating_badges sites' scores on the info
     #                                line, in place of the weighted score
     landscape_greyscale: bool = False
+    landscape_cinema_blur: bool = False
     landscape_badge_style: str = "glass"
     landscape_badge_text_color: tuple[int, int, int] | None = None
     landscape_winner_star: bool = False
@@ -2125,6 +2126,14 @@ _LANDSCAPE_SPLIT_PARAMS: tuple[str, ...] = (
     "hide_rating",
     "textless",
     "sash_mode",
+    "vignette_bottom_opacity",
+    "bottom_blur",
+    "bottom_blur_height",
+    "bottom_blur_intensity",
+    "bottom_blur_opacity",
+    "bottom_blur_curve",
+    "cinema_greyscale",
+    "cinema_blur",
     # Landscape's own graphic badge groups, drawn only with landscape_badge_display_mode=7.
     *graphic_badges.GROUP_PARAMS,
 )
@@ -2608,6 +2617,7 @@ def build_request_config(params: dict) -> RequestConfig:
     cfg.landscape_score_out_of_10 = _b("landscape_score_out_of_10", cfg.landscape_score_out_of_10)
     cfg.landscape_score_star      = _b("landscape_score_star",      cfg.landscape_score_star)
     cfg.landscape_greyscale       = _b("landscape_greyscale",       cfg.landscape_greyscale)
+    cfg.landscape_cinema_blur     = _b("landscape_cinema_blur",     cfg.landscape_cinema_blur)
     _ls_style = (params.get("landscape_badge_style") or "").strip().lower()
     if _ls_style in ("glass", "black", "silver", "gold"):
         cfg.landscape_badge_style = _ls_style

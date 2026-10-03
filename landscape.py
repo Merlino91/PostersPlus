@@ -39,9 +39,10 @@ from __future__ import annotations
 
 import colorsys
 import dataclasses
+import os
 
 import numpy as np
-from PIL import Image, ImageChops, ImageDraw, ImageFilter
+from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 
 import fonts
 from i18n import translate_genre, translate_sash, upper_label, visual
@@ -249,7 +250,7 @@ def _draw_vignette(image: Image.Image, art: Image.Image, cfg,
             cover_box = ((0, max(0, band_y - int(height * _VIGNETTE_SEAM_H)), width, height)
                          if cfg.vignette_poster_color_bottom
                          else (0, 0, width, min(height, top_h + int(height * _VIGNETTE_SEAM_H))))
-            tint, conf, second, cover = _fog_pick(
+            tint, conf, second, cover, *_ = _fog_pick(
                 art, cover_box, cfg.vignette_color_local, cfg.vignette_color_ramp, _fog_faces(art),
             )
     if tint is not None:
@@ -288,6 +289,7 @@ def _draw_vignette(image: Image.Image, art: Image.Image, cfg,
                 cover_lightness=cover, style=cfg.vignette_color_style,
             )
 
+    _bottom_crop_before = image.crop((0, band_y, width, height)).convert("RGBA")
     if tinted is None:
         tinted = Image.new("RGBA", (width, band_h), (0, 0, 0, 0))
         tinted.putalpha(ramp)
@@ -295,6 +297,15 @@ def _draw_vignette(image: Image.Image, art: Image.Image, cfg,
     else:
         # Dithered, like the portrait bands — see _vignette_composite.
         _vignette_composite(image, band_y, tinted, _band_ramp(band_h).astype(np.float32))
+
+    if getattr(cfg, "vignette_bottom_opacity", 1.0) < 1.0:
+        _bottom_crop_after = image.crop((0, band_y, width, height)).convert("RGBA")
+        _blended = Image.blend(
+            _bottom_crop_before,
+            _bottom_crop_after,
+            alpha=max(0.0, min(1.0, cfg.vignette_bottom_opacity)),
+        )
+        image.paste(_blended, (0, band_y))
     return painted
 
 
@@ -543,6 +554,8 @@ def _draw_badge(image: Image.Image, text: str, position: str, art: Image.Image,
     if style in _DARK_INK:
         ink = _dark_pill(image, (x, y, x + bw, y + bh), style,
                          getattr(cfg, "landscape_badge_text_color", None))
+    else:
+        ink = _glass_pill(image, (x, y, x + bw, y + bh), art, cfg, source=source)
     if text.startswith("★"):
         _FA_AWARD = "\uf559"
         rest_str = text[1:].strip()
@@ -1046,9 +1059,10 @@ def _build_landscape(
     """Render the landscape poster.  Mirrors ``build_poster``'s call shape so the
     request pipeline can swap one for the other; extra kwargs it does not use
     are accepted and dropped.  Quality shows only as graphic badges."""
-    from main import pick_sash, _greyscale_wanted, _score_points
+    from main import pick_sash, _greyscale_wanted, _unavailable_wanted, _score_points
 
     image = image.convert("RGBA")
+    width, height = image.size
     # Greyscale for "not available", as the portrait does it: before anything
     # samples the art, so the band and the pill take their colour from the
     # greyed art too and nothing on the poster says "in colour".
@@ -1057,10 +1071,17 @@ def _build_landscape(
     # bottom one is the plain band; a top band, which is only ever tinted, is
     # tinted black.
     greyed = _greyscale_wanted(cfg, discovery_meta, quality_tokens,
-                               getattr(cfg, "landscape_greyscale", False))
+                               getattr(cfg, "landscape_greyscale", False) or getattr(cfg, "cinema_greyscale", False))
     if greyed:
         image = image.convert("L").convert("RGBA")
         cfg = dataclasses.replace(cfg, vignette_poster_color_bottom=False)
+
+    blurred = _unavailable_wanted(cfg, discovery_meta, quality_tokens,
+                                 getattr(cfg, "landscape_cinema_blur", False) or getattr(cfg, "cinema_blur", False))
+    if blurred:
+        blur_radius = max(3, int(width * 0.011))
+        image = image.filter(ImageFilter.GaussianBlur(radius=blur_radius))
+
     art = image.copy()          # pre-vignette snapshot for tint sampling
 
     # Colour link between the band and the badge.  Left alone, each samples
@@ -1077,6 +1098,40 @@ def _build_landscape(
         shared = tuple(float(c) for c in dominant_frost_rgb(art))
     band_tint = _draw_vignette(image, art, cfg, source=(0.0, 0.0, 0.0) if greyed else shared)
     badge_source = band_tint if link == "badge_follows_vignette" else shared
+
+    # --- Bottom Blur (Lower poster optical blur over vignette) ---
+    from main import _BOTTOM_BLUR_PRESETS
+    _bb_preset = None
+    if getattr(cfg, "bottom_blur", "none") == "custom":
+        _bb_preset = (
+            cfg.bottom_blur_height if cfg.bottom_blur_height is not None else 0.45,
+            cfg.bottom_blur_intensity if cfg.bottom_blur_intensity is not None else 11.0,
+            cfg.bottom_blur_opacity if cfg.bottom_blur_opacity is not None else 1.0,
+            cfg.bottom_blur_curve if cfg.bottom_blur_curve is not None else 1.6,
+        )
+    else:
+        _bb_preset = _BOTTOM_BLUR_PRESETS.get(getattr(cfg, "bottom_blur", "none"))
+
+    if _bb_preset is not None:
+        bb_h_ratio, bb_intensity, bb_opacity, bb_curve = _bb_preset
+        bb_height = max(1, int(height * bb_h_ratio))
+        bb_start = height - bb_height
+        bottom_crop = image.crop((0, bb_start, width, height))
+
+        if isinstance(bb_intensity, float) and bb_intensity < 1.0:
+            blur_radius = max(2, int(width * bb_intensity))
+        else:
+            blur_radius = max(2, int(round(bb_intensity * (width / 1000.0))))
+
+        blurred_crop = bottom_crop.filter(ImageFilter.GaussianBlur(radius=blur_radius))
+
+        t_blur = np.linspace(0, 1, bb_height, dtype=np.float32)
+        eased_blur = (np.power(t_blur, bb_curve) * (255.0 * max(0.0, min(1.0, bb_opacity)))).clip(0, 255).astype(np.uint8)
+        blur_mask_arr = np.broadcast_to(eased_blur[:, np.newaxis], (bb_height, width)).copy()
+        blur_mask = Image.fromarray(blur_mask_arr, mode="L")
+
+        image.paste(blurred_crop, (0, bb_start), mask=blur_mask)
+
     # What the overlays are measured against, for the graphic badges to lay
     # themselves out around them.
     graphic = bool(getattr(cfg, "landscape_graphic_badges", False))

@@ -3721,6 +3721,13 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
                   <div class="toggle-track"><div class="toggle-thumb"></div></div>
                 </label>
               </div>
+              <div class="toggle-row">
+                <span class="toggle-label" data-tip="Applies a soft blur across the whole poster if unavailable. Follows Consider Available if Source Found.">Blur Poster if Unavailable</span>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="tog-landscape-cinema-blur" onchange="build(); queuePreviewReload()">
+                  <div class="toggle-track"><div class="toggle-thumb"></div></div>
+                </label>
+              </div>
             </div>
             <div class="cfg-sep">
               <span class="group-title" data-tip="Drag to reorder. Click ✕ to disable a sash — the first matching sash wins.">Priority</span>
@@ -6644,26 +6651,26 @@ function buildBaseParams({ usePlaceholders = false, domainOverride = null, full 
       params.set('bottom_gradient_height', document.getElementById('cfg-bg-ht').value);
     }
     if (c('tog-top-vignette-sash-only')) params.set('top_vignette_sash_only', 'true');
+  }
 
-    const _vbop = n('cfg-vignette-bottom-opacity');
-    if (!isNaN(_vbop)) {
-      params.set('vignette_bottom_opacity', _vbop.toFixed(2));
-    }
-    const _bb = vEl('cfg-bottom-blur') || 'none';
-    if (_bb && _bb !== 'none') {
-      params.set('bottom_blur', _bb);
-      if (_bb === 'custom') {
-        const _bbht = n('cfg-bb-ht');
-        const _bbint = ni('cfg-bb-int');
-        const _bbop = n('cfg-bb-op');
-        const _bbcurveVal = vEl('cfg-bb-curve');
-        const curveMap = { '1': '1.0', '2': '1.6', '3': '2.2', '4': '3.0' };
-        const _bbcurve = curveMap[_bbcurveVal] || '1.6';
-        params.set('bottom_blur_height', (isNaN(_bbht) ? 0.45 : _bbht).toFixed(2));
-        params.set('bottom_blur_intensity', String(isNaN(_bbint) ? 11 : _bbint));
-        params.set('bottom_blur_opacity', (isNaN(_bbop) ? 1.00 : _bbop).toFixed(2));
-        params.set('bottom_blur_curve', _bbcurve);
-      }
+  const _vbop = n('cfg-vignette-bottom-opacity');
+  if (!isNaN(_vbop)) {
+    params.set('vignette_bottom_opacity', _vbop.toFixed(2));
+  }
+  const _bb = vEl('cfg-bottom-blur') || 'none';
+  if (_bb && _bb !== 'none') {
+    params.set('bottom_blur', _bb);
+    if (_bb === 'custom') {
+      const _bbht = n('cfg-bb-ht');
+      const _bbint = ni('cfg-bb-int');
+      const _bbop = n('cfg-bb-op');
+      const _bbcurveVal = vEl('cfg-bb-curve');
+      const curveMap = { '1': '1.0', '2': '1.6', '3': '2.2', '4': '3.0' };
+      const _bbcurve = curveMap[_bbcurveVal] || '1.6';
+      params.set('bottom_blur_height', (isNaN(_bbht) ? 0.45 : _bbht).toFixed(2));
+      params.set('bottom_blur_intensity', String(isNaN(_bbint) ? 11 : _bbint));
+      params.set('bottom_blur_opacity', (isNaN(_bbop) ? 1.00 : _bbop).toFixed(2));
+      params.set('bottom_blur_curve', _bbcurve);
     }
   }
   // Both toggles are written in both states.  Writing only "true" and
@@ -6748,6 +6755,7 @@ function buildBaseParams({ usePlaceholders = false, domainOverride = null, full 
     params.set('landscape_score_star', c('tog-landscape-score-star') ? 'true' : 'false');
     // Portrait settings brought over; each left out at its default.
     if (c('tog-landscape-greyscale')) params.set('landscape_greyscale', 'true');
+    if (c('tog-landscape-cinema-blur')) params.set('landscape_cinema_blur', 'true');
     const _lbStyle = vEl('cfg-landscape-badge-style') || 'glass';
     if (_lbStyle !== 'glass') {
       params.set('landscape_badge_style', _lbStyle);
@@ -6923,11 +6931,9 @@ function buildBaseParams({ usePlaceholders = false, domainOverride = null, full 
 
   // ── Info Sash ──────────────────────────────────────────────────────────────
   // sash_mode itself is per shape and went out with the vignette above.
-  if (emitAll) {
-    params.set('cinema_greyscale', c('tog-cinema-greyscale') ? 'true' : 'false');
-    if (c('tog-cinema-blur')) params.set('cinema_blur', 'true');
-    params.set('cinema_greyscale_skip_if_available', c('tog-cinema-greyscale-skip') ? 'true' : 'false');
-  }
+  params.set('cinema_greyscale', c('tog-cinema-greyscale') ? 'true' : 'false');
+  if (c('tog-cinema-blur')) params.set('cinema_blur', 'true');
+  params.set('cinema_greyscale_skip_if_available', c('tog-cinema-greyscale-skip') ? 'true' : 'false');
   params.set('release_status_cinema_only', c('tog-release-cinema-only') ? 'true' : 'false');
   params.set('release_status_dates', c('tog-release-dates') ? 'true' : 'false');
   // One value for both shapes: whether a title is out does not depend on
@@ -9190,6 +9196,7 @@ const _LANDSCAPE_ONLY_CONTROLS = ['cfg-landscape-art', 'cfg-landscape-art-source
                                   'tog-landscape-score-star', 'cfg-landscape-logo-pos', 'cfg-landscape-logo-row',
                                   'cfg-landscape-info-row', 'cfg-landscape-info-col',
                                   'tog-landscape-vignette-top', 'tog-landscape-greyscale',
+                                  'tog-landscape-cinema-blur',
                                   'cfg-landscape-badge-style', 'cfg-landscape-badge-text-color',
                                   'tog-landscape-winner-star', 'cfg-landscape-logo-scale',
                                   'tog-landscape-rating-badges'];
@@ -9648,6 +9655,7 @@ function importUrl(urlStr, { silent = false, settingsOnly = false, preserveClien
       _setEl('cfg-landscape-info-col', _okInfo ? _lic : 'right'); }
     _setEl('tog-landscape-vignette-top', p.get('landscape_vignette_top') || 'false');
     _setEl('tog-landscape-greyscale',   p.get('landscape_greyscale') || 'false');
+    _setEl('tog-landscape-cinema-blur', p.get('landscape_cinema_blur') || 'false');
     _setEl('cfg-landscape-badge-style', ['black', 'silver', 'gold'].includes(p.get('landscape_badge_style'))
       ? p.get('landscape_badge_style') : 'glass');
     { const _lbtc = (p.get('landscape_badge_text_color') || '').replace('#', '').toUpperCase();
