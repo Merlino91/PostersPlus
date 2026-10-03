@@ -3347,8 +3347,9 @@ def _fog_faces(poster: Image.Image) -> list[tuple[float, float, float, float]]:
 def _fog_pick(
     poster: Image.Image, cover_box: tuple[int, int, int, int], local: bool, want_ramp: bool,
     faces: list[tuple[float, float, float, float]] | None = None,
-) -> tuple[tuple[float, float, float] | None, float, tuple[float, float, float] | None, float]:
-    """(primary, confidence, secondary, cover_lightness) for one fog band.
+    want_vivid: bool = False,
+) -> tuple[tuple[float, float, float] | None, float, tuple[float, float, float] | None, float, tuple[float, float, float] | None]:
+    """(primary, confidence, secondary, cover_lightness, vivid) for one fog band.
 
     ``cover_box`` is the art the band will cover plus its seam.  The candidates are
     the poster's own hue families; each scores its support over the whole poster
@@ -3359,6 +3360,9 @@ def _fog_pick(
 
     ``secondary`` is the best analogous family (see _FOG_RAMP_*), ordered so the
     two ends of the ramp sit on the side of the poster each colour is on.
+
+    ``vivid`` is the poster's most chromatic non-skin hue family in OKLab, kept
+    for Global UI Colour and accented elements without running a separate extraction pass.
 
     ``faces`` are (x, y, w, h) boxes in ``poster`` pixels, kept out of the vote.
     Below _FOG_FALLBACK_CONF the pick gives up on the art's colours and returns
@@ -3375,7 +3379,8 @@ def _fog_pick(
     cover_l = float(np.median(cover["lab"][:, 0]))
     fam = _fog_family(whole, peak)
     if fam is None or conf < _FOG_FALLBACK_CONF:
-        return _fog_complement(whole), 1.0, None, cover_l
+        _comp = _fog_complement(whole)
+        return _comp, 1.0, None, cover_l, (_comp if want_vivid else None)
     p_lab, p_x = fam
     primary = tuple(float(c) for c in _oklab_to_srgb(p_lab))
     secondary = None
@@ -3393,7 +3398,30 @@ def _fog_pick(
                 best, secondary, s_x = float(score[q]), tuple(float(c) for c in _oklab_to_srgb(f2[0])), f2[1]
         if secondary is not None and s_x < p_x:
             primary, secondary = secondary, primary      # ramp runs left to right
-    return primary, conf, secondary, cover_l
+
+    vivid = None
+    if want_vivid:
+        best_vivid_score = 0.0
+        for q in range(_VIGNETTE_HUE_BINS):
+            if whole["support"][q] < _FOG_SUPPORT_LOW:
+                continue
+            fq = _fog_family(whole, q)
+            if fq is None:
+                continue
+            L_q = float(fq[0][0])
+            if L_q < 0.18 or L_q > 0.88:
+                continue
+            chroma_q = float(np.hypot(fq[0][1], fq[0][2]))
+            if chroma_q < 0.04:
+                continue
+            v_score = chroma_q * (float(whole["support"][q]) ** 0.15)
+            if v_score > best_vivid_score:
+                best_vivid_score = v_score
+                vivid = tuple(float(c) for c in _oklab_to_srgb(fq[0]))
+        if vivid is None:
+            vivid = primary
+
+    return primary, conf, secondary, cover_l, vivid
 
 
 def _fog_paint(
@@ -4060,28 +4088,6 @@ def _build_poster(
     # colour to grey (e.g. a blue sky reads as white behind the notch).
     _frost_color_src = image.copy()
 
-    def _get_vivid_dominant_color(img: Image.Image) -> tuple[int, int, int]:
-        import colorsys
-        try:
-            small_img = img.copy()
-            small_img.thumbnail((40, 60))
-            colors = small_img.convert("RGB").getcolors(25000)
-            if colors:
-                def color_vividness_score(c_count, c_rgb):
-                    r, g, b = c_rgb[0] / 255.0, c_rgb[1] / 255.0, c_rgb[2] / 255.0
-                    h, s, v = colorsys.rgb_to_hsv(r, g, b)
-                    if s < 0.15 or v < 0.15 or v > 0.92:
-                        return -1
-                    return s * v * (c_count ** 0.2)
-                colors.sort(key=lambda t: color_vividness_score(t[0], t[1]), reverse=True)
-                if color_vividness_score(colors[0][0], colors[0][1]) > 0:
-                    return colors[0][1]
-                colors.sort(key=lambda t: t[0], reverse=True)
-                return colors[0][1]
-        except Exception:
-            pass
-        return dominant_frost_rgb(img) or (100, 100, 100)
-
     _slider_amount = min(1.0, max(0.0, cfg.vignette_color_saturation) / _VIGNETTE_SAT_FULL)
     # How hard the band is being asked to wash the art out, for the levelling pass.
     # Both sliders ask for it — colour lays a tint over the art, blur melts it — so
@@ -4194,25 +4200,40 @@ def _build_poster(
     # bottom band: it is the larger, and the one the labels sit on.
     _fog_colour = None
     _fog_picks = []
-    _faces = _fog_faces(_frost_color_src) if (_bottom_tinted or _top_tinted) else []
+    _faces = _fog_faces(_frost_color_src) if (_bottom_tinted or _top_tinted or cfg.use_global_ui_color) else []
     if _bottom_tinted:
         # The art the bottom band covers, plus the seam above it.
         _fog_picks.append(_fog_pick(
             _frost_color_src,
             (0, max(0, bottom_start - int(height * _VIGNETTE_SEAM_H)), width, height),
             cfg.vignette_color_local, cfg.vignette_color_ramp, _faces,
+            want_vivid=cfg.use_global_ui_color,
         ))
     if _top_tinted:
         _fog_picks.append(_fog_pick(
             _frost_color_src,
             (0, 0, width, min(height, top_height + int(height * _VIGNETTE_SEAM_H))),
             cfg.vignette_color_local, cfg.vignette_color_ramp, _faces,
+            want_vivid=cfg.use_global_ui_color,
+        ))
+    if not _fog_picks and cfg.use_global_ui_color and _frost_color_src is not None:
+        # Whole-poster pick for Global UI Colour when neither vignette band is tinted
+        _fog_picks.append(_fog_pick(
+            _frost_color_src,
+            (0, 0, width, height),
+            False, False, _faces,
+            want_vivid=True,
         ))
     _fog_picks = [p for p in _fog_picks if p[0] is not None]
     if _fog_picks:
         _fog_colour = max(_fog_picks, key=lambda p: p[1])
     _top_tinted    = _top_tinted and _fog_colour is not None
     _bottom_tinted = _bottom_tinted and _fog_colour is not None
+    _global_vivid: tuple[float, float, float] | None = (
+        _fog_colour[4]
+        if (_fog_colour is not None and len(_fog_colour) > 4 and _fog_colour[4] is not None)
+        else None
+    )
 
     # --- TOP GRADIENT (vectorised) ---
     # Darkens the top of the poster so the age-rating numeral and quality
@@ -4221,7 +4242,7 @@ def _build_poster(
         # Black by default; a poster-coloured vignette swaps in a tint field
         # sampled from the art under this band, over frosted and levelled art.
         if _top_tinted:
-            _t_tint, _t_conf, _t_second, _t_cover = _fog_colour
+            _t_tint, _t_conf, _t_second, _t_cover, *_ = _fog_colour
             _vignette_frost_band(
                 image, (0, 0, width, top_height), top_overlay, cfg.vignette_color_blur,
             )
@@ -4250,7 +4271,7 @@ def _build_poster(
     if _bg_preset is not None:
         _bottom_crop_before = image.crop((0, bottom_start, width, height)).convert("RGBA")
         if _bottom_tinted:
-            _b_tint, _b_conf, _b_second, _b_cover = _fog_colour
+            _b_tint, _b_conf, _b_second, _b_cover, *_ = _fog_colour
             _vignette_frost_band(
                 image, (0, bottom_start, width, height), bottom_overlay, cfg.vignette_color_blur,
             )
@@ -4680,21 +4701,21 @@ def _build_poster(
     # or Match Tinted Vignette already supply the tint.
     _frost_tint: tuple[float, float, float] | None = None
     if _needs_frost:
-        if cfg.use_global_ui_color and _frost_color_src is not None:
-            _frost_tint = _get_vivid_dominant_color(_frost_color_src)
+        if cfg.use_global_ui_color and _global_vivid is not None:
+            _frost_tint = _global_vivid
         elif _frost_matched:
             _frost_tint = _vignette_shown
         else:
             _frost_tint = dominant_frost_rgb(_frost_color_src)
 
     # Frosted notch specific tint:
-    # If Global UI Colour is active: vivid dominant colour from HSV analysis
+    # If Global UI Colour is active: vivid accent colour from OKLab two-tone analysis
     # Else if Match Tinted Vignette is active: top vignette colour
     # Else: whole-poster dominant frost RGB
     _notch_tint = _frost_tint
     if _notch_frosted:
-        if cfg.use_global_ui_color and _frost_color_src is not None:
-            _notch_tint = _frost_tint if _frost_tint is not None else _get_vivid_dominant_color(_frost_color_src)
+        if cfg.use_global_ui_color and _global_vivid is not None:
+            _notch_tint = _global_vivid
         elif _frost_matched:
             _notch_tint = _vignette_shown
         else:
