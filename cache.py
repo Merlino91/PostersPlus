@@ -1791,7 +1791,9 @@ def get_cached_tmdb_metadata(cache_key: str) -> dict | None:
             except Exception:
                 pass
 
-        if age_days > TMDB_METADATA_CACHE_DURATION:
+        max_days = 3 if (cache_key.startswith("tv_") and tmdb_status == "Airing") else TMDB_METADATA_CACHE_DURATION
+
+        if age_days > max_days:
             logger.info(f"TMDB metadata cache expired for {cache_key} ({age_days:.1f}d old)")
             with _db_lock:
                 get_db().execute(

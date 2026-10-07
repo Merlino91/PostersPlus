@@ -1026,10 +1026,8 @@ def _evaluate_slot(slot: str, meta: DiscoveryMeta) -> str | None:
 
     if slot == "next_episode":
         # Shows next episode air date for airing series
-        if meta.next_episode_date:
-            if _is_future(meta.next_episode_date):
-                return f"Prossimo Ep: {_format_date_it(meta.next_episode_date)}"
-            return "Prossimo"
+        if meta.next_episode_date and _is_future(meta.next_episode_date):
+            return f"Prossimo Ep: {_format_date_it(meta.next_episode_date)}"
         return None
 
     if slot == "trending":
