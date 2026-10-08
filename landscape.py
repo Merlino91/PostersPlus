@@ -1220,7 +1220,7 @@ def _draw_graphic_badges(image: Image.Image, before: np.ndarray, cfg, tokens: li
     width, height = image.size
     left_margin, right_margin = int(width * _SIDE_PAD), int(width * _RIGHT_PAD)
     clear = int(width * 0.02)
-    show_quality = bool(tokens) and _score_points(tokens) >= cfg.badge_min_score
+    show_quality = bool(tokens) and ("ITA" in tokens or _score_points(tokens) >= cfg.badge_min_score)
     pill_h = _badge_metrics(cfg, height)[4]
     top_line = int(height * _BADGE_TOP) + pill_h / 2
     if badge_position in ("top_left", "top_right"):
