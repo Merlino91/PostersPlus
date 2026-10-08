@@ -20,6 +20,7 @@ returning    TV show with a fresh/upcoming non-premiere episode
 premiere     Show initial release within the last 14 days
 just_added   Movie with a fresh TMDB digital/TV release date
 season_finale Recently-ended TV final season
+blockbuster  Top-grossing film of its release year (box_office.py)
 cult         Cult Classic / Cult Film (MDblist keyword)
 foreign      Non-English original language film
 new_release  Legacy combined newly released signal
@@ -323,6 +324,7 @@ _SASH_TYPES: dict[str, str] = {
     "premiere":         "alert",     # red — show initial release date recency
     "just_added":       "alert",     # red — fresh movie digital/TV release
     "season_finale":    "alert",     # red — final-season/finale signal
+    "blockbuster":     "trending",  # blue — popularity signal, like cult
     "cult":            "trending",  # blue — popularity signal, closest to trending without a new colour
     "foreign":         "info",      # teal — informational / discovery
     "new_release":     "alert",     # red — legacy combined newly released signal
@@ -632,6 +634,7 @@ class DiscoveryMeta:
 
     # Next episode air date for airing series (YYYY-MM-DD)
     next_episode_date: str | None = None
+    tmdb_status:       str | None = None
 
     # Festival prize, already resolved to a display label by festivals.py:
     # the top prize ("Palme d'Or") when the TMDB id is a known winner of it,
@@ -661,6 +664,9 @@ class DiscoveryMeta:
     is_new_season: bool = False       # S2+E1 fresh/upcoming
     is_returning: bool = False        # S2+ non-premiere fresh/upcoming
     is_season_finale: bool = False    # conservative final-season/finale heuristic
+
+    # Top-grossing film of its release year (box_office.py) — movies only
+    is_blockbuster: bool = False
 
     # Keyword-based discovery signals (from MDblist keywords)
     is_cult:              bool = False   # cult-classic or cult-film
@@ -711,6 +717,7 @@ def extract_discovery_meta(
     notable_cast:      dict[str, str] | None = None,
     language_labels:   dict[str, str] | None = None,
     is_watchlisted:    bool = False,
+    is_blockbuster:    bool = False,
 ) -> DiscoveryMeta:
     studios        = notable_studios   or NOTABLE_STUDIOS
     directors      = notable_directors or NOTABLE_DIRECTORS
@@ -722,6 +729,7 @@ def extract_discovery_meta(
         trending_rank=trending_rank,
         original_language=tmdb_data.get("original_language"),
         is_watchlisted=is_watchlisted,
+        is_blockbuster=is_blockbuster and media_type not in ("tv", "series"),
     )
 
     # Build keyword name set once — reused for festival detection and the
@@ -782,7 +790,7 @@ def extract_discovery_meta(
     credits = tmdb_data.get("credits", {})
 
     for crew_member in credits.get("crew", []):
-        job  = crew_member.get("job", "")
+        job = crew_member.get("job")
         name = crew_member.get("name", "")
         if job == "Director":
             if name in directors:
@@ -808,6 +816,8 @@ def extract_discovery_meta(
     elif isinstance(next_ep_data, dict):
         meta.next_episode_date = next_ep_data.get("air_date")
 
+    meta.tmdb_status = tmdb_data.get("tmdb_status") or tmdb_data.get("status")
+
     # --- Structural ---
     is_tv = media_type in ("tv", "series")
 
@@ -817,14 +827,11 @@ def extract_discovery_meta(
     else:
         num_seasons  = tmdb_data.get("number_of_seasons")  or 0
         num_episodes = tmdb_data.get("number_of_episodes") or 0
-        tmdb_status  = (tmdb_data.get("status") or "").strip()
 
-        # Fix: only count as mini-series if the show has Ended (avoids false
-        # positives for in-production or cancelled mid-run series)
         meta.is_mini_series = (
             num_seasons == 1
             and 0 < num_episodes <= 8
-            and tmdb_status in ("Ended", "Cancelled", "Canceled")
+            and meta.tmdb_status in ("Ended", "Cancelled", "Canceled")
         )
 
         if num_seasons >= 3 and num_episodes > 0:
@@ -1016,13 +1023,13 @@ def _evaluate_slot(slot: str, meta: DiscoveryMeta) -> str | None:
         # matched_directors already holds display labels (dict values)
         return f"{meta.matched_directors[0]}" if meta.matched_directors else None
 
-    if slot == "cast":
-        # matched_cast already holds display labels (dict values)
-        return meta.matched_cast[0] if meta.matched_cast else None
-
     if slot == "creator":
         # matched_creators holds display labels (manga author / original creator)
         return meta.matched_creators[0] if meta.matched_creators else None
+
+    if slot == "cast":
+        # matched_cast already holds display labels (dict values)
+        return meta.matched_cast[0] if meta.matched_cast else None
 
     if slot == "next_episode":
         # Shows next episode air date for airing series
@@ -1061,6 +1068,9 @@ def _evaluate_slot(slot: str, meta: DiscoveryMeta) -> str | None:
 
     if slot == "metacritic":
         return "Must-See" if meta.is_metacritic_must_see else None
+
+    if slot == "blockbuster":
+        return "Blockbuster" if meta.is_blockbuster else None
 
     if slot == "cult":
         return "Cult Classic" if meta.is_cult else None
@@ -1129,6 +1139,7 @@ ALL_PRIORITY_SLOTS: list[str] = [
     "premiere",
     "just_added",
     "season_finale",
+    "blockbuster",
     "cult",
     "foreign",
     "new_release",

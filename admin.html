@@ -179,6 +179,10 @@
   .nav a .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--warn); }
   .nav-sep { height: 1px; background: var(--border); margin: 12px 0; }
 
+  .kv.licences img { height: 14px; width: auto; display: block; margin-top: 1px; }
+  .kv.licences td:first-child { width: 28%; }
+  .kv.licences td:last-child { color: var(--text-secondary); line-height: 1.6; }
+
   .panel {
     background: var(--black1);
     border: 1px solid var(--border);
@@ -310,6 +314,14 @@
 
   /* "order" settings: a ranked list, dragged or moved with the arrows. */
   .order-list { list-style: none; margin: 0; padding: 0; counter-reset: order; max-width: 420px; }
+  /* A "multi" setting: any number of its choices, as toggle chips. */
+  .multi-chips { display: flex; flex-wrap: wrap; gap: 6px; max-width: 560px; }
+  .multi-chip {
+    padding: 5px 10px; font-size: 11.5px; color: var(--text-muted);
+    background: var(--black2); border: 1px solid var(--border); border-radius: var(--radius-sm);
+    cursor: pointer; user-select: none;
+  }
+  .multi-chip.on { color: var(--gold-bright); border-color: var(--gold-dim); }
   .order-item {
     display: flex; align-items: center; gap: 10px;
     padding: 5px 8px; margin-bottom: 3px;
@@ -967,7 +979,7 @@ async function boot() {
   // #artwork/<movie|tv>/<tmdb id> opens that title's editor (the configurator's
   // edit-artwork shortcut links here).
   const deep = hash.match(/^artwork\/(movie|tv)\/(\d+)$/);
-  setView(deep ? 'artwork' : hash && (hash === 'overview' || hash === 'artwork' || hash === 'reports' || hash === 'logs' || hash === 'sash-lists' || hash === 'presets' || hash === 'fonts' || model.groups.some(g => slug(g.name) === hash)) ? hash : 'overview');
+  setView(deep ? 'artwork' : hash && (hash === 'overview' || hash === 'artwork' || hash === 'reports' || hash === 'logs' || hash === 'sash-lists' || hash === 'presets' || hash === 'fonts' || hash === 'licences' || model.groups.some(g => slug(g.name) === hash)) ? hash : 'overview');
   if (deep) artOpen(deep[1], deep[2]);
   clearInterval(statusTimer);
   statusTimer = setInterval(loadStatus, 15000);
@@ -1006,6 +1018,8 @@ function renderNav() {
     const pend = g.settings.some(s => pending.has(s.key));
     html += `<a href="#${id}" data-view="${id}" class="${activeView === id ? 'active' : ''}"><span>${esc(g.name)}</span>${dirty ? `<span class="chip dirty">${dirty}</span>` : (pend ? '<span class="dot" title="Restart required"></span>' : `<span class="count">${g.settings.length}</span>`)}</a>`;
   }
+  html += `<div class="nav-sep"></div>`;
+  html += `<a href="#licences" data-view="licences" class="${activeView === 'licences' ? 'active' : ''}"><span>Licences &amp; attributions</span></a>`;
   nav.innerHTML = html;
   nav.querySelectorAll('a').forEach(a => a.addEventListener('click', e => { e.preventDefault(); setView(a.dataset.view); }));
 }
@@ -1123,7 +1137,7 @@ function renderOverview() {
     ['Quality cache', fmtNum(cache.quality_cache)],
     ['Release-status cache', fmtNum(cache.release_status_cache)],
     ['Trending refresh', s.trending && s.trending.fetch_time ? `daily at ${esc(s.trending.fetch_time)} ${esc(s.trending.timezone)}` : 'every 24 h from startup'],
-    ['Trending sources', s.trending ? [(s.trending.source_movie ? 'custom movie list' : 'TMDB movies'), (s.trending.source_tv ? 'custom TV list' : 'TMDB TV')].join(' · ') : '—'],
+    ['Trending sources', s.trending ? [(s.trending.source_movie ? 'custom movie list' : 'TMDB movies'), (s.trending.source_tv ? 'custom TV list' : 'TMDB TV'), (s.trending.source_anime ? 'custom anime list' : 'AniList anime'), (s.trending.source_anime_movie ? 'custom anime film list' : 'AniList anime films')].join(' · ') : '—'],
     ['Rating fetches in flight', fmtNum(rt.rating_fetches_in_flight)],
     ['Titles in rating back-off', fmtNum(rt.rating_backoff_titles)],
     ['MDBList burst pause', rt.mdblist_burst_pause_secs ? `<span style="color:var(--danger)">${rt.mdblist_burst_pause_secs}s</span> · per-IP limit hit, all keys paused` : (rt.mdblist_min_interval ? `none · paced at ${Math.round(1 / rt.mdblist_min_interval)} calls/s` : 'none · pacing off')],
@@ -1191,9 +1205,22 @@ function control(s) {
     }
     case 'order':
       return orderList(s);
+    case 'multi': {
+      const on = new Set(String(v ?? '').split(',').map(x => x.trim()));
+      return `<div class="multi-chips" id="${id}">${s.choices.map(c => `<button type="button" class="multi-chip ${on.has(c) ? 'on' : ''}" aria-pressed="${on.has(c)}" data-v="${esc(c)}" onclick="multiToggle('${s.key}', this)">${esc((s.labels || {})[c] || c)}</button>`).join('')}</div>`;
+    }
     default:
       return `<input type="text" id="${id}" value="${esc(v)}" placeholder="${esc(s.placeholder || s.default || '')}" oninput="edit('${s.key}', this.value)" onchange="controllerChanged('${s.key}')">`;
   }
+}
+
+// A "multi" setting: the chips that are on, in the choices' own order.
+function multiToggle(key, btn) {
+  const on = btn.classList.toggle('on');
+  btn.setAttribute('aria-pressed', on);
+  const s = findSetting(key);
+  const picked = [...document.querySelectorAll(`#f-${key} .multi-chip.on`)].map(b => b.dataset.v);
+  edit(key, s.choices.filter(c => picked.includes(c)).join(','));
 }
 
 // An "order" setting: its choices ranked, most important first.  Dragging
@@ -1340,6 +1367,7 @@ function renderView() {
   if (activeView === 'reports') { main.innerHTML = renderReports(); loadReports(); return; }
   if (activeView === 'logs') { main.innerHTML = renderLogs(); lgRenderModules(); if (lg.live && !lg.timer) lgSetLive(true); if (!lg.loaded) lgLoad(); else lgRenderList(); return; }
   if (activeView === 'presets') { main.innerHTML = renderPresets(); if (!pr.data) loadPresets(); return; }
+  if (activeView === 'licences') { main.innerHTML = renderLicences(); return; }
   if (activeView === 'fonts') { main.innerHTML = renderFonts(); if (!ft.data) loadFonts(); return; }
   if (activeView === 'sash-lists') { main.innerHTML = renderSashLists(); if (!sl.data) loadSashLists(); else slLookup(sl.section); return; }
   const g = model.groups.find(g => slug(g.name) === activeView);
@@ -1892,7 +1920,7 @@ function prParams(raw) {
   const p = new URLSearchParams(q);
   for (const k of [...p.keys()]) {
     const n = k.toLowerCase();
-    if (['tmdb_id', 'imdb_id', 'type', 'stremio_id', 'anilist_id', 'kitsu_id', '_ts'].includes(n) || /key|token|secret|password|auth/.test(n)) p.delete(k);
+    if (['tmdb_id', 'imdb_id', 'type', 'stremio_id', 'anilist_id', 'kitsu_id', 'mal_id', '_ts'].includes(n) || /key|token|secret|password|auth/.test(n)) p.delete(k);
   }
   return p;
 }
@@ -2100,6 +2128,35 @@ function ftSample() {
   if (!/^\d{1,9}$/.test(id)) { toast('A TMDB id is a number'); return; }
   ft.sample = { id, type: document.getElementById('ft-sample-type').value === 'tv' ? 'tv' : 'movie' };
   renderView();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Licences & attributions.  Static: the services, data and assets PostersPlus
+// is built on, mirroring README.md#attribution.  TMDB's terms want its logo and
+// notice wherever users see the app, so it leads the page.
+const LICENCES = [
+  ['TheTVDB', 'https://thetvdb.com', 'Metadata and artwork provided by TheTVDB.'],
+  ['MDBList', 'https://mdblist.com', 'Ratings (including Letterboxd, Rotten Tomatoes, Metacritic and Trakt scores) and lists.'],
+  ['IMDb', 'https://developer.imdb.com/non-commercial-datasets/', 'Information courtesy of IMDb (https://www.imdb.com). Used with permission. Ratings come from the IMDb non-commercial datasets.'],
+  ['AniList', 'https://anilist.co', 'Anime art, titles, genres and scores.'],
+  ['Kitsu', 'https://kitsu.app', 'Anime art, titles, genres and scores.'],
+  ['Cinemeta and Metahub', 'https://www.stremio.com', 'Metadata and logo fallbacks, from Stremio.'],
+  ['fanart.tv', 'https://fanart.tv', 'Posters, logos and backgrounds.'],
+  ['Trakt, SIMKL, PublicMetaDB', 'https://trakt.tv', 'Watchlists for the watchlist marker.'],
+  ['Arctic Shift', 'https://arctic-shift.photon-reddit.com', 'Reddit archive used to detect digital releases.'],
+  ['Wikidata', 'https://www.wikidata.org', 'Festival award winners, under CC0.'],
+  ['Wikimedia Commons', 'https://commons.wikimedia.org', 'Graphic and rating badge marks, downloaded at runtime and pinned to the reviewed file. Mostly public domain; the DTS:X mark is by CinemaLover24680 under CC BY-SA 4.0. All marks are trademarks of their owners.'],
+  ['RapidOCR', 'https://github.com/RapidAI/RapidOCR', 'The PP-OCRv5 text detection model from PaddleOCR, under the Apache License 2.0.'],
+  ['Anime ID mapping', 'https://github.com/Fribb/anime-lists', 'Fribb/anime-lists, built from anime-offline-database (cedya77, continuing manami-project) and Anime-Lists/anime-lists. anime-offline-database is made available under the Open Database License 1.0, and its contents under the Database Contents License 1.0.'],
+  ['Fonts', 'https://openfontlicense.org', 'Almarai, Barlow Condensed, Bebas Neue, Creepster, Exo 2, Fira Sans, Inter, Manrope, Montserrat, Noto Serif, Open Sans, Oswald, Pacifico, Playfair Display, Plus Jakarta Sans, Roboto Condensed, Rubik and Space Grotesk under the SIL Open Font License 1.1; Ubuntu under the Ubuntu Font Licence 1.0. Each licence ships in fonts/.'],
+  ['PostersPlus', 'https://github.com/UmbraProjects/PostersPlus', 'GNU Affero General Public License v3.0.'],
+];
+function renderLicences() {
+  let html = `<div class="panel"><div class="panel-header"><span class="panel-title">Licences &amp; attributions</span></div><div class="panel-body">`;
+  html += `<table class="kv licences"><tr><td><a href="https://www.themoviedb.org" target="_blank" rel="noopener"><img src="/static/tmdb-logo.svg" alt="TMDB"></a></td><td>This product uses the TMDB API but is not endorsed or certified by TMDB. Posters, backdrops, logos, metadata and trending lists.</td></tr>` + LICENCES.map(([name, url, text]) =>
+    `<tr><td><a href="${esc(url)}" target="_blank" rel="noopener">${esc(name)}</a></td><td>${esc(text)}</td></tr>`).join('') + `</table>`;
+  html += `<p style="font-size:10px;color:var(--text-muted);margin:var(--gap-field) 0">None of these services endorse or certify PostersPlus.</p>`;
+  return html + `</div></div>`;
 }
 
 function renderFonts() {
@@ -2388,6 +2445,11 @@ const ART_LANGS = [['en','English'],['es','Spanish'],['es-es','Spanish (Spain)']
 const ART_PROVIDERS = { tmdb: 'TMDB', fanart: 'Fanart', tvdb: 'TVDB' };
 // Where a chosen image came from, including one the operator supplied.
 const ART_ORIGIN = Object.assign({ custom: 'your image' }, ART_PROVIDERS);
+// Poster sources an override can stand in for.  Cinemeta has no candidates of
+// its own to browse, and its posters are always served as-is, so it is only
+// offered on the OA Poster slot.
+const ART_SOURCES = Object.assign({}, ART_PROVIDERS, { cinemeta: 'Cinemeta' });
+const artSlotSources = slot => Object.keys(ART_SOURCES).filter(s => s !== 'cinemeta' || slot === 'original');
 const ART_SLOTS = {
   textless:           { label: 'Textless Poster', kind: 'posters' },
   original:           { label: 'OA Poster', kind: 'posters' },
@@ -2423,6 +2485,7 @@ function artSlotLang() { return artNoLang(art.slot) ? '' : art.lang; }
 async function loadArtList() {
   const r = await api('/admin/api/art/overrides');
   art.list = r.ok ? r.body.titles : [];
+  art.remote = r.ok ? r.body.remote : null;
   if (activeView === 'artwork' && !art.title) renderView();
 }
 // Both search boxes search as you type, like the configurator's: 500 ms
@@ -2468,10 +2531,9 @@ async function artOpen(mediaType, tmdbId) {
   art.title = r.body;
   art.previewTs = Date.now();
   // Default ticks: every source this instance offers users.
-  const offered = Object.keys(ART_PROVIDERS).filter(s => r.body.offered_sources[s]);
   for (const slot of ['textless', 'original']) {
     const o = artOverride(slot, art.lang);
-    art.sources[slot] = new Set(o ? o.sources : offered);
+    art.sources[slot] = new Set(o ? o.sources : artSlotSources(slot).filter(s => r.body.offered_sources[s]));
   }
   if (art.lang === 'null' && art.slot !== 'logo') art.slot = 'logo';
   renderView();
@@ -2738,7 +2800,7 @@ function artThumbFor(path, kind) {
 // or a request is dropped, and so are API keys, which stay out of storage
 // (the server's own are used).
 const ART_PREVIEW_KEY = 'postersplus_art_preview_params';
-const ART_PREVIEW_DROP = new Set(['tmdb_id', 'imdb_id', 'stremio_id', 'anilist_id', 'kitsu_id', 'type', 'shape',
+const ART_PREVIEW_DROP = new Set(['tmdb_id', 'imdb_id', 'stremio_id', 'anilist_id', 'kitsu_id', 'mal_id', 'type', 'shape',
   'access_key', 'tmdb_key', 'mdblist_key', 'logo_language', 'use_original_art', 'landscape_art', 'nocache', 'debug', '_', '_ts']);
 function artPreviewParams() {
   try { return new URLSearchParams(localStorage.getItem(ART_PREVIEW_KEY) || ''); } catch (_) { return new URLSearchParams(); }
@@ -2807,6 +2869,13 @@ function renderArtwork() {
     html += art.results.length ? `<div class="art-results">${art.results.map(r => `<button type="button" class="art-result" onclick="artOpen('${r.media_type}','${esc(r.tmdb_id)}')">${r.thumb ? `<img src="${esc(r.thumb)}" alt="" loading="lazy">` : '<span class="ph"></span>'}<span class="meta"><div class="name">${esc(r.title)}</div><div class="sub">${r.media_type === 'tv' ? 'Series' : 'Movie'}${r.year ? ' · ' + esc(r.year) : ''} · TMDB ${esc(r.tmdb_id)}</div></span>${r.overridden ? '<span class="chip file">chosen art</span>' : ''}</button>`).join('')}</div>`
       : `<div class="art-empty">Nothing found for “${esc(art.q)}”.</div>`;
   }
+  const rm = art.remote;
+  if (rm && rm.url) {
+    const what = rm.error ? `last check failed: ${esc(rm.error)}`
+      : rm.synced_at ? `${rm.count || 0} override${rm.count === 1 ? '' : 's'}, checked ${fmtAgo(rm.checked_at || rm.synced_at)}${rm.skipped ? ` (${rm.skipped} skipped)` : ''}`
+      : 'not synced yet';
+    html += `<div class="field-hint" style="margin:8px 0 0">Following <code>${esc(rm.url)}</code>: ${what}. Your own choices win where both have one.</div>`;
+  }
   html += `<div class="field-head" style="margin-top:8px"><span class="field-label">Titles with chosen art</span></div>`;
   if (!art.list) html += `<div class="art-empty">Loading…</div>`;
   else if (!art.list.length) html += `<div class="art-empty">None yet.</div>`;
@@ -2814,13 +2883,20 @@ function renderArtwork() {
   return html + `</div></div>`;
 }
 
+// A followed instance's override for a slot, when no local one replaces it.
+function artRemoteOverride(slot, lang) {
+  const t = art.title; if (!t || !t.remote_overrides) return null;
+  const key = artNoLang(slot) ? '' : lang;
+  return t.remote_overrides.find(o => o.slot === slot && o.language === key && !o.replaced) || null;
+}
 function artSlotCard(k) {
   const t = art.title, v = ART_SLOTS[k];
   const o = artOverride(k, art.lang);
+  const ro = o ? null : artRemoteOverride(k, art.lang);
   const cur = t.current[k];
-  const path = o ? o.path : (art.lang === 'null' ? null : cur && cur.path);
+  const path = o ? o.path : ro ? ro.path : (art.lang === 'null' ? null : cur && cur.path);
   const label = v.label;
-  const sub = o ? (o.provider === 'custom' ? 'Your image' : ART_ORIGIN[o.provider]) : 'Automatic';
+  const sub = o ? (o.provider === 'custom' ? 'Your image' : ART_ORIGIN[o.provider]) : ro ? 'Shared' : 'Automatic';
   const thumb = path ? `<img src="${esc(o && o.crop ? artPreviewUrl(false) : artThumbFor(path, v.kind))}" alt="" referrerpolicy="no-referrer">` : '';
   return `<button type="button" class="art-slot ${k === art.slot ? 'active' : ''} ${v.kind}" onclick="artSetSlot('${k}')">
     <span class="art-slot-thumb">${thumb}</span>
@@ -2924,13 +3000,13 @@ function renderArtTitle() {
       <div><div class="art-current-who">${esc(who)}</div><div class="art-current-when">${when}</div>${revert}</div></div>`;
   if (artSourced(slot)) {
     const set = art.sources[slot] || new Set();
-    side += `<div class="art-side-sub">Apply when a user's poster source is</div><div class="art-pills">${Object.entries(ART_PROVIDERS).map(([s, n]) => {
+    side += `<div class="art-side-sub">Apply when a user's poster source is</div><div class="art-pills">${artSlotSources(slot).map(s => [s, ART_SOURCES[s]]).map(([s, n]) => {
       const offered = t.offered_sources[s];
       return `<button type="button" class="${set.has(s) ? 'on' : ''} ${offered ? '' : 'off'}" aria-pressed="${set.has(s)}" title="${offered ? '' : 'Not offered to users on this instance'}" onclick="artToggleSource('${slot}','${s}')">${esc(n)}</button>`;
     }).join('')}</div>
       <div class="art-side-hint">${slot === 'textless' ? 'Our logo is drawn on top and the burned-in-text scan is skipped, so pick art with no title.' : 'Served as-is, title and all, to users with Original Art on.'}</div>`;
   } else if (kind === 'backdrops') {
-    side += `<div class="art-side-hint">${slot === 'landscape' ? 'The landscape layout\'s art. Our logo is drawn on top, so pick art with no title.' : 'Served as-is, title and all, to landscape users with Original Art on.'} Landscape art always comes from TMDB, so this applies to every user.</div>`;
+    side += `<div class="art-side-hint">${slot === 'landscape' ? 'The landscape layout\'s art. Our logo is drawn on top, so pick art with no title.' : 'Served as-is, title and all, to landscape users with Original Art on.'} It applies to every landscape user, whatever their art source.</div>`;
   } else {
     side += `<div class="art-side-hint">Used whatever the user's poster source.${art.lang === 'null' ? ' A no-language logo stands in wherever a user\'s logo order reaches "neutral".' : ''}</div>`;
   }

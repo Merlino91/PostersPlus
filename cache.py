@@ -412,6 +412,23 @@ def init_db() -> None:
     """)
     # A textless pick's manual crop, "x,y,zoom" (see art_overrides.parse_crop).
     _add_column_if_missing(conn, "art_overrides", "crop", "TEXT")
+    # Another instance's overrides, followed (ART_OVERRIDES_REMOTE_URL): the
+    # same rows, replaced wholesale at each sync.  Local rows win.
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS art_overrides_remote (
+            media_type TEXT NOT NULL,
+            tmdb_id    TEXT NOT NULL,
+            slot       TEXT NOT NULL,
+            language   TEXT NOT NULL DEFAULT '',
+            path       TEXT NOT NULL,
+            provider   TEXT NOT NULL,
+            sources    TEXT NOT NULL DEFAULT '',
+            title      TEXT NOT NULL DEFAULT '',
+            updated_at REAL NOT NULL,
+            crop       TEXT,
+            PRIMARY KEY (media_type, tmdb_id, slot, language)
+        )
+    """)
 
     for statement in REPORT_SCHEMA:
         conn.execute(statement)
@@ -907,23 +924,33 @@ def invalidate_trending_turnover(media_type: str, changed_ids: "set[str]") -> in
     them in Python the way the per-title calls did, and deletes the matches in
     one transaction.  Returns the number of rows deleted.
 
-    *media_type* is the snapshot's: "anime" ids are "anilist:<id>", the anime
-    namespace a composite key leads with; anything else is a TMDB id matched
-    against the key's tail, with "tv" and "series" treated as one.
+    *media_type* is the snapshot's.  A TMDB id is matched against the key's
+    tail, with "tv" and "series" treated as one.  The anime lists' ids are
+    "anilist:<id>" (or TMDB ids, from a custom source), and any anime poster
+    carries their rank, whatever id it was asked for by: each AniList id is
+    matched as the anime namespace a composite key leads with, and through
+    the id mapping as its Kitsu entry and its TMDB title too.
     """
     if not changed_ids:
         return 0
-    if media_type == "anime":
-        prefixes = tuple(f"{anime_key}:" for anime_key in changed_ids)
+    prefixes: tuple[str, ...] = ()
+    tail_ids = set(changed_ids)
+    tv_like = media_type in ("tv", "series", "anime")
+    if media_type in ("anime", "anime_movie"):
+        import anime_ids
+        anilist = {int(k.split(":", 1)[1]) for k in changed_ids
+                   if k.startswith("anilist:") and k.split(":", 1)[1].isdigit()}
+        tail_ids -= {k for k in changed_ids if k.startswith("anilist:")}
+        kitsu, tmdb_tv, tmdb_movie = anime_ids.ids_for_anilist(anilist)
+        prefixes = tuple([f"anilist:{a}:" for a in anilist] + [f"kitsu:{k}:" for k in kitsu])
+        tail_ids |= {str(t) for t in (tmdb_tv if tv_like else tmdb_movie)}
+    types = ("tv", "series") if tv_like else ("movie",)
 
-        def _match(key: str) -> bool:
-            return key.startswith(prefixes)
-    else:
-        types = ("tv", "series") if media_type in ("tv", "series") else (media_type,)
-
-        def _match(key: str) -> bool:
-            parts = key.split(":")
-            return len(parts) >= 4 and parts[-3] in changed_ids and parts[-2] in types
+    def _match(key: str) -> bool:
+        if prefixes and key.startswith(prefixes):
+            return True
+        parts = key.split(":")
+        return len(parts) >= 4 and parts[-3] in tail_ids and parts[-2] in types
 
     if COMPOSITE_MEM_ENTRIES > 0:
         with _composite_l1_lock:
@@ -1521,6 +1548,17 @@ def get_cached_trending_details(media_type: str) -> dict[str, dict]:
     except Exception as exc:
         logger.error(f"Trending details read error: {exc}")
         return {}
+
+
+def expire_trending_snapshot(media_type: str) -> None:
+    """Mark *media_type*'s snapshot expired, so the next request rebuilds it.
+    Kept, not deleted: the rebuild diffs against it to invalidate what moved."""
+    try:
+        with _db_lock:
+            get_db().execute("UPDATE trending_cache SET cached_at = 0 WHERE media_type = ?", (media_type,))
+            get_db().commit()
+    except Exception as exc:
+        logger.error(f"Trending snapshot expire error: {exc}")
 
 
 def set_cached_trending_snapshot(

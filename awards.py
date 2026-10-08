@@ -1355,6 +1355,8 @@ def _text_center(
         ascent, descent = 0, 0
 
     x = cx - bbox_width / 2 - bbox[0]
+    if fonts.has_arabic(text):
+        return x, fonts.arabic_top(font, bbox, cy)
     optical_adjust = px(ascent * 0.22)
     y = cy - (ascent + descent) / 2 - descent + optical_adjust
 
@@ -1529,13 +1531,13 @@ def dominant_frost_rgb(
 # actually repeats.
 def _notch_font(size_ss: float):
     """The current render's label font (fonts.label_path) at *size_ss*."""
-    return _notch_font_at(fonts.label_path(), size_ss)
+    return _notch_font_at(fonts.label_path(), fonts.shaping(), size_ss)
 
 
 @lru_cache(maxsize=16)
-def _notch_font_at(font_path: str, size_ss: float):
+def _notch_font_at(font_path: str, shaped: bool, size_ss: float):
     try:
-        return ImageFont.truetype(font_path, size_ss)
+        return fonts.truetype(font_path, size_ss, shaped)
     except IOError:
         return ImageFont.load_default()
 
@@ -1563,43 +1565,26 @@ def _notch_shape_1x(w: int, h: int, radius: int, frost_opacity: float) -> tuple[
 
 def _notch_label_layer_1x(label: str, size_ss: int, ss: int, w: int, h: int,
                           ink: tuple[int, int, int, int]) -> Image.Image:
-    return _notch_label_layer_1x_in(fonts.label_path(), label, size_ss, ss, w, h, ink)
+    return _notch_label_layer_1x_in(fonts.label_path(), fonts.shaping(), label, size_ss, ss, w, h, ink)
 
 
 @lru_cache(maxsize=64)
-def _notch_label_layer_1x_in(font_path: str, label: str, size_ss: int, ss: int, w: int, h: int,
+def _notch_label_layer_1x_in(font_path: str, shaped: bool, label: str, size_ss: int, ss: int, w: int, h: int,
                              ink: tuple[int, int, int, int]) -> Image.Image:
-    """The frosted notch's label at 1x, anti-aliased by FreeType itself."""
+    """The frosted notch's label at 1x, anti-aliased by FreeType itself.
+
+    Positioned where the 3x layout puts it — the centre from _text_center at
+    3x, divided down — and drawn from that baseline, rather than re-centred with
+    1x metrics: those round to whole pixels (int(ascent * 0.22) above all) and
+    sat the label a pixel high."""
+    font3 = _notch_font_at(font_path, shaped, size_ss)
+    tx, ty = _text_center(ImageDraw.Draw(Image.new("L", (1, 1))), label, font3, w * ss / 2, h * ss / 2)
+    baseline = (ty + font3.getmetrics()[0]) / ss
     layer = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-    ldraw = ImageDraw.Draw(layer)
-    font1x = _notch_font_at(font_path, size_ss / ss)
-    if label.startswith("★"):
-        _FA_AWARD = "\uf559"
-        rest_str = label[1:].strip()
-        fa_path = os.path.join(_FONTS_DIR, "Font Awesome 7 Free-Solid-900.otf")
-        try:
-            fa_font1x = ImageFont.truetype(fa_path, max(1, int((size_ss / ss) * 0.85)))
-        except IOError:
-            fa_font1x = font1x
-        gap = (size_ss / ss) * 0.35
-        icon_w = ldraw.textlength(_FA_AWARD, font=fa_font1x)
-        rest_w = ldraw.textlength(rest_str, font=font1x)
-        total_w = icon_w + gap + rest_w
-        start_x = (w - total_w) / 2
-
-        t_bb = ldraw.textbbox((0, 0), rest_str or "A", font=font1x)
-        fa_bb = ldraw.textbbox((0, 0), _FA_AWARD, font=fa_font1x)
-        _fa_dy = int(round((((t_bb[1] + t_bb[3]) - (fa_bb[1] + fa_bb[3])) / 2.0)))
-        _, text_y = _text_center(ldraw, rest_str, font1x, w / 2, h / 2)
-        icon_y = text_y + _fa_dy
-
-        ldraw.text((start_x, icon_y), _FA_AWARD, font=fa_font1x, fill=ink)
-        ldraw.text((start_x + icon_w + gap, text_y), rest_str, font=font1x, fill=ink)
-    else:
-        font3 = _notch_font_at(font_path, size_ss)
-        tx, ty = _text_center(ImageDraw.Draw(Image.new("L", (1, 1))), label, font3, w * ss / 2, h * ss / 2)
-        baseline = (ty + font3.getmetrics()[0]) / ss
-        ldraw.text((tx / ss, baseline), label, font=font1x, fill=ink, anchor="ls")
+    # True division: size_ss is a whole multiple of ss at 500 wide, but above it
+    # (pxscale) it is fractional, and flooring would shrink the label again.
+    ImageDraw.Draw(layer).text((tx / ss, baseline), label, font=_notch_font_at(font_path, shaped, size_ss / ss),
+                               fill=ink, anchor="ls")
     return layer
 
 
@@ -1609,12 +1594,12 @@ def _notch_heights(height: int, size_ratio_h: float, font_size_ratio: float,
     this tall, in the current render's label font.  Depends only on sizes and
     the font, never on the label, so the side chip's height (and the graphic
     badge row that lines up with it) is known without drawing anything."""
-    return _notch_heights_in(fonts.label_path(), height, size_ratio_h, font_size_ratio,
-                             notch_pad_ratio)
+    return _notch_heights_in(fonts.label_path(), fonts.shaping(), height, size_ratio_h,
+                             font_size_ratio, notch_pad_ratio)
 
 
 @lru_cache(maxsize=32)
-def _notch_heights_in(font_path: str, height: int, size_ratio_h: float, font_size_ratio: float,
+def _notch_heights_in(font_path: str, shaped: bool, height: int, size_ratio_h: float, font_size_ratio: float,
                       notch_pad_ratio: float) -> tuple[int, int, int, int]:
     SS = 3
     # base_h is the nominal height size_ratio_h asks for.  It drives the font
@@ -1626,7 +1611,7 @@ def _notch_heights_in(font_path: str, height: int, size_ratio_h: float, font_siz
     # layout instead of rounding its own way.  Plain int() at 500.
     base_h = px(height * 0.075 * size_ratio_h)
     font_size_ss = px(base_h * font_size_ratio) * SS
-    font = _notch_font_at(font_path, font_size_ss)
+    font = _notch_font_at(font_path, shaped, font_size_ss)
     _tmp_d = ImageDraw.Draw(Image.new("L", (1, 1)))
 
     # Vertical padding.  Floored so an aggressive notch_pad_ratio crops the empty
@@ -1731,8 +1716,8 @@ def draw_award_badge(
         drawn = draw_award_badge(
             image.transpose(turn), label, sash_type, size_ratio_w, size_ratio_h, notch_style,
             0.0, notch_pad_ratio, font_size_ratio, frost_opacity, frost_saturation,
-            frost_reference, tint_rgb, star, text_color, "center",
-            body_opacity=body_opacity, _geom=image.size, _along=(image.height - y) if left else y)
+            frost_reference, tint_rgb, star, text_color, "center", body_opacity,
+            _geom=image.size, _along=(image.height - y) if left else y)
         return drawn.transpose(back)
 
     width, height = _geom or image.size
@@ -1830,28 +1815,46 @@ def draw_award_badge(
         )
 
     if notch_style == "frosted":
-        # Notch shape mask (square top, rounded bottom)
-        mask, frost_alpha = _notch_shape_1x(badge_w, badge_h, radius, frost_opacity)
+        # ── Frosted: blurred poster crop tinted toward the region's dominant colour ──
+        # Crop from the actual composite position so the blur matches what's visible
+        crop_y = max(0, by_composite)
+        region = image.crop((bx, crop_y, bx + badge_w, crop_y + badge_h))
+        blur_r = max(fixed(4), px(_chip_badge_h * 0.35))
+        # Drawn at 1x.  The 3x pass bought nothing here: the body is a blurred
+        # crop (upscaling it 3x and back is a costly identity), the frost is a
+        # flat colour, the shape mask is anti-aliased once and cached, and the
+        # label is anti-aliased by FreeType.  ~1.4 ms instead of ~7.8 ms.
+        blurred = region.filter(ImageFilter.GaussianBlur(radius=blur_r)).convert("RGBA")
 
-        # Dominant colour of the poster region / caller tint
+        # Dominant colour of the actual poster region (a real cluster, not a
+        # muddy mean — see dominant_frost_rgb).  tint_rgb (when supplied) overrides
+        # it so the notch can match the frosted rating bar.
+        # Colour comes from tint_rgb (a whole-poster sample the caller takes from
+        # the un-graded art); the blurred texture still comes from the image.
         if tint_rgb is not None:
             dr, dg, db = tint_rgb
         else:
             dr, dg, db = dominant_frost_rgb(image)
 
-        # ── Frosted Glass (Dev original) ──
-        # Crop from the actual composite position so the blur matches what's visible
-        crop_y = max(0, by_composite)
-        region = image.crop((bx, crop_y, bx + badge_w, crop_y + badge_h))
-        blur_r = max(fixed(4), px(_chip_badge_h * 0.35))
-        blurred = region.filter(ImageFilter.GaussianBlur(radius=blur_r)).convert("RGBA")
-
+        # Boost toward a bright, saturated version of that colour so the tint
+        # reads clearly: floor V so dark regions lift, scale S by frost_saturation,
+        # then mix 60 % of that tint with 40 % white for the frosted feel (or, in
+        # reference mode, hew to the poster's true colour).
         fr_r, fr_g, fr_b = _frosted_tint(dr, dg, db, frost_saturation, frost_reference)
+
+        # Notch shape mask (square top, rounded bottom)
+        mask, frost_alpha = _notch_shape_1x(badge_w, badge_h, radius, frost_opacity)
+
+        # Lay blurred crop under the tinted frost layer (alpha ~210 = quite opaque)
         blurred.putalpha(mask)
         frost = Image.new("RGBA", (badge_w, badge_h), (fr_r, fr_g, fr_b, 0))
         frost.putalpha(frost_alpha)
         badge = Image.alpha_composite(blurred, frost)
 
+        # Text: dark on a light panel, light on a dark one (a matched panel can be
+        # either — every other frost is light by construction).
+        # (text_color is deliberately not consulted here: this style has always
+        # ignored it, and honouring it now would restyle existing posters.)
         badge = Image.alpha_composite(badge, _notch_label_layer_1x(
             label, font_size_ss, SS, badge_w, badge_h, (*_frost_ink(fr_r, fr_g, fr_b), 245)
         ))
@@ -1996,12 +1999,12 @@ def draw_award_badge(
         rest_str = label[1:].strip()
         try:
             fa_font = ImageFont.truetype(
-                os.path.join(_fonts_dir, "Font Awesome 7 Free-Solid-900.otf"),
-                max(1, int(font_size_ss * 0.85))
+                os.path.join(_FONTS_DIR, "Font Awesome 7 Free-Solid-900.otf"),
+                max(1, int(font.size * 0.85))
             )
         except IOError:
             fa_font = font
-        gap = int(font_size_ss * 0.35)
+        gap = int(font.size * 0.35)
         icon_w = td.textlength(_FA_AWARD, font=fa_font)
         rest_w = td.textlength(rest_str, font=font)
         total_w = icon_w + gap + rest_w
@@ -2050,6 +2053,10 @@ _CHIP_H          = 0.82    # of the notch's drawn height
 _CHIP_PAD_X      = 0.80    # horizontal padding, of the chip's height
 _CHIP_RADIUS     = 0.30    # of the chip's height
 _CHIP_SHADOW_A   = 90      # peak drop-shadow alpha under the chip
+
+
+# Image.info key under which a side chip leaves its (left, top, right, bottom).
+CHIP_BOX_KEY = "posters_chip_box"
 
 
 @lru_cache(maxsize=32)
@@ -2179,6 +2186,9 @@ def _place_chip(image: Image.Image, badge: Image.Image, mask: Image.Image,
     cl, ct = max(0, -sx), max(0, -sy)
     result.alpha_composite(shadow.crop((cl, ct, shadow.width, shadow.height)), (sx + cl, sy + ct))
     result.alpha_composite(badge, (x, y))
+    # The chip's own box, for anything laid out against it: measured by what
+    # changed, the shadow would count on bright art and not on dark.
+    result.info[CHIP_BOX_KEY] = (x, y, x + w, y + h)
     return result
 
 
@@ -2311,10 +2321,6 @@ def _sash_skia(
     c.drawRect(_skia.Rect(0, margin, length, height - margin),
                _skia.Paint(AntiAlias=True, BlendMode=_skia.BlendMode.kSrc, Color=col(dark)))
 
-    font = _skia.Font(_skia_typeface(fonts.label_path()), font_ss.size / ss)
-    font.setSubpixel(True)
-    font.setEdging(_skia.Font.Edging.kAntiAlias)
-    tp = _skia.Paint(AntiAlias=True)
     if label.startswith("★"):
         _FA_AWARD = "\uf559"
         rest_str = label[1:].strip()
@@ -2486,7 +2492,9 @@ def draw_award_sash(
         font = ImageFont.load_default()
 
     _txt_rgb = text_color if text_color is not None else (225, 225, 225)
-    if _HAS_SKIA:
+    # Skia's drawString neither joins nor orders letters, so a shaped label
+    # (fonts.shaping) takes the PIL path, whose text is laid out by raqm.
+    if _HAS_SKIA and not fonts.shaping():
         sash = _sash_skia(
             (ex - ox, ey - oy), _to_poster(sl / 2, sh / 2), (ox, oy), -45 if left else 45,
             (sash_length, sash_height), (edge / SS, margin / SS), (hi, lo, border_colour, dark),
@@ -2507,7 +2515,6 @@ def draw_award_sash(
 
         # Label: drawn level on a layer just wide enough for it, centred on the band,
         # then that layer alone is turned and laid on the band.
-        _probe = ImageDraw.Draw(Image.new("L", (1, 1)))
         if label.startswith("★"):
             _FA_AWARD = "\uf559"
             rest_str = label[1:].strip()
@@ -2537,10 +2544,11 @@ def draw_award_sash(
             td.text((start_x, icon_y), _FA_AWARD, font=fa_font, fill=(*_txt_rgb, 225))
             td.text((start_x + icon_w + gap, text_y), rest_str, font=font, fill=(*_txt_rgb, 225))
         else:
-            _bb = _probe.textbbox((0, 0), label, font=font)
-            lw = max(1, int(_bb[2] - _bb[0] + 8 * SS))
+            _bb    = _probe.textbbox((0, 0), label, font=font)
+            lw     = max(1, int(_bb[2] - _bb[0] + 8 * SS))
             text_layer = Image.new("RGBA", (lw, round(sh)), (0, 0, 0, 0))
-            td = ImageDraw.Draw(text_layer)
+            td         = ImageDraw.Draw(text_layer)
+
             tx, ty = _text_center(td, label, font, lw / 2, sh / 2)
             td.text((tx + 2 * SS * k, ty + 2 * SS * k), label, font=font, fill=(0, 0, 0, 180))
             td.text((tx, ty),                   label, font=font, fill=(*_txt_rgb, 225))

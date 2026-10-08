@@ -139,10 +139,14 @@ class LandscapeSplitParamTests(unittest.TestCase):
         block = re.search(r"const _SHARED_PARAM = \{(.*?)\};", html, re.S).group(1)
         # badge_display_mode is kept per shape by the configurator but is not a
         # split param: landscape reads only landscape_badge_display_mode (opt-in,
-        # no fallback to the portrait mode), which the configurator marks.
-        self.assertIn("const _SHARED_NO_FALLBACK = new Set(['badge_display_mode']);", html)
+        # no fallback to the portrait mode), which the configurator marks — as
+        # it does the vignette levels landscape reads from landscape_ alone.
+        no_fallback = re.search(r"const _SHARED_NO_FALLBACK = new Set\(\[(.*?)\]\);", html, re.S).group(1)
+        self.assertEqual(sorted(re.findall(r"'([a-z_0-9]+)'", no_fallback)),
+                         sorted(["badge_display_mode", *main._LANDSCAPE_OWN_PARAMS]))
         self.assertEqual(sorted(re.findall(r":\s*'([a-z_0-9]+)'", block)),
-                         sorted([*main._LANDSCAPE_SPLIT_PARAMS, "badge_display_mode"]))
+                         sorted([*main._LANDSCAPE_SPLIT_PARAMS, *main._LANDSCAPE_OWN_PARAMS,
+                                 "badge_display_mode"]))
 
 
 class ShapeCacheKeyTests(unittest.TestCase):
@@ -166,7 +170,7 @@ class ShapeCacheKeyTests(unittest.TestCase):
 
 
 class ConfiguratorDualUrlTests(unittest.TestCase):
-    """Copy config's Nuvio entry, and what a dual URL may leave out."""
+    """Copy config's shared "{shape}" entry, and what a dual URL may leave out."""
 
     @classmethod
     def setUpClass(cls):
@@ -176,13 +180,12 @@ class ConfiguratorDualUrlTests(unittest.TestCase):
         start = self.html.index(f"{{ id: '{template_id}',")
         return self.html[start : self.html.index("}", self.html.index("where:", start)) + 1]
 
-    def test_only_nuvio_sends_the_shape_placeholder(self):
-        # AIOMetadata and Xperience share Nuvio's id placeholders but have no
-        # shape one, which is why it is a separate axis from COPY_SHAPE_OPTIMAL.
-        self.assertIn("COPY_SHAPE_DUAL", self._template_entry("nuvio"))
-        for client in ("aiometadata", "xperience", "bingecat", "discoverplus"):
-            with self.subTest(client=client):
-                self.assertNotIn("COPY_SHAPE_DUAL", self._template_entry(client))
+    def test_the_shared_url_sends_the_shape_placeholder(self):
+        # AIOMetadata, Nuvio, Bingecat and Xperience all fill "{shape}";
+        # Discover+ does not, which is why it is a separate axis from
+        # COPY_SHAPE_OPTIMAL.
+        self.assertIn("COPY_SHAPE_DUAL", self._template_entry("standard"))
+        self.assertNotIn("COPY_SHAPE_DUAL", self._template_entry("discoverplus"))
 
     def test_the_placeholder_is_only_ever_the_template_url(self):
         # The live preview renders one concrete title, so there is nothing to
@@ -199,11 +202,12 @@ class ConfiguratorDualUrlTests(unittest.TestCase):
         body = block.group(1)
         self.assertIn("dual && !split.has(key)             ? [pDefaults, lDefaults]", body)
         # A landscape_ twin is judged against what landscape falls back to.
-        self.assertIn("params.has(base) && !omit.has(base) ? params.get(base) : lDefaults[base]", body)
+        # Those it never falls back for are judged against its default alone.
+        self.assertIn("params.has(base) && !omit.has(base) && !own.has(base) ? params.get(base) : lDefaults[base]", body)
 
     def test_a_dual_url_carries_both_shapes_per_shape_values(self):
-        self.assertIn("if (emitAll)       emitShared(pShared, '', true);", self.html)
-        self.assertIn("if (emitLandscape) emitShared(lShared, 'landscape_', false);", self.html)
+        self.assertIn("if (emitAll)       emitShared(pShared, '');", self.html)
+        self.assertIn("if (emitLandscape) emitShared(lShared, 'landscape_');", self.html)
 
     def test_the_divergent_defaults_are_the_ones_that_make_that_matter(self):
         # If these two sets ever stop disagreeing the intersection above becomes

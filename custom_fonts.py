@@ -17,10 +17,7 @@ posters drawn in it.
 """
 from __future__ import annotations
 
-try:
-    import fcntl
-except ImportError:
-    fcntl = None  # Windows compatibility fallback
+import fcntl
 import hashlib
 import io
 import json
@@ -210,7 +207,7 @@ def _check_draws(data: bytes) -> None:
     from PIL import ImageFont
     import fontprep
     try:
-        font = ImageFont.truetype(io.BytesIO(data), 40)
+        font = ImageFont.truetype(io.BytesIO(data), 40, layout_engine=ImageFont.Layout.BASIC)
         notdef = bytes(font.getmask("\U0010FFFD"))
         for text in (*fontprep.LABEL_SYMBOLS, "Sci-Fi 88"):
             mask = font.getmask(text)
@@ -237,8 +234,7 @@ def _locked():
     with _write_lock:
         os.makedirs(_dir(), exist_ok=True)
         with open(os.path.join(_dir(), ".lock"), "w") as fh:
-            if fcntl is not None:
-                fcntl.flock(fh, fcntl.LOCK_EX)
+            fcntl.flock(fh, fcntl.LOCK_EX)
             yield
 
 

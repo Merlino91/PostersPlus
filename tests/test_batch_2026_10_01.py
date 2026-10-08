@@ -179,6 +179,7 @@ class LandscapeSettingsTests(unittest.TestCase):
     def test_defaults_leave_the_cache_key_alone(self):
         before = main._render_config_signature(main.build_request_config({"shape": "landscape"}))
         for name in ("landscape_greyscale", "landscape_badge_style", "landscape_badge_text_color",
+                     "landscape_badge_shape", "landscape_badge_case",
                      "landscape_winner_star", "landscape_logo_scale", "landscape_rating_badges",
                      "landscape_art_source", "quality_after_digital", "badge_quality_style"):
             self.assertNotIn(name, before)
@@ -203,10 +204,10 @@ class LandscapeSettingsTests(unittest.TestCase):
     def test_tvdb_art_source_needs_the_operator_switch(self):
         params = {"shape": "landscape", "landscape_art_source": "tvdb"}
         with mock.patch.object(tvdb, "poster_source_enabled", return_value=False):
-            self.assertEqual(main.build_request_config(params).landscape_art_source, "tmdb")
+            self.assertEqual(main.build_request_config(params).landscape_art_source_tv, "tmdb")
         with mock.patch.object(tvdb, "poster_source_enabled", return_value=True):
-            self.assertEqual(main.build_request_config(params).landscape_art_source, "tvdb")
-            self.assertEqual(main.build_request_config({**params, "shape": "portrait"}).landscape_art_source,
+            self.assertEqual(main.build_request_config(params).landscape_art_source_tv, "tvdb")
+            self.assertEqual(main.build_request_config({**params, "shape": "portrait"}).landscape_art_source_tv,
                              "tmdb")
 
     def test_rating_badges_take_the_scores_place_and_fall_back_to_text(self):
