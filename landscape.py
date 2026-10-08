@@ -39,9 +39,10 @@ from __future__ import annotations
 
 import colorsys
 import dataclasses
+import os
 
 import numpy as np
-from PIL import Image, ImageChops, ImageDraw, ImageFilter
+from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 
 import fonts
 from ratings import _cairo_pill_mask
@@ -305,7 +306,7 @@ def _draw_vignette(image: Image.Image, art: Image.Image, cfg,
             cover_box = ((0, max(0, band_y - int(height * _VIGNETTE_SEAM_H)), width, height)
                          if bottom_tinted
                          else (0, 0, width, min(height, top_h + int(height * _VIGNETTE_SEAM_H))))
-            tint, conf, second, cover = _fog_pick(
+            tint, conf, second, cover, *_ = _fog_pick(
                 art, cover_box, cfg.vignette_color_local, cfg.vignette_color_ramp, _fog_faces(art),
             )
     if tint is None:
