@@ -1571,20 +1571,37 @@ def _notch_label_layer_1x(label: str, size_ss: int, ss: int, w: int, h: int,
 @lru_cache(maxsize=64)
 def _notch_label_layer_1x_in(font_path: str, shaped: bool, label: str, size_ss: int, ss: int, w: int, h: int,
                              ink: tuple[int, int, int, int]) -> Image.Image:
-    """The frosted notch's label at 1x, anti-aliased by FreeType itself.
-
-    Positioned where the 3x layout puts it — the centre from _text_center at
-    3x, divided down — and drawn from that baseline, rather than re-centred with
-    1x metrics: those round to whole pixels (int(ascent * 0.22) above all) and
-    sat the label a pixel high."""
-    font3 = _notch_font_at(font_path, shaped, size_ss)
-    tx, ty = _text_center(ImageDraw.Draw(Image.new("L", (1, 1))), label, font3, w * ss / 2, h * ss / 2)
-    baseline = (ty + font3.getmetrics()[0]) / ss
+    """The frosted notch's label at 1x, anti-aliased by FreeType itself."""
     layer = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-    # True division: size_ss is a whole multiple of ss at 500 wide, but above it
-    # (pxscale) it is fractional, and flooring would shrink the label again.
-    ImageDraw.Draw(layer).text((tx / ss, baseline), label, font=_notch_font_at(font_path, shaped, size_ss / ss),
-                               fill=ink, anchor="ls")
+    ldraw = ImageDraw.Draw(layer)
+    font1x = _notch_font_at(font_path, shaped, size_ss / ss)
+    if label.startswith("★"):
+        _FA_AWARD = "\uf559"
+        rest_str = label[1:].strip()
+        fa_path = os.path.join(_FONTS_DIR, "Font Awesome 7 Free-Solid-900.otf")
+        try:
+            fa_font1x = ImageFont.truetype(fa_path, max(1, int((size_ss / ss) * 0.85)))
+        except IOError:
+            fa_font1x = font1x
+        gap = (size_ss / ss) * 0.35
+        icon_w = ldraw.textlength(_FA_AWARD, font=fa_font1x)
+        rest_w = ldraw.textlength(rest_str, font=font1x)
+        total_w = icon_w + gap + rest_w
+        start_x = (w - total_w) / 2
+
+        t_bb = ldraw.textbbox((0, 0), rest_str or "A", font=font1x)
+        fa_bb = ldraw.textbbox((0, 0), _FA_AWARD, font=fa_font1x)
+        _fa_dy = int(round((((t_bb[1] + t_bb[3]) - (fa_bb[1] + fa_bb[3])) / 2.0)))
+        _, text_y = _text_center(ldraw, rest_str, font1x, w / 2, h / 2)
+        icon_y = text_y + _fa_dy
+
+        ldraw.text((start_x, icon_y), _FA_AWARD, font=fa_font1x, fill=ink)
+        ldraw.text((start_x + icon_w + gap, text_y), rest_str, font=font1x, fill=ink)
+    else:
+        font3 = _notch_font_at(font_path, shaped, size_ss)
+        tx, ty = _text_center(ImageDraw.Draw(Image.new("L", (1, 1))), label, font3, w * ss / 2, h * ss / 2)
+        baseline = (ty + font3.getmetrics()[0]) / ss
+        ldraw.text((tx / ss, baseline), label, font=font1x, fill=ink, anchor="ls")
     return layer
 
 
@@ -2321,6 +2338,10 @@ def _sash_skia(
     c.drawRect(_skia.Rect(0, margin, length, height - margin),
                _skia.Paint(AntiAlias=True, BlendMode=_skia.BlendMode.kSrc, Color=col(dark)))
 
+    font = _skia.Font(_skia_typeface(fonts.label_path()), font_ss.size / ss)
+    font.setSubpixel(True)
+    font.setEdging(_skia.Font.Edging.kAntiAlias)
+    tp = _skia.Paint(AntiAlias=True)
     if label.startswith("★"):
         _FA_AWARD = "\uf559"
         rest_str = label[1:].strip()
@@ -2344,8 +2365,8 @@ def _sash_skia(
         try:
             _fa_pfont = ImageFont.truetype(fa_path, max(1, int((font_ss.size / ss) * 0.85)))
         except IOError:
-            _fa_pfont = _notch_font_at(fonts.label_path(), font_ss.size / ss)
-        _t_pfont = _notch_font_at(fonts.label_path(), font_ss.size / ss)
+            _fa_pfont = _notch_font_at(fonts.label_path(), fonts.shaping(), font_ss.size / ss)
+        _t_pfont = _notch_font_at(fonts.label_path(), fonts.shaping(), font_ss.size / ss)
         _t_bb = _probe.textbbox((0, 0), rest_str or "A", font=_t_pfont)
         _fa_bb = _probe.textbbox((0, 0), _FA_AWARD, font=_fa_pfont)
         _fa_dy = int(round((((_t_bb[1] + _t_bb[3]) - (_fa_bb[1] + _fa_bb[3])) / 2.0)))

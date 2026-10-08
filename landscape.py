@@ -609,7 +609,22 @@ def _draw_badge(image: Image.Image, text: str, position: str, art: Image.Image,
         return
 
     font = fonts.label_font(th)
-    tw = draw.textlength(text, font=font)
+    if text.startswith("★"):
+        _FA_AWARD = "\uf559"
+        rest_str = text[1:].strip()
+        try:
+            fa_font = ImageFont.truetype(
+                os.path.join(fonts.FONTS_DIR, "Font Awesome 7 Free-Solid-900.otf"),
+                max(1, int(th * 0.85))
+            )
+        except IOError:
+            fa_font = font
+        fa_gap = int(th * 0.35)
+        icon_w = draw.textlength(_FA_AWARD, font=fa_font)
+        rest_w = draw.textlength(rest_str, font=font)
+        tw = icon_w + fa_gap + rest_w
+    else:
+        tw = draw.textlength(text, font=font)
     bw = int(tw + pad_x * 2)
 
     gap = int(height * _BADGE_LOGO_GAP)
@@ -660,8 +675,17 @@ def _draw_badge(image: Image.Image, text: str, position: str, art: Image.Image,
                          getattr(cfg, "landscape_badge_opacity", _DARK_OPACITY), chip=chip)
     else:
         ink = _glass_pill(image, (x, y, x + bw, y + bh), art, cfg, source=source, chip=chip)
-    draw.text((x + pad_x, y + pad_y - round(2 * scale)), text, font=font,
-              fill=(*ink, 245))
+    if text.startswith("★"):
+        t_bb = draw.textbbox((0, 0), rest_str or "A", font=font)
+        fa_bb = draw.textbbox((0, 0), _FA_AWARD, font=fa_font)
+        _fa_dy = int(round((((t_bb[1] + t_bb[3]) - (fa_bb[1] + fa_bb[3])) / 2.0)))
+        text_y = y + pad_y - round(2 * scale)
+        icon_y = text_y + _fa_dy
+        draw.text((x + pad_x, icon_y), _FA_AWARD, font=fa_font, fill=(*ink, 245))
+        draw.text((x + pad_x + icon_w + fa_gap, text_y), rest_str, font=font, fill=(*ink, 245))
+    else:
+        draw.text((x + pad_x, y + pad_y - round(2 * scale)), text, font=font,
+                  fill=(*ink, 245))
 
 
 def _slot_x(width: int, w: float, align: str) -> int:
@@ -971,7 +995,15 @@ def _draw_info_strip(image: Image.Image, genre_label: str,
     score_part = part_of.get("score")
 
     sep = "  •  "
-    star_sep = "  ★ "
+    _FA_STAR = "\uf005"
+    try:
+        fa_star_font = ImageFont.truetype(
+            os.path.join(fonts.FONTS_DIR, "Font Awesome 7 Free-Solid-900.otf"),
+            max(1, int(height * _INFO_FONT * scale * 0.82))
+        )
+    except IOError:
+        fa_star_font = font
+
     # The bar is drawn, not typed: a pill sized off the type as portrait's
     # Minimalist sizes its pip, with a gap either side.
     font_px = font.size
@@ -985,7 +1017,10 @@ def _draw_info_strip(image: Image.Image, genre_label: str,
         for i, part in enumerate(items):
             text, fill = part
             if rating_sep == "star" and part is score_part and run is None:
-                out.append(("★ " if i == 0 else star_sep, _MUTED))
+                if i > 0:
+                    out.append(("  ", _SEPARATOR))
+                out.append(("__FA_STAR__", _MUTED))
+                out.append((" ", _MUTED))
             elif rating_sep == "pip" and part is score_part and i:
                 out.append((_PIP, _MUTED))
             elif i and field_sep == "pip" and part is not score_part:
@@ -1000,6 +1035,8 @@ def _draw_info_strip(image: Image.Image, genre_label: str,
             return 2 * pip_gap + pip_w
         if isinstance(text, list):
             return rating_badges.run_width(text, measure)
+        if text == "__FA_STAR__":
+            return draw.textlength(_FA_STAR, font=fa_star_font)
         return draw.textlength(text, font=font)
 
     def total(items) -> float:
@@ -1066,6 +1103,11 @@ def _draw_info_strip(image: Image.Image, genre_label: str,
         elif isinstance(text, list):
             # draw_run takes the text's top, as ImageDraw.text does by default.
             rating_badges.draw_run(layer, ldraw, text, x, baseline - ascent, font, fill, measure)
+        elif text == "__FA_STAR__":
+            t_bb = draw.textbbox((0, baseline), "8", font=font, anchor="ls")
+            fa_bb = draw.textbbox((0, baseline), _FA_STAR, font=fa_star_font, anchor="ls")
+            _dy = int(round((((t_bb[1] + t_bb[3]) - (fa_bb[1] + fa_bb[3])) / 2.0)))
+            ldraw.text((x, baseline + _dy), _FA_STAR, font=fa_star_font, fill=fill, anchor="ls")
         else:
             ldraw.text((x, baseline), text, font=font, fill=fill, anchor="ls")
     ink = layer.getchannel("A")
