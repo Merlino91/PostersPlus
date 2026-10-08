@@ -955,11 +955,11 @@ def _format_date_it(date_str: str) -> str:
 
 
 def _is_future(date_str: str) -> bool:
-    """True se la data è strettamente futura."""
+    """True se la data è futura o odierna (inclusa la data di oggi)."""
     if not isinstance(date_str, str):
         return False
     try:
-        return datetime.strptime(date_str, "%Y-%m-%d").date() > date.today()
+        return datetime.strptime(date_str, "%Y-%m-%d").date() >= date.today()
     except (ValueError, TypeError):
         return False
 
