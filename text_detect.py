@@ -192,7 +192,16 @@ def _new_ocr_session():
         params["Cls.model_path"] = _CLS_MODEL_PATH
     if _REC_MODEL_PATH:
         params["Rec.model_path"] = _REC_MODEL_PATH
-    return RapidOCR(params=params)
+    ocr = RapidOCR(params=params)
+    if getattr(ocr, "text_det", None) is None:
+        if hasattr(ocr, "_load_det_model"):
+            ocr._load_det_model()
+        else:
+            try:
+                ocr(np.zeros((32, 32, 3), dtype=np.uint8), use_cls=False, use_rec=False)
+            except Exception:
+                pass
+    return ocr
 
 
 def _ensure_model():
@@ -290,7 +299,18 @@ def _run_detector(ocr, rgb: np.ndarray):
     for a recogniser we don't run, and sorts the boxes without their scores —
     in most images each box came back paired with another box's score.
     """
-    det = ocr.text_det
+    det = getattr(ocr, "text_det", None)
+    if det is None:
+        if hasattr(ocr, "_load_det_model"):
+            det = ocr._load_det_model()
+        else:
+            try:
+                ocr(np.zeros((32, 32, 3), dtype=np.uint8), use_cls=False, use_rec=False)
+                det = getattr(ocr, "text_det", None)
+            except Exception:
+                pass
+    if det is None:
+        raise RuntimeError("RapidOCR text detector model (text_det) could not be loaded")
     height, width = rgb.shape[:2]
     # RapidOCR's max-side rule (TextDetector.get_preprocess): a 500x750 poster
     # runs at native size, rounded to the network's multiple of 32 (512x736).
