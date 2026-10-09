@@ -435,7 +435,7 @@ class ConfiguratorAnimeIdTests(unittest.TestCase):
         for client in ("standard",):
             with self.subTest(client=client):
                 self.assertEqual(_shape_of(self.html, client), "COPY_SHAPE_OPTIMAL")
-        self.assertIn("const COPY_SHAPE_OPTIMAL  = { tmdbOptional: false, "
+        self.assertIn("const COPY_SHAPE_OPTIMAL  = { tmdbOptional: true,  "
                       "imdbOptional: true,  animeIds: true  };", self.html)
 
     def test_placeholders_are_template_only(self):

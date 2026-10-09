@@ -7430,7 +7430,7 @@ function buildPreviewUrl() {
 // set, optional "{name?}" form included. Discover+ is the holdout: it rejects
 // nothing at config time but serves nothing for a "{name?}" URL (see below).
 // Once it gains the form the client list collapses to a single URL.
-const COPY_SHAPE_OPTIMAL  = { tmdbOptional: false, imdbOptional: true,  animeIds: true  };
+const COPY_SHAPE_OPTIMAL  = { tmdbOptional: true,  imdbOptional: true,  animeIds: true  };
 const COPY_SHAPE_REQUIRED = { tmdbOptional: false, imdbOptional: false, animeIds: false };
 
 // "shape={shape}" is a different axis from the id placeholders above rather
