@@ -74,7 +74,7 @@ class CopyTemplateCatalogueTests(unittest.TestCase):
         # its entry onto COPY_SHAPE_OPTIMAL is the whole change.
         self.assertEqual(
             _shape_flags(self.html, "COPY_SHAPE_OPTIMAL"),
-            {"tmdbOptional": True, "imdbOptional": True, "animeIds": True},
+            {"tmdbOptional": False, "imdbOptional": True, "animeIds": True},
         )
         self.assertEqual(
             _shape_flags(self.html, "COPY_SHAPE_REQUIRED"),

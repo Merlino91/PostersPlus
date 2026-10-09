@@ -59,7 +59,7 @@ class ConfiguratorTemplateTests(unittest.TestCase):
         # Same rule for both: a required placeholder with no value nulls the
         # whole URL, and PostersPlus renders from either id alone, so neither
         # is worth a lost poster.
-        self.assertIn("const COPY_SHAPE_OPTIMAL  = { tmdbOptional: true,  "
+        self.assertIn("const COPY_SHAPE_OPTIMAL  = { tmdbOptional: false, "
                       "imdbOptional: true,  animeIds: true  };", self.html)
         for client in ("standard",):
             with self.subTest(client=client):
