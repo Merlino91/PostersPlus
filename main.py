@@ -916,6 +916,7 @@ import watchlist
 import box_office
 import admin as _admin
 from imdb_dataset import imdb_dataset_refresh_loop
+import named_presets
 import config as _cfg
 import log_store
 log_store.install(_cfg.LOG_DIR, _cfg.LOG_VIEWER_MAX_MB, _TruncateUrlFilter._redact)
@@ -7960,6 +7961,7 @@ async def server_caps(request: Request, access_key: str = ""):
         "aiostreams_configured": bool(_cfg.AIOSTREAMS_URL and _cfg.AIOSTREAMS_AUTH),
         "quality_source":        active_quality_source(),
         "quality_configured":    quality_source_configured(),
+        "poster_resolve_imdb":   _cfg.POSTER_RESOLVE_IMDB,
         "trending_fetch_count":  _cfg.TRENDING_FETCH_COUNT,
         "trending_fetch_time":   _cfg.TRENDING_FETCH_TIME,
         "trending_fetch_timezone": _cfg.TRENDING_FETCH_TIMEZONE,
@@ -9849,6 +9851,7 @@ async def get_poster(
     kitsu_id: str = "",
     stremio_id: str = "",
     mal_id: str = "",
+    id: str = "",
     type: str = "movie",
     quality: str = "",
     season: int = 1,
@@ -9920,10 +9923,19 @@ async def get_poster(
     #
     # Parsed here rather than in _resolve_anime_request because that returns
     # early when anime sources are disabled, and this is not an anime concern.
-    if not imdb_id and stremio_id:
-        _stremio_hint = stremio_id.strip()
+    if not imdb_id and not tmdb_id and (stremio_id or id):
+        _stremio_hint = (stremio_id or id).strip()
         if _IMDB_ID_RE.match(_stremio_hint):
             imdb_id = _stremio_hint
+        elif (_cfg.POSTER_RESOLVE_IMDB and not tmdb_id
+              and _stremio_hint.lower().startswith("tmdb:")):
+            tmdb_id = _stremio_hint.split(":", 2)[1]
+        elif (_cfg.POSTER_RESOLVE_IMDB and not tmdb_id
+              and _stremio_hint.isdigit()):
+            tmdb_id = _stremio_hint
+    elif tmdb_id and not imdb_id and tmdb_id.startswith("tt"):
+        imdb_id = tmdb_id
+        tmdb_id = ""
 
     # -----------------------------------------------------------------------
     # Anime-native ids (AniList / Kitsu).
@@ -12724,3 +12736,73 @@ async def get_poster(
         # Every except above resolves the future; this catches what they do
         # not — a CancelledError, or anything else BaseException.
         _unpublish_render(final_cache_key, _render_fut)
+
+
+# ---------------------------------------------------------------------------
+# Named visual presets endpoint (ElfHosted compatible)
+# ---------------------------------------------------------------------------
+@app.get("/p/{preset}/{type}/{imdb_id}.jpg")
+async def get_preset_poster(
+    request: Request,
+    preset: str,
+    type: str,
+    imdb_id: str,
+    shape: str = "",
+):
+    """Anonymous or Nuvio preset render.
+
+    The id segment is an IMDb id ("tt0111161") or a TMDB id, bare ("278") or
+    in Nuvio's/Stremio's namespaced form ("tmdb:278"), so a client pattern like
+    /p/<preset>/{type}/{imdb_id|tmdb_id}.jpg?shape={shape} covers IMDb- and TMDB-keyed
+    catalogues alike.
+    """
+    if not _cfg.PRESET_ENABLED:
+        raise HTTPException(status_code=404, detail="Not found")
+
+    preset_params = named_presets.get_preset(preset)
+    if preset_params is None:
+        raise HTTPException(status_code=404, detail=f"Unknown preset '{preset}'")
+
+    if type == "series":
+        type = "tv"
+    if type not in ("movie", "tv"):
+        raise HTTPException(status_code=400, detail="Invalid type (movie|tv)")
+
+    _direct_tmdb_id = ""
+    if imdb_id.startswith("tmdb:") or imdb_id.isdigit():
+        _direct_tmdb_id = imdb_id[len("tmdb:"):] if imdb_id.startswith("tmdb:") else imdb_id
+        _check_tmdb_id(_direct_tmdb_id)
+        imdb_id = ""
+    else:
+        _check_imdb_id(imdb_id)
+
+    _shape = (shape or "").strip().lower()
+    if _shape not in ("", "poster", "portrait", "square", "landscape"):
+        raise HTTPException(status_code=400, detail="Invalid shape (poster|landscape)")
+
+    # Build simulated query parameters forwarding the preset params to get_poster
+    forward_params = dict(preset_params)
+    if _direct_tmdb_id:
+        forward_params["tmdb_id"] = _direct_tmdb_id
+    if imdb_id:
+        forward_params["imdb_id"] = imdb_id
+    forward_params["type"] = type
+    if _shape:
+        forward_params["shape"] = _shape
+
+    scope = {
+        "type": "http",
+        "method": "GET",
+        "path": "/poster",
+        "query_string": urlencode(forward_params).encode("ascii"),
+        "headers": request.headers.raw,
+        "client": request.client,
+    }
+    sim_request = Request(scope)
+    return await get_poster(
+        request=sim_request,
+        tmdb_id=_direct_tmdb_id,
+        imdb_id=imdb_id,
+        type=type,
+        shape=_shape,
+    )

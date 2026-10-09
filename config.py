@@ -262,6 +262,16 @@ except ValueError:
     # failure than ignoring the hint and saying so.
     CDN_CACHE_TTL     = 0
     CDN_CACHE_TTL_VALID = False
+
+# Accept /poster requests that carry only an IMDb id, resolving tmdb_id
+# server-side (TMDB /find, cached permanently in imdb_to_tmdb_cache).
+POSTER_RESOLVE_IMDB   = _flag(_env("POSTER_RESOLVE_IMDB", "true", group='Access & serving', kind='bool', label='Resolve IMDb IDs', help="Accept requests that carry only an IMDb id, resolving tmdb_id server-side via TMDB /find."), True)
+
+# When PRESET_ENABLED, anonymous requests can hit named visual presets via /p/{preset}/{type}/{id}.jpg
+PRESET_ENABLED        = _flag(_env("PRESET_ENABLED", "true", group='Access & serving', kind='bool', label='Enable presets endpoint', help="Enable public /p/<preset>/<type>/<id>.jpg preset routes."), True)
+PRESET_CDN_CACHE_TTL  = int(_env("PRESET_CDN_CACHE_TTL", "86400", group='Access & serving', kind='int', label='Preset CDN cache TTL', help="Cache TTL in seconds for preset renders.") or "86400")
+PRESET_MDBLIST_FETCH  = _flag(_env("PRESET_MDBLIST_FETCH", "false", group='Access & serving', kind='bool', label='Preset MDBList fetch', help="Allow /p misses to queue background MDBList fetches."), False)
+
 # Image format for composited posters (webp or jpeg). webp is recommended.
 IMAGE_FORMAT          = _env('IMAGE_FORMAT', "webp", group='Output', kind='choice', label='Image format', help='Output format for composited posters. WebP is smaller at the same quality.', choices=('webp', 'jpeg')).lower()
 # Normalise the common "jpg" alias to the canonical "jpeg" that PIL's save()

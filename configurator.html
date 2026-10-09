@@ -2273,6 +2273,10 @@
     color: #8a2a26;
   }
   html.light-mode .sash-disable-btn:hover      { color: #b04a44; border-color: #b04a44; }
+  .url-format-row { display: flex; align-items: center; gap: 8px; margin: 0 0 8px;
+                    flex-wrap: wrap; font-size: 12px; color: var(--text-muted); }
+  .url-format-row select { width: auto; }
+  .url-format-hint { flex-basis: 100%; }
 </style>
 <script>/* apply saved theme before first paint to avoid flash */
 try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElement.classList.add('light-mode')}catch(e){}</script>
@@ -4360,6 +4364,14 @@ try{if(localStorage.getItem('postersplus_theme')==='light')document.documentElem
         </div>
         <!-- Errors surface here, directly under where the poster renders. -->
         <div class="preview-error" id="preview-error" hidden></div>
+        <div class="url-format-row">
+          <label for="cfg-url-format" class="url-format-label">URL for</label>
+          <select id="cfg-url-format" onchange="onUrlFormatChange()">
+            <option value="aiometadata">AIOMetadata</option>
+            <option value="nuvio">Nuvio</option>
+          </select>
+          <span class="url-format-hint" id="url-format-hint"></span>
+        </div>
         <div class="preview-actions">
           <button class="btn btn-preview" id="copy-config-btn" onclick="copyUrl()"
             oncontextmenu="return openCopyMenu(event)"
@@ -7529,8 +7541,54 @@ function rememberedTemplate() {
 /** The shape the URL box shows — whatever a left-click would copy. */
 function displayedTemplate() { return rememberedTemplate(); }
 
+const URL_FORMAT_KEY = 'postersplus_url_format';
+
+function urlFormat() {
+  const el = document.getElementById('cfg-url-format');
+  return el && el.value === 'nuvio' ? 'nuvio' : 'aiometadata';
+}
+
+function onUrlFormatChange() {
+  try { localStorage.setItem(URL_FORMAT_KEY, urlFormat()); } catch (e) {}
+  updateUrlFormatHint();
+  build();
+}
+
+function restoreUrlFormat() {
+  let saved = null;
+  try { saved = localStorage.getItem(URL_FORMAT_KEY); } catch (e) {}
+  const sel = document.getElementById('cfg-url-format');
+  if (sel && (saved === 'nuvio' || saved === 'aiometadata')) sel.value = saved;
+  updateUrlFormatHint();
+}
+
+function updateUrlFormatHint() {
+  const hint = document.getElementById('url-format-hint');
+  if (!hint) return;
+  if (urlFormat() !== 'nuvio') {
+    hint.textContent = "Paste into AIOMetadata → Art Providers → Custom Art URLs → Poster URL Pattern.";
+  } else {
+    hint.textContent = "Paste into Nuvio's custom poster URL pattern. Works for IMDb- and TMDB-keyed titles, in poster and landscape rows.";
+  }
+}
+
+function toNuvioPattern(url) {
+  const q = url.indexOf('?');
+  if (q < 0) return url;
+  const pathAt = url.lastIndexOf('/poster', q);
+  const base = pathAt < 0 ? url.slice(0, q) : url.slice(0, pathAt) + url.slice(pathAt, q);
+  const ID_KEYS = new Set(['tmdb_id', 'imdb_id', 'stremio_id', 'anilist_id', 'kitsu_id', 'type', 'shape']);
+  const kept = url.slice(q + 1).split('&').filter(kv => kv && !ID_KEYS.has(kv.split('=')[0]));
+  const ids = ['tmdb_id={imdb_id|tmdb_id}'];
+  return `${base}?${ids.concat(['type={type}', 'shape={shape}'], kept).join('&')}`;
+}
+
 function buildTemplateUrl(templateId = displayedTemplate().id) {
-  return buildBaseParams({ usePlaceholders: true, templateId });
+  let url = buildBaseParams({ usePlaceholders: true, templateId });
+  if (urlFormat() === 'nuvio' && templateId !== 'share') {
+    url = toNuvioPattern(url);
+  }
+  return url;
 }
 
 // Touch has no right-click, so press-and-hold is the second way into the menu.
@@ -10465,6 +10523,7 @@ updateShapeFields();
 _initRangeValEditing();
 checkWhatsNew();
 showTab('core');   // start on the Core Config category
+try { restoreUrlFormat(); } catch(e) {}
 build();
 // Hydrate is complete — from here on every build() persists settings.
 _settingsReady = true;
